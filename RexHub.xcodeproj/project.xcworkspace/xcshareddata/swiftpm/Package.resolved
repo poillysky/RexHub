@@ -6,8 +6,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/kingslay/FFmpegKit.git",
       "state" : {
-        "revision" : "20e3ba2a4c36978fed7b12a56839fadd92e901ea",
-        "version" : "9.0.2"
+        "revision" : "c32be9bfb628042737ad3ef622e930c5c7b15954",
+        "version" : "6.1.4"
       }
     },
     {
@@ -15,8 +15,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/kingslay/KSPlayer.git",
       "state" : {
-        "branch" : "main",
-        "revision" : "7d6b4ced6f6b0d3b54cde84c77314a3fa6d927b0"
+        "revision" : "be7f60d3b94a0941c643fe8699113cfce4f08e83"
       }
     }
   ],

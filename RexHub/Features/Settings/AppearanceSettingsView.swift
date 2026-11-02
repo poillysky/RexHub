@@ -310,6 +310,7 @@ private struct IconLibraryView: View {
         .task { await load() }
         .sheet(item: $previewing) { target in
             IconLibraryPreviewSheet(target: target)
+                .rexSheetStyle()
         }
     }
 

@@ -30,6 +30,19 @@ struct SubtitleSettingsView: View {
                 )
             }
 
+            SettingsSection(title: "外观") {
+                SettingsMenuRow(
+                    title: "字幕字号",
+                    options: SubtitleSize.allCases,
+                    label: \.title,
+                    selection: $settings.subtitleSize
+                )
+
+                SettingsDivider()
+
+                SettingsSwitchRow(title: "半透明底色", isOn: $settings.subtitleBackground)
+            }
+
             SettingsSection(title: "HTTP 字幕源") {
                 if settings.subtitleSources.isEmpty {
                     SettingsRow(title: "尚未添加字幕源", value: "点击右上角 +")
@@ -43,7 +56,7 @@ struct SubtitleSettingsView: View {
                 }
             }
 
-            Text("按顺序尝试字幕源，使用第一个能解析的结果。`{name}` 会替换成视频文件名（不含扩展名），`{lang}` 会替换成默认语言代码（如 zh、en），支持 SRT、VTT、ASS。字号、延迟与字幕背景在播放页的字幕面板里调节。")
+            Text("按顺序尝试字幕源，使用第一个能解析的结果。`{name}` 会替换成视频文件名（不含扩展名），`{lang}` 会替换成默认语言代码（如 zh、en），支持 SRT、VTT、ASS。字号即时作用于外部字幕，KSPlayer 内嵌字幕需下一次起播生效；半透明底色只作用于外部字幕。")
                 .font(.system(size: 12))
                 .foregroundStyle(RexColor.secondaryText)
                 .frame(maxWidth: .infinity, alignment: .leading)

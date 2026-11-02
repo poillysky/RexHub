@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		1A00000000000000000000C4 /* KSPlayerUI in Frameworks */ = {isa = PBXBuildFile; productRef = 1A00000000000000000000C2 /* KSPlayerUI */; };
 		1A00000000000000000000C5 /* KSPlayer in Frameworks */ = {isa = PBXBuildFile; productRef = 1A00000000000000000000C3 /* KSPlayer */; };
 /* End PBXBuildFile section */
 
@@ -29,7 +28,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				1A00000000000000000000C4 /* KSPlayerUI in Frameworks */,
 				1A00000000000000000000C5 /* KSPlayer in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -82,7 +80,6 @@
 			);
 			name = RexHub;
 			packageProductDependencies = (
-				1A00000000000000000000C2 /* KSPlayerUI */,
 				1A00000000000000000000C3 /* KSPlayer */,
 			);
 			productName = RexHub;
@@ -328,18 +325,13 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/kingslay/KSPlayer.git";
 			requirement = {
-				branch = main;
-				kind = branch;
+				kind = revision;
+				revision = be7f60d3b94a0941c643fe8699113cfce4f08e83;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		1A00000000000000000000C2 /* KSPlayerUI */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 1A00000000000000000000C1 /* XCRemoteSwiftPackageReference "KSPlayer" */;
-			productName = KSPlayerUI;
-		};
 		1A00000000000000000000C3 /* KSPlayer */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 1A00000000000000000000C1 /* XCRemoteSwiftPackageReference "KSPlayer" */;

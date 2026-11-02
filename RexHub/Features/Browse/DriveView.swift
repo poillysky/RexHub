@@ -83,6 +83,8 @@ private struct DriveFolderView: View {
     @State private var transferIDs: [String] = []
 
     private let settings = FileListSettingsStore.shared
+    /// 视频行的观看进度来自播放器设置，保存进度后由 `@Observable` 触发行重绘。
+    private let playerSettings = PlayerSettingsStore.shared
 
     private let pageSize = 200
     private let maxContentWidth: CGFloat = 720
@@ -138,12 +140,11 @@ private struct DriveFolderView: View {
             PanFolderPickerView(mode: mode) { cid in
                 Task { await transfer(mode, to: cid, ids: transferIDs) }
             }
-            .rexSheetStyle()
+            .rexSheetStyle(detents: [.large])
         }
-        .sheet(item: $actionItem) { item in
+        .rexCardSheet(item: $actionItem) { item in
             PanItemActionSheet(
                 item: item,
-                onOpen: { openFromActionSheet(item) },
                 onInfo: { runAfterActionSheet { infoItem = item } },
                 onRename: { startRename(item) },
                 onTransfer: { mode in beginTransfer(mode, ids: [item.id]) },
@@ -195,8 +196,10 @@ private struct DriveFolderView: View {
             Task { await upload(result) }
         }
         .task {
-            guard items.isEmpty else { return }
-            await load(reset: true)
+            if items.isEmpty {
+                await load(reset: true)
+            }
+            await syncPlaybackProgress()
         }
     }
 
@@ -519,16 +522,6 @@ private struct DriveFolderView: View {
         renameText = ""
     }
 
-    private func openFromActionSheet(_ item: PanItem) {
-        runAfterActionSheet {
-            if item.isDir {
-                path.append(DriveRoute(cid: item.id, name: item.name))
-            } else {
-                open(item)
-            }
-        }
-    }
-
     /// 面板收起后再执行下一步，避免连续弹窗被系统丢弃。
     private func runAfterActionSheet(_ action: @escaping @MainActor () -> Void) {
         Task { @MainActor in
@@ -786,13 +779,18 @@ private struct DriveFolderView: View {
         }
     }
 
-    /// 行主体：左侧点击区 + 行尾 ⋯ 完整操作入口。
+    /// 行主体：左侧点击区 + 观看进度圆环 + 行尾 ⋯ 完整操作入口。
     private func rowBody(_ item: PanItem) -> some View {
         HStack(spacing: 0) {
             rowContent(item)
                 .frame(maxWidth: .infinity)
 
             if !isSelecting {
+                if let progress = playerSettings.playbackProgress(for: item.pickcode) {
+                    progressRing(progress.ratio)
+                        .padding(.trailing, RexSpacing.sm)
+                }
+
                 itemMenuButton(item)
                     .padding(.trailing, RexSpacing.sm)
             }
@@ -832,7 +830,9 @@ private struct DriveFolderView: View {
             Image(systemName: "ellipsis")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(RexColor.secondaryText)
-                .frame(width: 32, height: 32)
+                // 竖排三点省出横向空间给文件名。
+                .rotationEffect(.degrees(90))
+                .frame(width: 24, height: 32)
                 .contentShape(Rectangle())
         }
         .buttonStyle(PressableButtonStyle())
@@ -880,7 +880,7 @@ private struct DriveFolderView: View {
             leadingIcon(item, size: CGFloat(settings.iconSize))
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(displayName(for: item))
+                Text(breakableName(displayName(for: item)))
                     .font(.system(size: density.titleSize))
                     .foregroundStyle(RexColor.primaryText)
                     .lineLimit(settings.nameLines)
@@ -895,9 +895,11 @@ private struct DriveFolderView: View {
                 }
             }
 
-            Spacer(minLength: RexSpacing.sm)
+            Spacer(minLength: 0)
         }
-        .padding(.horizontal, RexSpacing.lg)
+        .padding(.leading, RexSpacing.lg)
+        // 行尾还有 ⋯ 按钮时，右侧只留一点呼吸空间，把宽度让给文件名。
+        .padding(.trailing, isSelecting ? RexSpacing.lg : RexSpacing.sm)
         .padding(.vertical, density.verticalPadding)
         .frame(minHeight: density.rowHeight)
         .background(
@@ -954,7 +956,7 @@ private struct DriveFolderView: View {
             leadingIcon(item, size: iconSize)
                 .frame(height: iconSize)
 
-            Text(displayName(for: item))
+            Text(breakableName(displayName(for: item)))
                 .font(.system(size: density.titleSize))
                 .foregroundStyle(RexColor.primaryText)
                 .lineLimit(settings.nameLines)
@@ -988,6 +990,13 @@ private struct DriveFolderView: View {
                     .padding(6)
             }
         }
+        .overlay(alignment: .bottom) {
+            if let progress = playerSettings.playbackProgress(for: item.pickcode) {
+                progressBar(progress.ratio)
+                    .padding(.horizontal, RexSpacing.md)
+                    .padding(.bottom, 6)
+            }
+        }
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityHint(item.isDir ? "打开文件夹" : "播放")
@@ -1000,6 +1009,37 @@ private struct DriveFolderView: View {
             .foregroundStyle(isSelected ? RexColor.brandBlue : RexColor.secondaryText.opacity(0.45))
             .background(Circle().fill(RexColor.surface).padding(2))
             .transition(.scale.combined(with: .opacity))
+    }
+
+    /// 网格卡片底部的观看进度条。
+    private func progressBar(_ ratio: Double) -> some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(RexColor.secondaryText.opacity(0.2))
+
+                Capsule()
+                    .fill(RexColor.brandBlue)
+                    .frame(width: max(2, proxy.size.width * ratio))
+            }
+        }
+        .frame(height: 3)
+        .accessibilityHidden(true)
+    }
+
+    /// 列表行尾的观看进度圆环，替代原来的底部进度条。
+    private func progressRing(_ ratio: Double) -> some View {
+        ZStack {
+            Circle()
+                .stroke(RexColor.secondaryText.opacity(0.18), lineWidth: 2)
+
+            Circle()
+                .trim(from: 0, to: min(max(ratio, 0), 1))
+                .stroke(RexColor.brandBlue, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+        }
+        .frame(width: 20, height: 20)
+        .accessibilityHidden(true)
     }
 
     /// 图片文件在开启缩略图时用 115 缩略图，其余仍用主题图标。
@@ -1245,6 +1285,14 @@ private struct DriveFolderView: View {
         isLoadingMore = false
     }
 
+    /// 拉取服务端进度，补齐其它设备看过、本机还没记录的续播圆环。
+    @MainActor
+    private func syncPlaybackProgress() async {
+        guard let client = apiClient else { return }
+        guard let entries = try? await client.panPlaybackProgress() else { return }
+        playerSettings.mergeRemoteProgress(entries)
+    }
+
     private func message(for error: APIError) -> String {
         if case .conflict(let detail) = error, let detail, !detail.isEmpty {
             return detail
@@ -1262,6 +1310,15 @@ private struct DriveFolderView: View {
         guard !settings.showFileExtension, !item.isDir else { return item.name }
         let name = (item.name as NSString).deletingPathExtension
         return name.isEmpty ? item.name : name
+    }
+
+    /// 文件名里常有一长段没有空格的文本，系统会在空格处整段换行，导致第一行很短。
+    /// 在 `.` `_` `-` 后插入零宽空格，让换行落在分隔符处。
+    private func breakableName(_ name: String) -> String {
+        name
+            .replacingOccurrences(of: ".", with: ".\u{200B}")
+            .replacingOccurrences(of: "_", with: "_\u{200B}")
+            .replacingOccurrences(of: "-", with: "-\u{200B}")
     }
 
     private func subtitle(for item: PanItem) -> String {
@@ -1359,10 +1416,9 @@ private struct SelectionGlassCircle: ViewModifier {
 
 // MARK: - 单条目操作
 
-/// 行尾 ⋯ 打开的完整操作面板，包含打开、信息、重命名、复制、移动与删除。
+/// 行尾 ⋯ 打开的完整操作面板，包含信息、重命名、复制、移动与删除。
 private struct PanItemActionSheet: View {
     let item: PanItem
-    let onOpen: () -> Void
     let onInfo: () -> Void
     let onRename: () -> Void
     let onTransfer: (PanTransferMode) -> Void
@@ -1375,52 +1431,61 @@ private struct PanItemActionSheet: View {
         item.isDir ? .folder : .fileKind(forName: item.name)
     }
 
-    private var metaText: String {
-        "\(panTypeLabel(for: item)) · \(panSizeText(for: item))"
+    var body: some View {
+        VStack(spacing: RexSpacing.sm) {
+            groupCard {
+                header
+                    .padding(.horizontal, RexSpacing.lg)
+                    .padding(.vertical, RexSpacing.md)
+
+                divider
+
+                actionRow("复制到", systemImage: "doc.on.doc") { onTransfer(.copy) }
+                divider
+                actionRow("移动到", systemImage: "arrow.forward.folder") { onTransfer(.move) }
+                divider
+                actionRow("重命名", systemImage: "square.and.pencil") { onRename() }
+                divider
+                actionRow("删除", systemImage: "trash", isDestructive: true) { onDelete() }
+            }
+
+            // 「详情」单独一张卡片。
+            groupCard {
+                actionRow("详情", systemImage: "info.circle") { onInfo() }
+            }
+        }
+        .padding(.horizontal, RexSpacing.lg)
+        .padding(.top, RexSpacing.xs)
+        .padding(.bottom, RexSpacing.xs)
+        .frame(maxWidth: .infinity)
+        .background(RexColor.sheetBackground.ignoresSafeArea())
     }
 
-    var body: some View {
+    private func groupCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         VStack(spacing: 0) {
-            header
-                .padding(.horizontal, RexSpacing.lg)
-                .padding(.vertical, RexSpacing.lg)
-
-            divider
-
-            actionRow(
-                item.isDir ? "打开" : "预览",
-                systemImage: item.isDir ? "folder" : "eye"
-            ) {
-                onOpen()
-            }
-            divider
-            actionRow("复制到", systemImage: "doc.on.doc") { onTransfer(.copy) }
-            divider
-            actionRow("移动到", systemImage: "folder") { onTransfer(.move) }
-            divider
-            actionRow("重命名", systemImage: "square.and.pencil") { onRename() }
-            divider
-            actionRow("删除", systemImage: "trash", isDestructive: true) { onDelete() }
-            divider
-            actionRow("详情", systemImage: "info.circle") { onInfo() }
-
-            Spacer(minLength: 0)
+            content()
         }
-        .background(RexColor.surface)
-        .rexSheetStyle()
+        .background(
+            RexColor.surface,
+            in: RoundedRectangle(cornerRadius: RexRadius.card, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: RexRadius.card, style: .continuous)
+                .stroke(RexColor.primaryText.opacity(0.06), lineWidth: 0.5)
+        )
     }
 
     private var header: some View {
         HStack(spacing: RexSpacing.md) {
-            FileIconView(kind: kind, size: 44)
+            FileIconView(kind: kind, size: 40)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(item.name)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(RexColor.primaryText)
-                    .lineLimit(2)
+                    .lineLimit(1)
 
-                Text(metaText)
+                Text(panDateText(item.updatedAt))
                     .font(.system(size: 12))
                     .foregroundStyle(RexColor.secondaryText)
                     .lineLimit(1)
@@ -1440,20 +1505,23 @@ private struct PanItemActionSheet: View {
             dismiss()
             action()
         } label: {
-            HStack(spacing: RexSpacing.md) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 16))
-                    .foregroundStyle(isDestructive ? RexColor.error : RexColor.secondaryText)
-                    .frame(width: 24)
-
+            HStack(spacing: RexSpacing.sm) {
                 Text(title)
                     .font(.system(size: 16))
                     .foregroundStyle(isDestructive ? RexColor.error : RexColor.primaryText)
 
                 Spacer(minLength: 0)
+
+                Image(systemName: systemImage)
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(isDestructive ? RexColor.error : RexColor.brandBlue)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(RexColor.secondaryText.opacity(0.5))
             }
             .padding(.horizontal, RexSpacing.lg)
-            .frame(height: 54)
+            .frame(height: 52)
             .contentShape(Rectangle())
         }
         .buttonStyle(PressableButtonStyle())
@@ -1463,7 +1531,7 @@ private struct PanItemActionSheet: View {
         Rectangle()
             .fill(RexColor.divider)
             .frame(height: 1 / displayScale)
-            .padding(.leading, RexSpacing.lg)
+            .padding(.horizontal, RexSpacing.lg)
     }
 }
 

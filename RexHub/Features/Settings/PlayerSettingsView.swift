@@ -53,7 +53,7 @@ struct VideoPlayerSettingsView: View {
                 .padding(.horizontal, RexSpacing.xs)
                 .lineSpacing(2)
 
-            Text("切换内核后下一次起播生效；起播清晰度只对多码率 HLS 生效，115 单文件直链按原片播放。")
+            Text("切换内核后下一次起播生效；解码方式只作用于 KSPlayer 内核，起播清晰度只对多码率 HLS 生效，115 单文件直链按原片播放。")
                 .font(.system(size: 12))
                 .foregroundStyle(RexColor.secondaryText)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -115,6 +115,10 @@ struct PlaybackPreferenceView: View {
 
                 SettingsDivider()
 
+                SettingsSwitchRow(title: "自动横屏", isOn: $settings.autoLandscape)
+
+                SettingsDivider()
+
                 SettingsSwitchRow(title: "记忆音量", isOn: $settings.rememberVolume)
 
                 SettingsDivider()
@@ -150,6 +154,20 @@ struct PlaybackPreferenceView: View {
                 .lineSpacing(2)
 
             Text("开启后台播放音频后，锁屏或退到后台仍会继续出声；关闭则退到后台立即暂停。修改后在下一次起播时生效。")
+                .font(.system(size: 12))
+                .foregroundStyle(RexColor.secondaryText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, RexSpacing.xs)
+                .lineSpacing(2)
+
+            Text("开启自动横屏后，进入视频播放页会直接转为横屏，退出播放页恢复竖屏；播放器里的全屏按钮仍可手动切换方向。")
+                .font(.system(size: 12))
+                .foregroundStyle(RexColor.secondaryText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, RexSpacing.xs)
+                .lineSpacing(2)
+
+            Text("变速保持音调与自动等待缓冲由 AVPlayer 内核执行，KSPlayer 按自身解码策略播放；其余开关对两个内核都生效。")
                 .font(.system(size: 12))
                 .foregroundStyle(RexColor.secondaryText)
                 .frame(maxWidth: .infinity, alignment: .leading)

@@ -8,6 +8,8 @@ enum RexColor {
     static let lightBlue = Color(hex: 0xE6F0FF)
 
     static let background = dynamic(light: 0xF2F5FA, dark: 0x0E1116)
+    /// 卡片弹窗底色：比页面背景更淡，避免顶部把手区和卡片间隙显得突兀。
+    static let sheetBackground = dynamic(light: 0xF7F9FC, dark: 0x131820)
     static let surface = dynamic(light: 0xFFFFFF, dark: 0x171B22)
     static let field = dynamic(light: 0xF2F5FA, dark: 0x1C222B)
     /// 列表选中态底色，比页面背景深一档，避免和背景混在一起。
@@ -38,6 +40,16 @@ enum RexColor {
         Color(uiColor: UIColor { traits in
             UIColor(hex: traits.userInterfaceStyle == .dark ? dark : light)
         })
+    }
+
+    /// UIKit 容器用的表面色，与 `surface` 一致，用于铺满 sheet 的可视区域。
+    static let surfaceUIColor = UIColor { traits in
+        UIColor(hex: traits.userInterfaceStyle == .dark ? 0x171B22 : 0xFFFFFF)
+    }
+
+    /// UIKit 容器用的弹窗底色，与 `sheetBackground` 一致。
+    static let sheetBackgroundUIColor = UIColor { traits in
+        UIColor(hex: traits.userInterfaceStyle == .dark ? 0x131820 : 0xF7F9FC)
     }
 }
 
@@ -258,10 +270,178 @@ enum RexSpacing {
 }
 
 extension View {
-    /// 全局底部弹窗样式：交给系统 sheet 呈现，半高 / 全高两档，顶部带拖拽条。
-    func rexSheetStyle() -> some View {
-        presentationDetents([.medium, .large])
+    /// 全局底部弹窗：系统卡片呈现，底层页面由 UISheetPresentationController 自动收缩后退。
+    /// 内容较多的页面（如目录选择）可只给 `.large`，避免默认中档高度截断内容。
+    func rexSheetStyle(
+        detents: Set<PresentationDetent> = [.medium, .large]
+    ) -> some View {
+        presentationDetents(detents)
             .presentationDragIndicator(.visible)
+            .background(RexSheetPresentationConfigurator())
+    }
+
+    /// 由 UIKit 直接呈现系统大卡片，保留下层页面的原生收缩后退动画。
+    func rexCardSheet<Item: Identifiable, Content: View>(
+        item: Binding<Item?>,
+        @ViewBuilder content: @escaping (Item) -> Content
+    ) -> some View {
+        background(RexCardSheetPresenter(item: item, content: content))
+    }
+}
+
+private struct RexCardSheetPresenter<Item: Identifiable, Content: View>: UIViewControllerRepresentable {
+    @Binding var item: Item?
+    let content: (Item) -> Content
+
+    func makeUIViewController(context: Context) -> RexCardSheetAnchorViewController {
+        let controller = RexCardSheetAnchorViewController()
+        controller.onDismiss = { item = nil }
+        return controller
+    }
+
+    func updateUIViewController(
+        _ uiViewController: RexCardSheetAnchorViewController,
+        context: Context
+    ) {
+        uiViewController.onDismiss = { item = nil }
+        if let item {
+            uiViewController.presentSheet(
+                rootView: content(item).environment(\.self, context.environment)
+            )
+        } else {
+            uiViewController.dismissSheet()
+        }
+    }
+}
+
+private final class RexCardSheetAnchorViewController: UIViewController {
+    var onDismiss: (() -> Void)?
+    private weak var presentedSheet: UIViewController?
+
+    func presentSheet<Content: View>(rootView: Content) {
+        guard presentedSheet == nil,
+              let presenter = rootPresenter,
+              presenter.presentedViewController == nil else { return }
+
+        let sheetContent = rootView
+            .frame(maxWidth: .infinity, alignment: .top)
+            .padding(.top, RexSpacing.sm)
+
+        let controller = RexSheetHostingController(rootView: sheetContent)
+        controller.onDismiss = { [weak self] in
+            self?.presentedSheet = nil
+            self?.onDismiss?()
+        }
+        // sheet 容器自身铺底色，避免顶部把手区和底部安全区露出透明。
+        controller.view.backgroundColor = RexColor.sheetBackgroundUIColor
+        controller.modalPresentationStyle = .pageSheet
+
+        let contentHeight = measuredContentHeight(of: controller, in: presenter)
+        let bottomInset = presenter.view.window?.safeAreaInsets.bottom ?? 0
+
+        if let sheet = controller.sheetPresentationController {
+            let detent: UISheetPresentationController.Detent = .custom(
+                identifier: .init("rex.card")
+            ) { _ in
+                contentHeight + bottomInset
+            }
+            sheet.detents = [detent]
+            sheet.selectedDetentIdentifier = detent.identifier
+            sheet.prefersGrabberVisible = true
+            sheet.preferredCornerRadius = 20
+            sheet.prefersScrollingExpandsWhenScrolledToEdge = false
+            sheet.largestUndimmedDetentIdentifier = nil
+        }
+
+        presentedSheet = controller
+        presenter.present(controller, animated: true)
+    }
+
+    /// 按弹窗实际内容测量高度，避免固定占满屏幕。
+    private func measuredContentHeight<Content: View>(
+        of controller: UIHostingController<Content>,
+        in presenter: UIViewController
+    ) -> CGFloat {
+        let width = presenter.view.bounds.width
+
+        controller.view.frame = CGRect(x: 0, y: 0, width: width, height: 1)
+        controller.view.layoutIfNeeded()
+        let fitting = controller.sizeThatFits(
+            in: CGSize(width: width, height: UIView.layoutFittingCompressedSize.height)
+        )
+        return max(fitting.height, 1)
+    }
+
+    func dismissSheet() {
+        guard let presentedSheet else { return }
+        self.presentedSheet = nil
+        presentedSheet.dismiss(animated: true)
+    }
+
+    private var rootPresenter: UIViewController? {
+        var presenter = parent
+        while let parent = presenter?.parent {
+            presenter = parent
+        }
+        return presenter
+    }
+}
+
+/// 系统 sheet 关闭（下滑、点遮罩、内容里 dismiss）后回调，保证绑定状态同步清空。
+private final class RexSheetHostingController<Content: View>: UIHostingController<Content> {
+    var onDismiss: (() -> Void)?
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        if isBeingDismissed || presentingViewController == nil {
+            onDismiss?()
+        }
+    }
+}
+
+private struct RexSheetPresentationConfigurator: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> RexSheetConfigurationViewController {
+        RexSheetConfigurationViewController()
+    }
+
+    func updateUIViewController(
+        _ uiViewController: RexSheetConfigurationViewController,
+        context: Context
+    ) {
+        uiViewController.configureSheet()
+    }
+}
+
+private final class RexSheetConfigurationViewController: UIViewController {
+    private weak var configuredSheet: UISheetPresentationController?
+
+    override func didMove(toParent parent: UIViewController?) {
+        super.didMove(toParent: parent)
+        configureSheet()
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        configureSheet()
+    }
+
+    func configureSheet() {
+        var controller = parent
+        while let current = controller {
+            if let sheet = current.sheetPresentationController {
+                guard configuredSheet !== sheet else { return }
+
+                // 高度档位交给页面用 `.presentationDetents` 自行声明，
+                // 这里只补系统外观，避免把弹窗一律强制成中档高度。
+                sheet.prefersGrabberVisible = true
+                sheet.preferredCornerRadius = 20
+                sheet.prefersScrollingExpandsWhenScrolledToEdge = true
+                sheet.largestUndimmedDetentIdentifier = nil
+                configuredSheet = sheet
+                return
+            }
+            controller = current.parent
+        }
     }
 }
 

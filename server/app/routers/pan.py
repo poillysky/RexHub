@@ -13,7 +13,7 @@ import tempfile
 from fastapi import APIRouter, File, Form, Header, HTTPException, Query, Response, UploadFile, status
 from pydantic import BaseModel, Field
 
-from .. import pan115, security
+from .. import pan115, progress_store, security
 
 router = APIRouter(prefix="/api/pan", tags=["pan"])
 
@@ -53,6 +53,12 @@ class RenameBatchBody(BaseModel):
 class TransferBody(BaseModel):
     ids: list[str] = Field(default_factory=list)
     cid: str = "0"
+
+
+class ProgressBody(BaseModel):
+    pickcode: str = ""
+    position: float = 0
+    duration: float = 0
 
 
 def _require_token(authorization: str | None) -> None:
@@ -297,6 +303,33 @@ async def play(
         raise _upstream_error(exc) from exc
     except Exception as exc:
         raise _upstream_error(exc) from exc
+
+
+@router.get("/progress")
+async def progress_list(authorization: str | None = Header(default=None)) -> dict:
+    """跨设备观看进度：一次返回全部记录，App 拉取后合并到本地缓存。"""
+    _require_token(authorization)
+    return {"items": await asyncio.to_thread(progress_store.all_entries)}
+
+
+@router.put("/progress")
+async def progress_save(
+    body: ProgressBody,
+    authorization: str | None = Header(default=None),
+) -> dict:
+    """上报单个文件的观看进度；位置过小或已到片尾视为看完，服务端直接删除记录。"""
+    _require_token(authorization)
+    if not body.pickcode.strip():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="缺少 pickcode")
+    try:
+        item = await asyncio.to_thread(
+            progress_store.save, body.pickcode, body.position, body.duration
+        )
+    except OSError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="进度保存失败"
+        ) from exc
+    return {"item": item}
 
 
 @router.get("/thumb")

@@ -210,6 +210,32 @@ struct APIClient: Sendable {
         return try decode(PanPlayInfo.self, from: data)
     }
 
+    /// 取全量观看进度，用于跨设备补齐列表里的续播圆环。
+    func panPlaybackProgress() async throws -> [PanPlaybackProgress] {
+        let data = try await send(
+            path: "api/pan/progress",
+            method: "GET",
+            body: nil,
+            authorized: true,
+            retryable: true
+        )
+        return try decode(PanProgressResponse.self, from: data).items
+    }
+
+    /// 上报观看进度；`position <= 0` 表示看完或没看，服务端会删除该记录。
+    func panUpdateProgress(pickcode: String, position: Double, duration: Double) async throws {
+        let body = try JSONEncoder().encode(
+            PanProgressBody(pickcode: pickcode, position: position, duration: duration)
+        )
+        _ = try await send(
+            path: "api/pan/progress",
+            method: "PUT",
+            body: body,
+            authorized: true,
+            retryable: false
+        )
+    }
+
     /// 取图片缩略图字节，由服务端代理 115，Cookie 不出服务端。
     func panThumbnail(sha1: String) async throws -> Data {
         try await send(
@@ -633,6 +659,14 @@ struct PanPlayInfo: Decodable, Sendable {
     let expiresIn: Int
 }
 
+/// 跨设备观看进度。`updatedAt` 为服务端写入时间（Unix 秒），本地比它新时不覆盖。
+struct PanPlaybackProgress: Decodable, Sendable {
+    let pickcode: String
+    let position: Double
+    let duration: Double
+    let updatedAt: Double
+}
+
 struct ServiceCard: Decodable, Identifiable, Hashable, Sendable {
     let id: String
     let name: String
@@ -743,6 +777,16 @@ private struct PanRenameBatchBody: Encodable {
 private struct PanTransferBody: Encodable {
     let ids: [String]
     let cid: String
+}
+
+private struct PanProgressResponse: Decodable {
+    let items: [PanPlaybackProgress]
+}
+
+private struct PanProgressBody: Encodable {
+    let pickcode: String
+    let position: Double
+    let duration: Double
 }
 
 private extension HTTPURLResponse {

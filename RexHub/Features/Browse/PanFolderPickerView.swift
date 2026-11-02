@@ -17,7 +17,7 @@ enum PanTransferMode: String, Identifiable {
     var systemImage: String {
         switch self {
         case .copy: return "doc.on.doc"
-        case .move: return "folder"
+        case .move: return "arrow.forward.folder"
         }
     }
 
@@ -40,6 +40,11 @@ struct PanFolderPickerView: View {
     @State private var folders: [PanItem] = []
     @State private var isLoading = false
     @State private var errorText: String?
+    @State private var isCreatingFolder = false
+    @State private var newFolderName = ""
+    @State private var createError: String?
+
+    private let listSettings = FileListSettingsStore.shared
 
     private struct Route: Hashable {
         let cid: String
@@ -56,6 +61,13 @@ struct PanFolderPickerView: View {
                 leading: path.isEmpty
                     ? .text("取消", action: { dismiss() })
                     : .back(action: pop),
+                actions: [
+                    RexNavAction(
+                        systemImage: "folder.badge.plus",
+                        label: "新建文件夹",
+                        action: { isCreatingFolder = true }
+                    )
+                ],
                 isScrolled: false
             )
 
@@ -79,6 +91,13 @@ struct PanFolderPickerView: View {
         }
         .background(RexColor.background.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
+        .alert("新建文件夹", isPresented: $isCreatingFolder) {
+            TextField("文件夹名称", text: $newFolderName)
+            Button("取消", role: .cancel) { newFolderName = "" }
+            Button("创建") { Task { await createFolder() } }
+        } message: {
+            Text("在「\(currentTitle)」中创建")
+        }
         .task(id: currentCid) {
             await load(currentCid)
         }
@@ -122,7 +141,7 @@ struct PanFolderPickerView: View {
                         Rectangle()
                             .fill(RexColor.divider)
                             .frame(height: 1 / displayScale)
-                            .padding(.leading, RexSpacing.lg + 32 + RexSpacing.md)
+                            .padding(.leading, RexSpacing.lg + CGFloat(listSettings.iconSize) + RexSpacing.md)
                     }
 
                     folderRow(item)
@@ -140,14 +159,12 @@ struct PanFolderPickerView: View {
             path.append(Route(cid: item.id, name: item.name))
         } label: {
             HStack(spacing: RexSpacing.md) {
-                Image(systemName: "folder.fill")
-                    .font(.system(size: 16))
-                    .foregroundStyle(RexColor.brandBlue)
-                    .frame(width: 32, height: 32)
-                    .background(
-                        RexColor.lightBlue,
-                        in: RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    )
+                // 与文件列表共用同一套文件夹图标，主题、尺寸保持一致。
+                FileIconView(
+                    kind: .folder,
+                    theme: listSettings.folderTheme,
+                    size: CGFloat(listSettings.iconSize)
+                )
 
                 Text(item.name)
                     .font(.system(size: 15))
@@ -190,6 +207,39 @@ struct PanFolderPickerView: View {
             .padding(.vertical, RexSpacing.md)
         }
         .background(RexColor.surface)
+        .alert("新建文件夹失败", isPresented: createErrorBinding) {
+            Button("好", role: .cancel) {}
+        } message: {
+            Text(createError ?? "")
+        }
+    }
+
+    private var createErrorBinding: Binding<Bool> {
+        Binding(
+            get: { createError != nil },
+            set: { if !$0 { createError = nil } }
+        )
+    }
+
+    /// 在当前目录新建文件夹，成功后直接进入，方便立即确认复制 / 移动目标。
+    @MainActor
+    private func createFolder() async {
+        let name = newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
+        newFolderName = ""
+        guard !name.isEmpty, let client = apiClient else { return }
+
+        do {
+            try await client.panCreateFolder(cid: currentCid, name: name)
+            await load(currentCid)
+            if let created = folders.first(where: { $0.isDir && $0.name == name }) {
+                path.append(Route(cid: created.id, name: created.name))
+            }
+        } catch let error as APIError {
+            guard error != .cancelled else { return }
+            createError = error.errorDescription ?? "新建文件夹失败，请重试"
+        } catch {
+            createError = "新建文件夹失败，请重试"
+        }
     }
 
     @MainActor

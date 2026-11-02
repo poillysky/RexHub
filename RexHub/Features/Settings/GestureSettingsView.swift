@@ -78,7 +78,7 @@ struct GestureSettingsView: View {
                 )
             }
 
-            Text("手势只在 AVPlayer 内核生效，KSPlayer 使用内核自带手势。双击左右区域默认与中间一致，改成快退/快进即可获得分区跳转；拖动查找、亮度与音量按手势起点所在位置判断。")
+            Text("手势统一由播放页控制层处理，AVPlayer 与 KSPlayer 内核都生效。双击左右区域默认与中间一致，改成快退/快进即可获得分区跳转；拖动查找、亮度与音量按手势起点所在位置判断。")
                 .font(.system(size: 12))
                 .foregroundStyle(RexColor.secondaryText)
                 .frame(maxWidth: .infinity, alignment: .leading)

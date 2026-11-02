@@ -177,6 +177,7 @@ final class PlayerSettingsStore {
         static let startMuted = "rex.player.startMuted"
         static let bufferPolicy = "rex.player.bufferPolicy"
         static let keepScreenAwake = "rex.player.keepScreenAwake"
+        static let autoLandscape = "rex.player.autoLandscape"
         static let preferredResolution = "rex.player.preferredResolution"
         static let waitMinimizeStalling = "rex.player.waitMinimizeStalling"
         static let keepPitch = "rex.player.keepPitch"
@@ -193,6 +194,8 @@ final class PlayerSettingsStore {
         static let skipOutro = "rex.player.skipOutro"
         static let outroSeconds = "rex.player.outroSeconds"
         static let positions = "rex.player.positions"
+        static let positionDurations = "rex.player.positionDurations"
+        static let positionUpdated = "rex.player.positionUpdated"
         static let subtitlesEnabled = "rex.player.subtitlesEnabled"
         static let subtitleSources = "rex.player.subtitleSources"
         static let subtitleLanguage = "rex.player.subtitleLanguage"
@@ -235,6 +238,11 @@ final class PlayerSettingsStore {
     /// 播放期间禁止系统自动锁屏。
     var keepScreenAwake: Bool {
         didSet { defaults.set(keepScreenAwake, forKey: Key.keepScreenAwake) }
+    }
+
+    /// 进入视频播放页后自动转为横屏，退出时恢复竖屏。
+    var autoLandscape: Bool {
+        didSet { defaults.set(autoLandscape, forKey: Key.autoLandscape) }
     }
 
     /// 起播清晰度上限。
@@ -338,9 +346,17 @@ final class PlayerSettingsStore {
     }
 
     private let defaults = UserDefaults.standard
+    /// 进度缓存在这里而不是每次读 `UserDefaults`，文件列表才能观察到变化并刷新进度条。
+    private var positionCache: [String: Double]
+    private var durationCache: [String: Double]
+    /// 每条进度最后写入的时间（Unix 秒），用于和服务端记录比对，避免旧数据覆盖新进度。
+    private var updatedCache: [String: Double]
 
     private init() {
         let defaults = UserDefaults.standard
+        positionCache = defaults.dictionary(forKey: Key.positions) as? [String: Double] ?? [:]
+        durationCache = defaults.dictionary(forKey: Key.positionDurations) as? [String: Double] ?? [:]
+        updatedCache = defaults.dictionary(forKey: Key.positionUpdated) as? [String: Double] ?? [:]
 
         kernel = PlayerKernel(
             rawValue: defaults.string(forKey: Key.kernel) ?? ""
@@ -359,6 +375,7 @@ final class PlayerSettingsStore {
             rawValue: defaults.string(forKey: Key.bufferPolicy) ?? ""
         ) ?? .automatic
         keepScreenAwake = Self.bool(defaults, Key.keepScreenAwake, default: true)
+        autoLandscape = Self.bool(defaults, Key.autoLandscape, default: false)
         preferredResolution = PlayerResolution(
             rawValue: defaults.string(forKey: Key.preferredResolution) ?? ""
         ) ?? .automatic
@@ -424,22 +441,61 @@ final class PlayerSettingsStore {
     /// 已记录的进度，单位秒；无记录返回 0。
     func savedPosition(for key: String) -> Double {
         guard !key.isEmpty else { return 0 }
-        return positions()[key] ?? 0
+        return positionCache[key] ?? 0
     }
 
-    /// 进度小于 5 秒视为从头播放，直接清除记录。
-    func savePosition(_ seconds: Double, for key: String) {
+    /// 上次播放时记录的时长，用于进入播放页时先把进度条摆到位，避免从 0 跳一次。
+    func savedDuration(for key: String) -> Double {
+        guard !key.isEmpty else { return 0 }
+        return durationCache[key] ?? 0
+    }
+
+    /// 观看进度：已完成比例与剩余秒数，缺少时长记录时返回 `nil`（老数据只能续播、不显示进度）。
+    func playbackProgress(for key: String) -> (ratio: Double, remaining: Double)? {
+        guard !key.isEmpty,
+              let position = positionCache[key],
+              let duration = durationCache[key],
+              duration > 0, position >= 5 else { return nil }
+        return (min(max(position / duration, 0), 1), max(duration - position, 0))
+    }
+
+    /// 进度小于 5 秒、或已播到片尾 3 秒内，视为看完，直接清除记录。
+    func savePosition(_ seconds: Double, duration: Double = 0, for key: String) {
         guard !key.isEmpty, seconds.isFinite else { return }
-        var map = positions()
-        if seconds < 5 {
-            map.removeValue(forKey: key)
+        let finished = duration.isFinite && duration > 0 && seconds >= duration - 3
+        if seconds < 5 || finished {
+            positionCache.removeValue(forKey: key)
+            durationCache.removeValue(forKey: key)
+            updatedCache.removeValue(forKey: key)
         } else {
-            map[key] = seconds
+            positionCache[key] = seconds
+            updatedCache[key] = Date().timeIntervalSince1970
+            if duration.isFinite, duration > 0 {
+                durationCache[key] = duration
+            }
         }
-        defaults.set(map, forKey: Key.positions)
+        persistProgress()
     }
 
-    private func positions() -> [String: Double] {
-        defaults.dictionary(forKey: Key.positions) as? [String: Double] ?? [:]
+    /// 合并服务端进度：只覆盖本地更旧的记录，本地更新的进度等下次播放时再回写。
+    func mergeRemoteProgress(_ entries: [PanPlaybackProgress]) {
+        var changed = false
+        for entry in entries where !entry.pickcode.isEmpty {
+            guard entry.position.isFinite, entry.duration.isFinite,
+                  entry.position >= 5, entry.duration > 0 else { continue }
+            if (updatedCache[entry.pickcode] ?? 0) >= entry.updatedAt { continue }
+            positionCache[entry.pickcode] = entry.position
+            durationCache[entry.pickcode] = entry.duration
+            updatedCache[entry.pickcode] = entry.updatedAt
+            changed = true
+        }
+        guard changed else { return }
+        persistProgress()
+    }
+
+    private func persistProgress() {
+        defaults.set(positionCache, forKey: Key.positions)
+        defaults.set(durationCache, forKey: Key.positionDurations)
+        defaults.set(updatedCache, forKey: Key.positionUpdated)
     }
 }
