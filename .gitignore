@@ -1,25 +1,81 @@
 # macOS
 .DS_Store
 
-# Xcode
+# Xcode / SPM
 build/
 DerivedData/
 *.xcuserstate
 xcuserdata/
 *.xcworkspace/xcuserdata/
-
-# Swift Package Manager
 .swiftpm/
 .build/
-
-# 第三方参考资料（本地参考，不入库）
-refs/
 
 # 本地 AI 工具配置
 .trae/
 
-# Python 服务端
-server/.venv/
-server/data/
-__pycache__/
-*.pyc
+# ── Node / PWA 前端（apps/web） ──
+node_modules/
+apps/*/node_modules/
+.next/
+apps/web/out/
+apps/web/maps/
+*.tsbuildinfo
+apps/web/next-env.d.ts
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# ── Python 后端（apps/api） ──
+apps/api/.venv/
+**/__pycache__/
+*.py[cod]
+apps/api/_*.py
+apps/api/_*.json
+apps/api/_*.html
+apps/api/_*.txt
+apps/api/_*.lod
+apps/api/_tmp_*.py
+apps/api/_tmp_*/
+apps/api/_local_refs/
+
+# ── 运行时数据 ──
+# data/ 保留目录与说明；各服务的 JSON / sqlite / 缓存不入库
+data/*.sqlite
+data/*.sqlite-*
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/*.json
+data/library/
+data/maker-fs/
+data/mirrors/
+data/prefix/
+data/cache/
+data/debug/
+data/meta/
+data/presets/
+data/scrape_maps/
+data/cover-cache/
+data/_debug/
+data/prefix_catalog/
+data/scrap_facets_snap/
+data/rexhub/
+!/data/.gitkeep
+!/data/README.md
+
+# media/（STRM / 刮削库，体积大）
+media/**
+!/media/.gitkeep
+!/media/README.md
+
+# 本机覆盖配置与导出
+config/app.local.json
+config/_export/
+
+# 环境变量
+.env
+.env*.local
+!.env.example
+
+# 参考资料（本地参考，不入库）
+reference/
