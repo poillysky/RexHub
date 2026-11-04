@@ -5,7 +5,6 @@ functionName/参数、函数内发起的上游请求（URL、方法、参数）�
 只做静态分析，不执行代码；REXENC / FWENC 密文无法解析。
 """
 
-from __future__ import annotations
 
 from typing import Any, Iterator
 

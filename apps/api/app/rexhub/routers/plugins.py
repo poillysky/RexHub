@@ -1,6 +1,5 @@
 """插件分发接口：供 Rex / ForwardWidget 订阅索引与拉取模块。"""
 
-from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response

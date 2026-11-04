@@ -7,7 +7,6 @@
 播放流按 Range 原样转发，App 只连 RexHub，不直接依赖上游。
 """
 
-from __future__ import annotations
 
 import asyncio
 import json
@@ -18,7 +17,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -108,9 +107,6 @@ class DramaPage(BaseModel):
 class SiteListResponse(BaseModel):
     items: list[SiteCard]
 
-
-def _require_token(request: Request, token_query: str | None = None) -> None:
-    require_session(request, token_query)
 
 
 def _cached(key: str, loader) -> dict:
@@ -359,7 +355,7 @@ def _page(site: str, site_name: str, payload: dict) -> dict:
 
 @router.get("/sites", response_model=SiteListResponse)
 async def list_sites(request: Request) -> SiteListResponse:
-    _require_token(request)
+    require_session(request)
     if await asyncio.to_thread(_is_single_site):
         return SiteListResponse(items=[SiteCard(**SINGLE_SITE)])
     payload = await _fetch_json("/v1/sites")
@@ -373,7 +369,7 @@ async def search_all(
     page: int = Query(default=1, ge=1),
 ) -> DramaPage:
     """跨站点搜索：只查已启用的站点，单个站点失败不影响整体结果。"""
-    _require_token(request)
+    require_session(request)
     query = urllib.parse.urlencode({"q": q, "page": page})
     if await asyncio.to_thread(_is_single_site):
         payload = await _fetch_json(f"/v1/search?{query}")
@@ -405,7 +401,7 @@ async def catalog(
     site: str,
     page: int = Query(default=1, ge=1),
 ) -> DramaPage:
-    _require_token(request)
+    require_session(request)
     params = {"page": page, **{k: v for k, v in request.query_params.items() if k != "page"}}
     query = urllib.parse.urlencode(params)
     provider = await asyncio.to_thread(_drama_provider)
@@ -436,7 +432,7 @@ async def search_site(
     q: str = Query(min_length=1, max_length=100),
     page: int = Query(default=1, ge=1),
 ) -> DramaPage:
-    _require_token(request)
+    require_session(request)
     provider = await asyncio.to_thread(_drama_provider)
     if provider is not None and site in (SINGLE_SITE["id"], str(provider[0].get("id") or "")):
         function = _provider_function(provider[2], keyword=q)
@@ -463,7 +459,7 @@ async def series(
     series_id: str,
     request: Request,
 ) -> SeriesDetail:
-    _require_token(request)
+    require_session(request)
     provider = await asyncio.to_thread(_drama_provider)
     provider_match = provider is not None and site in (
         SINGLE_SITE["id"],
@@ -523,7 +519,7 @@ async def stream(
     token: str | None = Query(default=None),
 ) -> StreamingResponse:
     """播放流：把 Range/Content-Range 原样透传，支持拖动与边下边播。"""
-    _require_token(request, token)
+    require_session(request, token)
     provider = await asyncio.to_thread(_drama_provider)
     provider_match = provider is not None and site in (
         SINGLE_SITE["id"],

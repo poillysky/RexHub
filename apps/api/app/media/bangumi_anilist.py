@@ -1,6 +1,5 @@
 """Bangumi / AniList 公开 API（动漫向；无需 Key）。"""
 
-from __future__ import annotations
 
 import logging
 import re

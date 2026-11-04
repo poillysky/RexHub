@@ -3,7 +3,6 @@
 流程：seeds → 探测 → 磁盘缓存 → 全局优先使用最新落地基址。
 """
 
-from __future__ import annotations
 
 import json
 import logging
@@ -227,29 +226,6 @@ def _persist() -> None:
         log.warning("site-mirrors write: %s", e)
 
 
-def snapshot_live() -> dict[str, dict[str, Any]]:
-    """全部未过期镜像（新 dict，行也是新 dict；调用方可随意改）。
-
-    供 `sources_settings` 的 displayUrl 适配层使用：那份代码过去自己读盘 +
-    自己写盘，与这里形成两个写者，已统一到本模块。
-    """
-    if not _memory and _store_path().is_file():
-        _load_disk()
-    now = int(time.time() * 1000)
-    out: dict[str, dict[str, Any]] = {}
-    for sid, ent in list(_memory.items()):
-        exp = int(ent.get("expiresAt") or 0)
-        if exp <= now:
-            continue
-        out[str(sid)] = {
-            "base": str(ent.get("baseUrl") or ""),
-            "at": exp - TTL_MS,
-            "ttlMs": TTL_MS,
-            "discoveredFrom": ent.get("discoveredFrom"),
-        }
-    return out
-
-
 def _looks_blocked(html: str) -> bool:
     from app.core.outbound_http import looks_blocked_html
 
@@ -358,10 +334,6 @@ def _is_missav_dead_host(root: str) -> bool:
     return _host(root) in _MISSAV_DEAD_HOSTS
 
 
-def is_missav_dead_host(root: str) -> bool:
-    return _is_missav_dead_host(root)
-
-
 def missav_content_count(html: str) -> int:
     if not html or len(html) < 2000:
         return 0
@@ -405,10 +377,6 @@ def _is_iqqtv_redirect_seed(root: str) -> bool:
     return _host(root) in {h.replace("www.", "") for h in _IQQTV_REDIRECT_HOSTS} or _host(
         root
     ) in _IQQTV_REDIRECT_HOSTS
-
-
-def is_iqqtv_redirect_seed(root: str) -> bool:
-    return _is_iqqtv_redirect_seed(root)
 
 
 def _is_iqqtv_family(host: str) -> bool:
@@ -551,16 +519,6 @@ def remember(source_id: str, base_url: str, *, discovered_from: str | None = Non
     return base
 
 
-def remember_from_final_url(source_id: str, final_url: str) -> str | None:
-    return remember(source_id, final_url, discovered_from=final_url)
-
-
-def invalidate(source_id: str) -> None:
-    sid = str(source_id or "").strip().lower()
-    _memory.pop(sid, None)
-    _persist()
-
-
 def get_cached(source_id: str) -> str | None:
     sid = str(source_id or "").strip().lower()
     if not _memory and _store_path().is_file():
@@ -597,15 +555,6 @@ def get_cached(source_id: str) -> str | None:
     if sid == "iqqtv" and _is_iqqtv_redirect_seed(base):
         return None
     return base or None
-
-
-def list_live() -> dict[str, str]:
-    out: dict[str, str] = {}
-    for sid in ("javbus", "iqqtv", "missav", "7mmtv", "madou"):
-        u = get_cached(sid)
-        if u:
-            out[sid] = u
-    return out
 
 
 def _probe_javbus(seed: str) -> str | None:
@@ -873,62 +822,6 @@ def resolve(
         raise RuntimeError("missav mirror unavailable")
 
     raise ValueError(f"unknown source: {sid}")
-
-
-def ordered_bases(source_id: str, configured: list[str] | tuple[str, ...]) -> list[str]:
-    """拉页候选：设置里的 activeBase（最快站）优先，再跟配置种子。"""
-    sid = str(source_id or "").strip().lower()
-    live = get_cached(sid)
-    if not live:
-        try:
-            import app.makers.settings as makers_settings
-
-            cfg = makers_settings.resolve_makers_catalog()
-            if sid == "javbus":
-                live = _origin(str(cfg["javbus"].get("activeBase") or ""))
-            elif sid == "iqqtv":
-                raw = str(cfg["iqqtv"].get("activeBase") or "")
-                live = _origin(re.sub(r"/cn/?$", "", raw, flags=re.I))
-            elif sid == "missav":
-                raw = str(cfg["missav"].get("activeBase") or "")
-                live = _origin(re.sub(r"/cn/?$", "", raw, flags=re.I))
-            elif sid == "7mmtv":
-                live = _origin(str(cfg["7mmtv"].get("activeBase") or ""))
-            elif sid == "madou":
-                live = _origin(str(cfg["madou"].get("activeBase") or ""))
-            if live:
-                remember(sid, live, discovered_from=live)
-        except Exception:
-            live = None
-    if not live:
-        try:
-            live = resolve(sid, seeds=configured, force=False)
-        except Exception:
-            live = None
-    out: list[str] = []
-    if live:
-        out.append(live)
-    for u in configured:
-        o = _origin(u)
-        if o and o not in out:
-            out.append(o)
-    return out or [_origin(u) for u in configured if _origin(u)]
-
-
-def active_public(source_id: str) -> dict[str, Any]:
-    sid = str(source_id or "").strip().lower()
-    ent = _memory.get(sid) if get_cached(sid) else None
-    base = get_cached(sid)
-    if not base:
-        return {"activeBase": "", "cached": False}
-    display = f"{base}/cn" if sid in ("iqqtv", "missav") else base
-    return {
-        "activeBase": display,
-        "root": base,
-        "cached": True,
-        "updatedAt": (ent or {}).get("updatedAt"),
-        "discoveredFrom": (ent or {}).get("discoveredFrom"),
-    }
 
 
 _load_disk()

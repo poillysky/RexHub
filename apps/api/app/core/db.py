@@ -3,7 +3,6 @@
 资源库（色花 / Bitmagnet / 向量库）仍是外部 Postgres，见 `pg.py` / `bitmagnet_pg.py`。
 """
 
-from __future__ import annotations
 
 import logging
 import os
@@ -64,32 +63,12 @@ def data_dir() -> Path:
     return _ensure_dir(DATA_DIR)
 
 
-def media_dir() -> Path:
-    """片库类目录根（STRM 等），与 data/ 运行时缓存分开。"""
-    return _ensure_dir(MEDIA_DIR)
-
-
 def mirrors_dir() -> Path:
     return _ensure_dir(data_dir() / "mirrors")
 
 
 def prefix_runtime_dir() -> Path:
     return _ensure_dir(data_dir() / "prefix")
-
-
-def prefix_catalog_dir() -> Path:
-    p = _ensure_dir(prefix_runtime_dir() / "catalog")
-    legacy = data_dir() / "prefix_catalog"
-    if legacy.is_dir() and not (p / "catalog.json").is_file():
-        # one-shot: 旧扁平目录 → data/prefix/catalog/
-        try:
-            for child in list(legacy.iterdir()):
-                dest = p / child.name
-                if not dest.exists():
-                    child.replace(dest)
-        except OSError:
-            pass
-    return p
 
 
 def prefix_code_ranges_cache() -> Path:
@@ -101,18 +80,6 @@ def prefix_code_ranges_cache() -> Path:
         except OSError:
             return legacy
     return new
-
-
-def cover_cache_dir() -> Path:
-    p = data_dir() / "cache" / "cover"
-    legacy = data_dir() / "cover-cache"
-    if not p.exists() and legacy.is_dir():
-        try:
-            p.parent.mkdir(parents=True, exist_ok=True)
-            legacy.replace(p)
-        except OSError:
-            pass
-    return _ensure_dir(p)
 
 
 def debug_dir() -> Path:

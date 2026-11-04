@@ -1,6 +1,5 @@
 """Search constants aligned with sehua-search config/constant.ts."""
 
-from __future__ import annotations
 
 import re
 

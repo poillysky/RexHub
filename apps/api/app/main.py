@@ -4,7 +4,6 @@
 具体端点实现请到对应域模块，例如 DB 设置端点在 ``app.core.db_settings_routes``。
 """
 
-from __future__ import annotations
 
 import logging
 import os
@@ -34,11 +33,9 @@ from app.translate.routes import router as translate_router
 from app.media.routes import router as media_router
 
 # DB 连接设置端点：resource-db / bitmagnet-db 由同一个参数化工厂生成。
-# Envelope / *DbConfig 在此重导出，保持 `app.main.X` 这一历史命名空间可用。
 from app.core.db_settings_routes import (
-    BitmagnetDbConfig as BitmagnetDbConfig,
-    Envelope as Envelope,
-    ResourceDbConfig as ResourceDbConfig,
+    BitmagnetDbConfig,
+    ResourceDbConfig,
     build_db_settings_router,
 )
 

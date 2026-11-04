@@ -1,6 +1,5 @@
 """刮削后元数据优化（色花堂中文标题 / 演员·标签映射 / 简介换行）。"""
 
-from __future__ import annotations
 
 import json
 import re
@@ -9,7 +8,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from app.core.db import ROOT
 from app.core.maps_paths import load_str_map
 
 MAPPING_LANGS = frozenset({"zh-CN", "zh-TW", "ja", "en"})
@@ -78,24 +76,6 @@ def code_prefix(code: str) -> str:
     m = re.match(r"^\s*([A-Za-z]+)", str(code or ""))
     return m.group(1).upper() if m else ""
 
-
-def tag_is_noise(name: str, *, prefix: str = "") -> bool:
-    """通用噪声标签：促销/活动词、番号前缀（源站常误当 genre）。
-
-    这是「批量也不会踩」的根本防线——无需逐条往映射表里补前缀。
-    """
-    s = str(name or "").strip()
-    if not s:
-        return True
-    if _TAG_PROMO_RE.search(s) or _TAG_META_RE.search(s):
-        return True
-    p = str(prefix or "").strip().upper()
-    if p and p not in _TAG_PREFIX_KEEP:
-        if re.fullmatch(
-            rf"{re.escape(p)}[0-9]*(?:\s*-\s*[0-9]+)?", s, re.IGNORECASE
-        ):
-            return True
-    return False
 
 DEFAULT_METADATA_OPTIMIZE: dict[str, Any] = {
     "useForumZhTitle": False,
@@ -281,38 +261,6 @@ def clear_map_cache() -> None:
     _CACHED_MAPPING_LANG = None
 
 
-def _actor_canon_alias_index(table: dict[str, Any]) -> dict[str, set[str]]:
-    """name/zh 折叠形 → 表内键集合，供标签排除女优别名时 O(1) 扩表。"""
-    tid = id(table)
-    hit = _ACTOR_CANON_ALIASES.get(tid)
-    if hit is not None and hit[0] is table:
-        return hit[1]
-    idx: dict[str, set[str]] = {}
-    for k, raw in table.items():
-        name = ""
-        if isinstance(raw, dict):
-            name = str(raw.get("name") or raw.get("zh") or "").strip()
-        elif isinstance(raw, str):
-            name = raw.strip()
-        if not name:
-            continue
-        key_s = str(k)
-        forms_name = _name_ban_forms(name)
-        # 原写法在 `for form in ...` 循环体内反复调 `_name_ban_forms(key_s/name)`
-        # 并对每个 form 重复做同一次并集 —— 结果恒等于 {key_s} ∪ forms_key ∪ forms_name。
-        # 提到循环外：等价、少 O(len(forms)) 倍重复（第九轮）。
-        extra = _name_ban_forms(key_s) | forms_name
-        for form in forms_name:
-            bucket = idx.get(form)
-            if bucket is None:
-                bucket = set()
-                idx[form] = bucket
-            bucket.add(key_s)
-            bucket |= extra
-    _ACTOR_CANON_ALIASES[tid] = (table, idx)
-    return idx
-
-
 def _actor_mapping_enabled() -> bool:
     global _SETTING_MAP_ENABLED
     if _SETTING_MAP_ENABLED is not None:
@@ -343,18 +291,6 @@ def _actor_maps(lang: str) -> dict[str, Any]:
 
     root = scrape_maps_seed_dir()
     for name in (f"actors.{stem}.json", "actors.json"):
-        m = _load_json_map(str(root / name))
-        if m:
-            return m
-    return {}
-
-
-def _tag_maps(lang: str) -> dict[str, Any]:
-    stem = _lang_file_stem(lang)
-    from app.core.maps_paths import scrape_maps_seed_dir
-
-    root = scrape_maps_seed_dir()
-    for name in (f"tags.{stem}.json", "tags.json"):
         m = _load_json_map(str(root / name))
         if m:
             return m
@@ -414,32 +350,6 @@ def _fold_variant(s: str) -> str:
     if not _TAG_VARIANT_TRANS:
         return s
     return s.translate(_TAG_VARIANT_TRANS)
-
-
-@lru_cache(maxsize=8192)
-def _name_ban_forms(name: str) -> frozenset[str]:
-    """女优排除集：原串 + 繁简折叠 + 片假名折叠，避免标签侧折叠后漏删。
-
-    案例 MOT-276：源标签「眞実かなえ」经 variant-fold 成「眞实かなえ」后，
-    与 actors 表键「眞実かなえ」字符串不等 → 旧逻辑漏删。
-
-    ⚠️ 返回 **frozenset** 且**记忆化**：本函数在 `_clean_tags` 的标签循环里
-    被每个标签调 4 次（`s_raw` / 去括号基名 / 映射后名 / 去括号映射名），
-    第九轮实测单番号 46783 次调用 → 每次现算 4 次折叠。纯函数（只依赖入参），
-    缓存后语义不变；返回不可变类型也避免调用方原地改到缓存值。
-    """
-    raw = str(name or "").strip()
-    if not raw:
-        return frozenset()
-    forms = {raw, _fold_variant(raw), _kana_fold(raw), _kana_fold(_fold_variant(raw))}
-    return frozenset(f.casefold() for f in forms if f)
-
-
-def _in_actor_ban(name: str, ban: set[str]) -> bool:
-    if not ban:
-        return False
-    # `isdisjoint` 不构造交集集合；`_name_ban_forms` 已记忆化，同串零重算。
-    return not _name_ban_forms(name).isdisjoint(ban)
 
 
 _VARIANT_INDEX: dict[int, tuple[dict[str, Any], dict[str, Any]]] = {}
@@ -678,161 +588,6 @@ def polish_actress_names(
     return out
 
 
-def _normalize_tag_separators(s: str) -> str:
-    """统一标签分隔符：`&`/`＆`/`･`/`·`/`/`/`、` → `・`，便于命中表内 `淫乱・ハード系` 类键。"""
-    out = str(s or "")
-    for ch in ("&", "＆", "･", "·", "/", "／", "、", ","):
-        out = out.replace(ch, "・")
-    return out
-
-
-def _map_tag(raw: str, table: dict[str, Any]) -> str:
-    key = str(raw or "").strip()
-    if not key:
-        return ""
-    import unicodedata
-
-    key_n = unicodedata.normalize("NFKC", key)
-    key_sep = _normalize_tag_separators(key_n)
-    hit = table.get(key)
-    if hit is None and key_n != key:
-        hit = table.get(key_n)
-    if hit is None and key_sep not in (key, key_n):
-        hit = table.get(key_sep)
-    if hit is None:
-        low = _casefold_index(table)
-        hit = (
-            low.get(key.casefold())
-            or low.get(key_n.casefold())
-            or low.get(key_sep.casefold())
-        )
-    if hit is None:
-        # 繁/日 折叠兜底：映射表只写了繁体键时，简体/日文写法也能命中（解繁简分裂）
-        vidx = _variant_index(table)
-        hit = (
-            vidx.get(_fold_variant(key).casefold())
-            or vidx.get(_fold_variant(key_n).casefold())
-            or vidx.get(_fold_variant(key_sep).casefold())
-            or vidx.get(_kana_fold(_fold_variant(key)).casefold())
-            # 半角片假名要先 NFKC 再折平假名（EKDV-583：`縛ﾘ･緊縛` NFKC 后是
-            # `縛リ・緊縛`，只有折了片假名才命得中表里的 `縛り・緊縛`）
-            or vidx.get(_kana_fold(_fold_variant(key_n)).casefold())
-            or vidx.get(_kana_fold(_fold_variant(key_sep)).casefold())
-        )
-    if hit is None:
-        return key_n or key
-    if isinstance(hit, dict) and (
-        hit.get("drop") is True or hit.get("exclude") is True
-    ):
-        return ""
-    if isinstance(hit, str):
-        return hit.strip() or key_n
-    if isinstance(hit, dict):
-        return (
-            str(hit.get("name") or hit.get("zh") or hit.get("title") or "").strip()
-            or key_n
-        )
-    return key_n
-
-
 _PAREN_SUFFIX_RE = re.compile(r"[（(][^）)]{0,40}[）)]\s*$")
 
 
-def _strip_paren_suffix(s: str) -> str:
-    """去掉末尾的（别名）/(别名)：用于识别「女优名（旧名）」类 bleed。"""
-    return _PAREN_SUFFIX_RE.sub("", str(s or "")).strip()
-
-
-def polish_tag_names(
-    tags: list[str] | None,
-    *,
-    lang: str | None = None,
-    enable_mapping: bool | None = None,
-    exclude: list[str] | None = None,
-    prefix: str = "",
-) -> list[str]:
-    """标签优化：映射简中标准名 + 同义合并 + drop 噪声/女优名串入/番号前缀/促销词。"""
-    raw_list = [str(t).strip() for t in (tags or []) if str(t or "").strip()]
-    if not raw_list:
-        return []
-
-    ban = set()
-    for x in exclude or []:
-        ban |= _name_ban_forms(str(x))
-
-    use_map = True if enable_mapping is None else bool(enable_mapping)
-    if enable_mapping is None:
-        try:
-            import app.core.settings_store as settings_store
-
-            raw = settings_store.get_setting(settings_store.LIBRARY_KEY) or settings_store.get_setting("scrape") or {}
-            if isinstance(raw, dict):
-                opt = normalize_metadata_optimize(
-                    raw.get("metadataOptimize") or raw.get("metadata_optimize")
-                )
-                use_map = bool(opt["enableTagMapping"])
-        except Exception:
-            use_map = True
-
-    table = _tag_maps(lang or mapping_language_from_settings()) if use_map else {}
-    try:
-        a_table = _actor_maps(lang or mapping_language_from_settings())
-        extra_ban: set[str] = set()
-        for x in exclude or []:
-            hit = _lookup_actor_hit(str(x), a_table)
-            if isinstance(hit, dict) and hit.get("name"):
-                extra_ban |= _name_ban_forms(str(hit.get("name") or ""))
-                extra_ban |= _name_ban_forms(str(hit.get("zh") or ""))
-            elif isinstance(hit, str) and hit:
-                extra_ban |= _name_ban_forms(hit)
-            extra_ban |= _name_ban_forms(str(x))
-        # 映射表里指向同一人的键也禁（含折叠形）——用反向索引，避免每次 O(全表)
-        canons = {b for b in extra_ban if b}
-        if canons and a_table:
-            rev = _actor_canon_alias_index(a_table)
-            for c in canons:
-                extra_ban |= rev.get(c) or set()
-        ban |= {b for b in extra_ban if b}
-    except Exception:
-        pass
-    out: list[str] = []
-    seen: set[str] = set()
-    for raw in raw_list:
-        s_raw = str(raw).strip()
-        if _in_actor_ban(s_raw, ban):
-            continue
-        # 「女优名（别名）」串入标签（如「日高ゆりあ（青山ひより）」）→ 按女优名 drop
-        _base = _strip_paren_suffix(s_raw)
-        if _base and _base != s_raw and _in_actor_ban(_base, ban):
-            continue
-        # 过短噪声（如「高」）
-        if len(s_raw) <= 1:
-            continue
-        # 促销/活动词、番号前缀（源站常误当 genre）→ 通用丢弃
-        if tag_is_noise(s_raw, prefix=prefix):
-            continue
-        name = _map_tag(raw, table) if table else raw
-        name = str(name or "").strip()
-        if not name or _in_actor_ban(name, ban):
-            continue
-        _nbase = _strip_paren_suffix(name)
-        if _nbase and _nbase != name and _in_actor_ban(_nbase, ban):
-            continue
-        if len(name) <= 1:
-            continue
-        if tag_is_noise(name, prefix=prefix):
-            continue
-        key = name.casefold()
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(name)
-    return out
-
-
-def compact_outline(text: str) -> str:
-    s = str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
-    if not s:
-        return ""
-    s = _MULTI_NL_RE.sub("\n", s)
-    return s.strip()

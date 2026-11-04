@@ -1,6 +1,5 @@
 """Fast Postgres resource-data dump/restore → backups/*.zip (COPY binary, ZIP_STORED)."""
 
-from __future__ import annotations
 
 import json
 import logging

@@ -9,15 +9,13 @@
   qrcode 字段仍是旧域名 115.com，手机 App 扫码会被判为过期。
 """
 
-from __future__ import annotations
 
 from typing import Any
 from urllib.parse import urlencode
 
 import httpx
 
-from app.p115.client import UA, encode_form, human_error, normalize_cookie
-
+from app.p115.client import UA, human_error, normalize_cookie
 DEFAULT_APP = "alipaymini"
 
 # 支持手机扫码登录的客户端类型（对应 p115client 的 app 参数）

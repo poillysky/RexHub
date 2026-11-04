@@ -1,6 +1,5 @@
 """BrewStory / SillyTavern 风格对话预设：文件存储于 data/presets/openai/。"""
 
-from __future__ import annotations
 
 import json
 import re

@@ -1,6 +1,5 @@
 """jieba POS cut — aligned with sehua-search lib/jieba.ts (@node-rs/jieba)."""
 
-from __future__ import annotations
 
 REQUIRED_TAGS = frozenset({"n", "nr", "ns", "nt", "nz", "vn", "x"})
 

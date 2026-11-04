@@ -1,6 +1,5 @@
 """Browse / search / detail against Postgres resource DB."""
 
-from __future__ import annotations
 
 import json
 import time
@@ -500,23 +499,6 @@ WITH filtered AS (
 """
 
 
-def _bitmagnet_filename_count(
-    file_sql: str,
-    file_params: list[Any],
-    extra_where: str,
-) -> int:
-    """Bitmagnet????????? list ???????"""
-    sql = f"""
-SELECT COUNT(*)::int AS total
-FROM ed2k_resources r
-WHERE ({file_sql})
-{PUBLIC_RESOURCE_FILTER}
-{extra_where}
-"""
-    rows = pg.query(sql, file_params)
-    return int(rows[0]["total"]) if rows else 0
-
-
 def _bitmagnet_union_count(
     file_sql: str,
     title_sql: str,
@@ -549,32 +531,6 @@ SELECT COUNT(*)::int AS total FROM (
     )
     n = int(rows[0]["total"]) if rows else 0
     return min(n, _SEARCH_COUNT_CAP)
-
-
-def _bitmagnet_filename_list(
-    file_sql: str,
-    file_params: list[Any],
-    extra_where: str,
-    *,
-    sort_key: str,
-    fetch_limit: int,
-    offset: int,
-) -> list[dict[str, Any]]:
-    """Bitmagnet ??????? name/filename?LIMIT ?? enrich?"""
-    arm_order = _BM_ARM_ORDER.get(sort_key, _BM_ARM_ORDER["default"])
-    sql = f"""
-WITH filtered AS (
-  SELECT {FILTERED_CORE_COLS}
-  FROM ed2k_resources r
-  WHERE ({file_sql})
-  {PUBLIC_RESOURCE_FILTER}
-  {extra_where}
-  ORDER BY {arm_order}
-  LIMIT %s OFFSET %s
-)
-{_list_enrich_sql("filtered")}
-"""
-    return pg.query(sql, [*file_params, fetch_limit, offset])
 
 
 def _bitmagnet_union_list(

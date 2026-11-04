@@ -4,7 +4,6 @@
 避免全局一把锁互踩或抢槽假失败。
 """
 
-from __future__ import annotations
 
 import logging
 import math
@@ -582,17 +581,3 @@ def get_scheduler() -> OutboundScheduler:
         return _scheduler
 
 
-def reset_scheduler_for_tests() -> None:
-    """单测用：关掉共享 Client，重建调度器。"""
-    global _scheduler
-    with _scheduler_mu:
-        old = _scheduler
-        _scheduler = None
-    if old is not None:
-        with old._client_mu:
-            for c in list(old._clients.values()):
-                try:
-                    c.close()
-                except Exception:  # noqa: BLE001
-                    pass
-            old._clients.clear()

@@ -8,7 +8,6 @@ series；影视海报墙还需要背景图、年份、评分、演员与分集�
 代理地址：国区网络直连 image.tmdb.org 不可用，图片必须经服务端代理。
 """
 
-from __future__ import annotations
 
 import json
 import re

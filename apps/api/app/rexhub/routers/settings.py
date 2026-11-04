@@ -3,7 +3,6 @@
 配置统一由服务端保存，App 负责管理，避免每台设备各存一份。
 """
 
-from __future__ import annotations
 
 from fastapi import Request, APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
@@ -22,15 +21,12 @@ class IconLibrariesResponse(BaseModel):
     urls: list[str]
 
 
-def _require_token(request: Request) -> None:
-    require_session(request)
-
 
 @router.get("/icon-libraries", response_model=IconLibrariesResponse)
 async def get_icon_libraries(
     request: Request,
 ) -> IconLibrariesResponse:
-    _require_token(request)
+    require_session(request)
     return IconLibrariesResponse(urls=appearance_store.icon_libraries())
 
 
@@ -39,7 +35,7 @@ async def put_icon_libraries(
     payload: IconLibrariesPayload,
     request: Request,
 ) -> IconLibrariesResponse:
-    _require_token(request)
+    require_session(request)
     try:
         urls = appearance_store.save_icon_libraries(payload.urls)
     except ValueError as exc:

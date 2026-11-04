@@ -1,6 +1,5 @@
 """色花资源嵌入文本：板块 + 清洗标题 + 影片/资源名 + 女优 + 文件名。"""
 
-from __future__ import annotations
 
 import hashlib
 import re

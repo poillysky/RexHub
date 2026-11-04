@@ -1,6 +1,5 @@
 """关键词一键翻译（对齐色花：TMDB 标准片名优先，再机翻）。"""
 
-from __future__ import annotations
 
 import logging
 import os
@@ -486,89 +485,6 @@ async def translate_llm(text: str, *, target: str = "zh", kind: str = "plot") ->
     if not _translation_matches_target(content, target=target, source_text=text):
         raise _fail("大模型译文语种不符（仍含日文或非中文）")
     return content
-
-
-async def translate_to_zh(
-    text: str,
-    *,
-    kind: str = "plot",
-    prefer_llm: bool = True,
-) -> dict[str, str]:
-    """译中级联：优先大模型，失败再 Google/Simply/Lingva/MyMemory。
-
-    返回 ``{"text": 译文, "engine": "llm"|"google"|...}``；失败抛 HTTPException。
-    """
-    raw = _normalize_plot_text(text)
-    if len(raw) < 2:
-        raise _fail("译文过短", 400)
-
-    source = detect_source(raw)
-    if source == "zh" and not _has_kana(raw):
-        return {"text": raw, "engine": "none"}
-
-    errors: list[str] = []
-    src = source or "auto"
-
-    if prefer_llm:
-        try:
-            out = await translate_llm(raw, target="zh", kind=kind)
-            if out:
-                return {"text": out, "engine": "llm"}
-        except HTTPException as e:
-            errors.append(str(e.detail))
-            logger.warning("llm translate (%s) failed: %s", kind, e.detail)
-        except Exception as e:  # noqa: BLE001
-            errors.append(str(e))
-            logger.warning("llm translate (%s) failed: %s", kind, e)
-
-    for fn in (
-        translate_google,
-        translate_simply,
-        translate_lingva,
-        translate_mymemory,
-    ):
-        try:
-            translated = await fn(raw, src, target="zh")
-            if translated:
-                return {
-                    "text": translated,
-                    "engine": fn.__name__.replace("translate_", ""),
-                }
-        except HTTPException as e:
-            errors.append(str(e.detail))
-            logger.warning("%s failed: %s", fn.__name__, e.detail)
-        except Exception as e:  # noqa: BLE001
-            errors.append(str(e))
-            logger.warning("%s failed: %s", fn.__name__, e)
-
-    raise HTTPException(
-        status_code=502,
-        detail=errors[-1] if errors else "翻译失败，请稍后重试",
-    )
-
-
-def translate_to_zh_sync(
-    text: str,
-    *,
-    kind: str = "plot",
-    prefer_llm: bool = True,
-    timeout_sec: float = 90.0,
-) -> dict[str, str]:
-    """供刮削同步路径调用的译中封装（内部 asyncio.run）。"""
-    import asyncio
-    import concurrent.futures
-
-    async def _run() -> dict[str, str]:
-        return await translate_to_zh(text, kind=kind, prefer_llm=prefer_llm)
-
-    def _isolated() -> dict[str, str]:
-        return asyncio.run(_run())
-
-    # 统一丢独立线程并硬超时，避免 LLM 卡死番号槽（无论当前有无事件循环）
-    wait = max(8.0, float(timeout_sec or 90.0))
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        fut = pool.submit(_isolated)
-        return fut.result(timeout=wait)
 
 
 def _split_translate_chunks(text: str, *, max_len: int = 420) -> list[str]:

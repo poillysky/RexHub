@@ -3,18 +3,12 @@
 引擎见 `app.search.embed_ingest_base`；本模块只声明本库的差异。
 """
 
-from __future__ import annotations
 
 from typing import Any
 
 import app.core.settings_store as settings_store
 from app.search.bitmagnet_embed import row_embed_payload
-from app.search.embed_ingest_base import (
-    BATCH_DEFAULT,
-    FETCH_BATCH,
-    EmbedIngestJob,
-    EmbedSpec,
-)
+from app.search.embed_ingest_base import EmbedIngestJob, EmbedSpec
 
 TABLE = "bitmagnet_torrent_embed"
 

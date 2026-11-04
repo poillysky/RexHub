@@ -2,7 +2,6 @@
 
 
 
-from __future__ import annotations
 
 
 
@@ -19,6 +18,8 @@ from pydantic import BaseModel, Field
 
 
 import app.auth.store as auth_store
+from app.core.envelope import Envelope
+from app.rexhub.auth_guard import session_token
 
 
 
@@ -57,15 +58,6 @@ class AdminCreateUserBody(BaseModel):
 
 class AdminResetPasswordBody(BaseModel):
     new_password: str = Field(min_length=1, max_length=128)
-
-
-class Envelope(BaseModel):
-    data: Any = None
-    message: str = "ok"
-    status: int = 200
-
-
-
 
 
 def _cookie_secure() -> bool:
@@ -120,20 +112,8 @@ def _clear_session_cookie(response: Response) -> None:
 
 
 
-def _session_token(request: Request) -> str | None:
-    """会话 token：Cookie（Web）优先，其次 Authorization: Bearer（iOS）。"""
-    token = request.cookies.get(auth_store.COOKIE_NAME)
-    if token:
-        return token
-    auth = request.headers.get("authorization", "")
-    scheme, _, value = auth.partition(" ")
-    if scheme.lower() == "bearer" and value.strip():
-        return value.strip()
-    return None
-
-
 def get_optional_user(request: Request) -> dict[str, Any] | None:
-    return auth_store.user_from_session(_session_token(request))
+    return auth_store.user_from_session(session_token(request))
 
 
 
@@ -224,7 +204,7 @@ def login(body: AuthBody, response: Response) -> Envelope:
 
 def logout(request: Request, response: Response) -> Envelope:
 
-    auth_store.revoke_session(_session_token(request))
+    auth_store.revoke_session(session_token(request))
 
     _clear_session_cookie(response)
 

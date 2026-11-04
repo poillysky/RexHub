@@ -11,7 +11,6 @@
 反例说明差异：`"abcd2020"` → `year_prefix` 返回 `None`，`year_search` 返回 `"2020"`。
 """
 
-from __future__ import annotations
 
 import re
 

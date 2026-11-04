@@ -5,7 +5,6 @@
 ``_load_dsn`` / ``ResourceDbUnavailable``），调用方无需改动。
 """
 
-from __future__ import annotations
 
 from typing import Any, Iterator
 

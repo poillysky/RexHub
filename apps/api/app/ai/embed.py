@@ -1,6 +1,5 @@
 """向量编码：本地 fastembed 或 OpenAI 兼容 /embeddings。"""
 
-from __future__ import annotations
 
 import logging
 import os

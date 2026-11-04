@@ -1,6 +1,5 @@
 """磁力搜索（Bitmagnet 本地库）HTTP 路由。"""
 
-from __future__ import annotations
 
 import logging
 import re

@@ -3,7 +3,6 @@
 与 Web 管理台的「搜索服务」共用 `resource_search`，只返回结构化 JSON。
 """
 
-from __future__ import annotations
 
 from fastapi import Request, APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
@@ -118,9 +117,6 @@ class SearchResponse(BaseModel):
     groups: list[SearchGroup]
 
 
-def _require_token(request: Request) -> None:
-    require_session(request)
-
 
 def _searchable() -> list[dict]:
     """只保留已接入检索实现的服务，避免搜索时出现无关来源。"""
@@ -138,7 +134,7 @@ async def search_services(
 ) -> SearchServicesResponse:
     """参与搜索的服务列表，App 用来渲染来源筛选。"""
 
-    _require_token(request)
+    require_session(request)
     return SearchServicesResponse(
         items=[
             SearchServiceItem(
@@ -163,7 +159,7 @@ async def search_resources(
 ) -> SearchResponse:
     """按服务并发检索；`svc` 为逗号分隔的服务 id，留空表示搜索全部。"""
 
-    _require_token(request)
+    require_session(request)
 
     keyword = q.strip()[:MAX_KEYWORD]
     if not keyword:

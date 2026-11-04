@@ -7,10 +7,8 @@
 - 未配置 / 其他 ← 不参与
 """
 
-from __future__ import annotations
 
 import time
-from typing import Any
 
 import app.core.settings_store as settings_store
 
@@ -159,6 +157,3 @@ def forum_allow_specs_for_search(search_region: str | None) -> list[str]:
     return sorted(set(specs))
 
 
-def is_forum_driven_search(search_region: str | None) -> bool:
-    key = str(search_region or "").strip().lower()
-    return key in _SEARCH_TO_COARSE

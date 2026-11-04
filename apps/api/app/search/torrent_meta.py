@@ -6,7 +6,6 @@
 - 外网失败只短时记 miss，不长期误判为「没有」
 """
 
-from __future__ import annotations
 
 import hashlib
 import json

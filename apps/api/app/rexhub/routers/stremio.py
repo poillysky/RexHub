@@ -8,7 +8,6 @@
 Stremio 客户端要求 CORS，所有桥接响应都带 Access-Control-Allow-Origin。
 """
 
-from __future__ import annotations
 
 import asyncio
 from urllib.parse import parse_qs

@@ -1,14 +1,12 @@
 """115 / TMDB / forum / library display settings (Postgres meta)."""
 
-from __future__ import annotations
 
 import json
 import logging
 import os
 import re
 import time
-from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 from urllib.parse import urlparse
 
@@ -26,7 +24,7 @@ import app.p115.offline as p115_offline_svc
 import app.p115.qrlogin as p115_qrlogin_svc
 import app.p115.share as p115_share_svc
 import app.p115.upload as p115_upload
-from app.core.db import ROOT
+from app.core.envelope import Envelope
 from app.core.outbound_http import normalize_proxy_url
 
 log = logging.getLogger(__name__)
@@ -41,74 +39,10 @@ _LIBRARY_SKIP_DIRS = frozenset()
 
 
 
-def _normalize_library_rel(raw: str | None) -> str:
-    """容器内相对路径（POSIX）；绝对路径若落在项目 data/ 下则收成相对。"""
-    s = str(raw or "").strip().replace("\\", "/")
-    if not s:
-        return DEFAULT_LIBRARY_REL
-    try:
-        p = Path(s)
-        if p.is_absolute():
-            root = ROOT.resolve()
-            try:
-                rel = p.resolve().relative_to(root)
-                s = rel.as_posix()
-            except ValueError:
-                # 不在项目内：忽略，回默认
-                return DEFAULT_LIBRARY_REL
-        s = s.lstrip("/")
-        if s.startswith("./"):
-            s = s[2:]
-        if not s.startswith("data/"):
-            # 仅允许 data/ 下
-            if s == "data":
-                return DEFAULT_LIBRARY_REL
-            return DEFAULT_LIBRARY_REL
-        # 禁止逃逸
-        if ".." in Path(s).parts:
-            return DEFAULT_LIBRARY_REL
-        return s
-    except Exception:
-        return DEFAULT_LIBRARY_REL
-
-
-def _library_abs(rel: str) -> str:
-    return str((ROOT / rel).resolve())
-
-
-def _safe_data_rel(raw: str | None, *, default: str = "data") -> str:
-    """浏览用：限制在项目 data/ 下的相对路径。"""
-    s = str(raw or "").strip().replace("\\", "/").strip("/")
-    if not s:
-        return default
-    try:
-        p = Path(s)
-        if p.is_absolute():
-            try:
-                s = p.resolve().relative_to(ROOT.resolve()).as_posix()
-            except ValueError:
-                return default
-        if s.startswith("./"):
-            s = s[2:]
-        if s != "data" and not s.startswith("data/"):
-            return default
-        if ".." in Path(s).parts:
-            return default
-        return s
-    except Exception:
-        return default
-
-
 
 def _normalize_proxy_url(raw: str | None) -> str:
     """裸 host:port → http://；非法则空串。（唯一实现见 app.core.outbound_http）"""
     return normalize_proxy_url(raw)
-
-
-class Envelope(BaseModel):
-    data: Any = None
-    message: str = "ok"
-    status: int = 200
 
 
 _COVER_DOWNLOAD_STRATEGIES = frozenset({"priority", "size"})

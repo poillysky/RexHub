@@ -8,7 +8,6 @@
 子进程里，避免插件死循环拖住服务进程。
 """
 
-from __future__ import annotations
 
 import json
 import os

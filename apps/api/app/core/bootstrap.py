@@ -1,6 +1,5 @@
 """Startup: seed default settings from config → Postgres meta."""
 
-from __future__ import annotations
 
 import logging
 from typing import Any

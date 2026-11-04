@@ -12,7 +12,6 @@
   · `_write_chunk` 只有 bitmagnet 会跳过空主键
 """
 
-from __future__ import annotations
 
 import logging
 import threading

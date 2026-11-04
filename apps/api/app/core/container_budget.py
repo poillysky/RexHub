@@ -5,7 +5,6 @@ Linux 默认线程栈约 8MB，多进程还会再复制一份解释器和映射�
 无 cgroup（本机 Windows / 未限内存）保持原并发。
 """
 
-from __future__ import annotations
 
 import os
 from functools import lru_cache
@@ -71,18 +70,3 @@ def io_threads(*, floor: int = 2, host_max: int = 8) -> int:
     return max(int(floor), min(int(host_max), cpus))
 
 
-def cap_parallel(n: int, *, tight: int, small: int, hard: int) -> int:
-    """把请求的并发夹到容器能承受的上限。n=0 保持 0（表示「不开这路」）。"""
-    if int(n or 0) <= 0:
-        return 0
-    capped = max(1, min(int(hard), int(n)))
-    kind = memory_class()
-    if kind == "tight":
-        return min(capped, max(1, int(tight)))
-    if kind == "small":
-        return min(capped, max(1, int(small)))
-    if kind == "mid":
-        # 4G 容器：比 1G 松一档（番号并发大约到 8），不到宿主机满开。
-        mid = max(int(small), min(int(hard), max(int(small) * 2, 8)))
-        return min(capped, max(1, mid))
-    return capped

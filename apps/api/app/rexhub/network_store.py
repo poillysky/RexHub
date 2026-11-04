@@ -5,7 +5,6 @@ github.com / raw.githubusercontent.com 资源地址改写到镜像前缀。
 配置保存在 data/network.json（0600），保存后立即生效，无需重启。
 """
 
-from __future__ import annotations
 
 import json
 import os
@@ -99,36 +98,8 @@ def proxy_settings() -> dict[str, Any]:
     }
 
 
-def save_proxy(enabled: bool, url: str, targets: list[str]) -> dict[str, Any]:
-    target = (url or "").strip()[:300]
-    if target:
-        target = _http_url(target)
-    if enabled and not target:
-        raise ValueError("启用代理前请填写代理地址")
-    picked = {key: key in targets for key in PROXY_TARGETS}
-    data = _read()
-    data["proxy"] = {
-        "enabled": bool(enabled),
-        "url": target,
-        "targets": picked,
-        "updated_at": int(time.time()),
-    }
-    _write(data)
-    return proxy_settings()
-
-
 def github_mirror() -> str:
     return _read()["github_mirror"]
-
-
-def save_github_mirror(url: str) -> str:
-    target = (url or "").strip().rstrip("/")
-    if target not in GITHUB_MIRROR_URLS:
-        raise ValueError("请从预设列表中选择 GitHub 加速地址")
-    data = _read()
-    data["github_mirror"] = target
-    _write(data)
-    return target
 
 
 def rewrite_github(url: str) -> str:
@@ -177,22 +148,3 @@ def _probe(request: Request, opener=None) -> dict[str, Any]:
     }
 
 
-def test_proxy(url: str) -> dict[str, Any]:
-    """经指定代理访问一个轻量地址，验证代理是否可用。"""
-    target = (url or "").strip()[:300]
-    if not target:
-        raise ValueError("请先填写代理地址")
-    target = _http_url(target)
-    opener = build_opener(ProxyHandler({"http": target, "https": target}))
-    request = Request(TEST_PROXY_URL, headers={"User-Agent": TEST_USER_AGENT})
-    return _probe(request, opener)
-
-
-def test_github_mirror(url: str) -> dict[str, Any]:
-    """访问加速后的 GitHub 原始文件地址，验证镜像是否可用。"""
-    mirror = (url or "").strip().rstrip("/")
-    if mirror and mirror not in GITHUB_MIRROR_URLS:
-        raise ValueError("请从预设列表中选择 GitHub 加速地址")
-    target = f"{mirror}/{TEST_GITHUB_URL}" if mirror else TEST_GITHUB_URL
-    request = Request(target, headers={"User-Agent": TEST_USER_AGENT})
-    return _probe(request)

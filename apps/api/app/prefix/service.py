@@ -1,6 +1,5 @@
 """Maker-prefix code index — practical port of sehua-search prefixResources."""
 
-from __future__ import annotations
 
 import logging
 import re
@@ -34,31 +33,6 @@ PREFIX_CACHE_MAX = 256
 _scan_timeout_lock = threading.Lock()
 _scan_timeout_override: str | None = None
 _scan_row_cap_override: int | None = None
-
-
-def set_prefix_scan_timeout(timeout: str | None) -> str | None:
-    """临时覆盖 statement_timeout（如全量构建）；返回旧值便于还原。"""
-    global _scan_timeout_override
-    with _scan_timeout_lock:
-        prev = _scan_timeout_override
-        cleaned = (timeout or "").strip() or None
-        # 仅允许纯时长（毫秒/秒），防止拼 SQL 时注入
-        if cleaned is not None and not re.fullmatch(r"\d+(?:ms|s)?", cleaned):
-            raise ValueError(f"非法 statement_timeout: {cleaned!r}")
-        _scan_timeout_override = cleaned
-        return prev
-
-
-def set_prefix_scan_row_cap(cap: int | None) -> int | None:
-    """临时覆盖扫库行上限；返回旧值。"""
-    global _scan_row_cap_override
-    with _scan_timeout_lock:
-        prev = _scan_row_cap_override
-        if cap is None or int(cap) <= 0:
-            _scan_row_cap_override = None
-        else:
-            _scan_row_cap_override = max(500, min(int(PREFIX_SCAN_ROW_CAP), int(cap)))
-        return prev
 
 
 def _active_scan_timeout() -> str:
@@ -227,19 +201,6 @@ def _created_at_ms(v: Any) -> float:
     except Exception:
         return 0.0
     return 0.0
-
-
-def _sort_like_search(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """搜索类排序：sehua 主库优先，BT 只作补充。"""
-    indexed = list(enumerate(rows))
-
-    def key(pair: tuple[int, dict[str, Any]]) -> tuple[int, float, int]:
-        i, row = pair
-        non_bt_first = 1 if _is_bt_board_fid(row.get("board_fid")) else 0
-        return non_bt_first, -_created_at_ms(row.get("created_at")), i
-
-    indexed.sort(key=key)
-    return [row for _, row in indexed]
 
 
 def _sort_for_prefix_cover(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:

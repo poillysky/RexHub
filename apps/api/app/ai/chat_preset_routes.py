@@ -1,6 +1,5 @@
 """设置：BrewStory 风格对话预设（导入 / 启用 / 参数 / 提示词）。"""
 
-from __future__ import annotations
 
 import json
 from typing import Any
@@ -11,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from app.auth.routes import get_optional_user, require_user
 import app.ai.chat_preset_store as store
-from app.core.conn_settings_routes import Envelope
+from app.core.envelope import Envelope
 
 router = APIRouter(prefix="/settings/ai/chat-presets", tags=["settings"])
 

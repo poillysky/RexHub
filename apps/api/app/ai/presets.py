@@ -1,6 +1,5 @@
 """AI 设置页预设（对齐 BrewStory 模型连接 / 向量插件）。"""
 
-from __future__ import annotations
 
 CHAT_SOURCES: list[dict[str, str]] = [
     {"value": "custom", "label": "自定义（通用兼容接口）"},

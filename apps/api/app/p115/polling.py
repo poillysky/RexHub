@@ -9,7 +9,6 @@
 以及 extract 额外的「查目标目录」分支。
 """
 
-from __future__ import annotations
 
 import secrets
 import time

@@ -1,6 +1,5 @@
 """小花助手：统一卡片 / 消息协议。"""
 
-from __future__ import annotations
 
 import re
 from typing import Any, Literal

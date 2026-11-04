@@ -1,6 +1,5 @@
 """115 webapi helpers — validate cookie / list folders (aligned with sehua-search)."""
 
-from __future__ import annotations
 
 import re
 import time
@@ -554,53 +553,6 @@ def add_folder(cookie: str, parent_cid: str, name: str) -> dict[str, Any]:
     return {
         "ok": False,
         "message": human_error(data, "创建目录失败"),
-    }
-
-
-def ensure_child_folder(
-    cookie: str, parent_cid: str, name: str
-) -> dict[str, Any]:
-    """在父目录下查找同名文件夹；没有则创建。返回 {ok,cid,name,created}。"""
-    want = str(name or "").strip()
-    if not want:
-        return {"ok": False, "message": "文件夹名为空"}
-    listed = list_folders(cookie, parent_cid)
-    if not listed.get("ok"):
-        return {
-            "ok": False,
-            "message": str(listed.get("message") or "列出目录失败"),
-        }
-    want_key = want.casefold()
-    for f in listed.get("folders") or []:
-        if not isinstance(f, dict):
-            continue
-        n = str(f.get("name") or "").strip()
-        if n.casefold() == want_key:
-            return {
-                "ok": True,
-                "cid": str(f.get("cid") or ""),
-                "name": n,
-                "created": False,
-            }
-    created = add_folder(cookie, parent_cid, want)
-    if created.get("ok") and created.get("cid"):
-        return created
-    # 并发创建时可能已存在：再 list 一次
-    listed2 = list_folders(cookie, parent_cid)
-    for f in listed2.get("folders") or []:
-        if not isinstance(f, dict):
-            continue
-        n = str(f.get("name") or "").strip()
-        if n.casefold() == want_key:
-            return {
-                "ok": True,
-                "cid": str(f.get("cid") or ""),
-                "name": n,
-                "created": False,
-            }
-    return {
-        "ok": False,
-        "message": str(created.get("message") or "无法确保子目录"),
     }
 
 

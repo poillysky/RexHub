@@ -1,6 +1,5 @@
 """115 云解压：转存后轮询离线任务，完成后立即解压。"""
 
-from __future__ import annotations
 
 import logging
 import re
@@ -189,11 +188,6 @@ def _ensure_same_name_folder(
         pass
 
     return {"ok": False, "message": human_error(data, "创建同名文件夹失败")}
-
-
-def _list_offline_tasks_once(client: httpx.Client, cookie: str) -> list[Any]:
-    """兼容旧调用：默认拉多页。"""
-    return _list_offline_tasks_pages(client, cookie)
 
 
 def _list_offline_tasks_pages(
@@ -587,15 +581,6 @@ def _extract_info_all(
         "dirs": [],
         "message": last_err or "读取压缩包目录失败（可能尚未就绪）",
     }
-
-
-def _extract_info_once(
-    client: httpx.Client,
-    cookie: str,
-    pick_code: str,
-) -> dict[str, Any]:
-    """兼容旧名：等价于全量翻页。"""
-    return _extract_info_all(client, cookie, pick_code)
 
 
 def _add_extract_file(

@@ -9,10 +9,8 @@
 的地址，真正的视频流仍由播放层提供。
 """
 
-from __future__ import annotations
 
 import asyncio
-import json
 import re
 
 from fastapi import APIRouter, HTTPException, Query, Request

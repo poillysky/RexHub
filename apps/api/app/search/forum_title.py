@@ -1,6 +1,5 @@
 """色花堂中文标题清洗：正则去掉版块标签 / 破解字幕 / 清晰度等非标题噪声。"""
 
-from __future__ import annotations
 
 import re
 import unicodedata
@@ -1000,34 +999,6 @@ _TITLE_ZH_AV_SHELL_RE = re.compile(
     r"^AV初[体體][験驗].{0,6}$",
     re.I,
 )
-
-
-def is_quality_chinese_title(title: str | None, code: str = "") -> bool:
-    """刮削本地复用门：真中文 + 非假壳/截断壳。
-
-    质量差的索引中文题视为不合格，须网上补 titleZh。
-    """
-    t = str(title or "").strip()
-    if not t or not is_likely_chinese(t):
-        return False
-    if is_fake_forum_title(t, code):
-        return False
-    if _TITLE_ZH_TRUNC_TAIL_RE.search(t):
-        return False
-    if _TITLE_ZH_BROKEN_LEAD_RE.match(t) and len(t) < 16:
-        return False
-    if _TITLE_ZH_AV_SHELL_RE.fullmatch(t):
-        return False
-    if _TITLE_ZH_WESTERN_NAME_RE.fullmatch(t) and len(t) <= 14:
-        return False
-    try:
-        from app.search.forum_seed import _looks_like_bare_actor_title
-
-        if _looks_like_bare_actor_title(t):
-            return False
-    except Exception:
-        pass
-    return True
 
 
 def is_likely_japanese(title: str | None) -> bool:

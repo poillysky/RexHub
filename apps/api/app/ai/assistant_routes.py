@@ -1,6 +1,5 @@
 """小花智能搜片助手：多工具 agent + 可选 SSE。"""
 
-from __future__ import annotations
 
 import asyncio
 import json
@@ -39,7 +38,7 @@ from app.ai.config import (
     resolve_llm_config,
     resolve_web_search_config,
 )
-from app.core.conn_settings_routes import Envelope
+from app.core.envelope import Envelope
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 

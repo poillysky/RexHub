@@ -5,7 +5,6 @@
 ``is_configured`` / ``_load_dsn`` / ``BitmagnetDbUnavailable``），调用方无需改动。
 """
 
-from __future__ import annotations
 
 from typing import Any, Iterator
 

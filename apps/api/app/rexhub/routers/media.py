@@ -4,7 +4,6 @@
 结构；图片统一走 `/api/media/image` 代理，客户端不需要直连 image.tmdb.org。
 """
 
-from __future__ import annotations
 
 from fastapi import Request, APIRouter, HTTPException, Query, Response, status
 from fastapi.concurrency import run_in_threadpool
@@ -89,9 +88,6 @@ class MediaDetail(BaseModel):
     recommendations: list[MediaListItem] = Field(default_factory=list)
 
 
-def _require_token(request: Request) -> None:
-    require_session(request)
-
 
 def _upstream_error(exc: ValueError) -> HTTPException:
     """插件侧失败统一按网关错误返回，客户端据此做单栏降级。"""
@@ -108,7 +104,7 @@ async def media_catalogs(
 ) -> MediaCatalogsResponse:
     """插件声明的前台栏目（电影/剧集），用于首页分栏与筛选。"""
 
-    _require_token(request)
+    require_session(request)
     try:
         items = media_bridge.catalogs()
     except ValueError as exc:
@@ -126,7 +122,7 @@ async def media_list(
 ) -> MediaListResponse:
     """取某个栏目的一页海报。"""
 
-    _require_token(request)
+    require_session(request)
     try:
         items, has_more = await media_bridge.list_catalog(catalog, page)
     except ValueError as exc:
@@ -146,7 +142,7 @@ async def media_detail(
 ) -> MediaDetail:
     """影视详情：简介、演职员、预告片与剧集分集。"""
 
-    _require_token(request)
+    require_session(request)
     try:
         item = await media_bridge.detail(id)
     except ValueError as exc:

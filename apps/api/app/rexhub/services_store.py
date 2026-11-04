@@ -4,7 +4,6 @@
 配置保存在 data/services.json（0600），仅管理台可读写。
 """
 
-from __future__ import annotations
 
 import json
 import os

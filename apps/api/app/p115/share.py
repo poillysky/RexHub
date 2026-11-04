@@ -1,6 +1,5 @@
 """115 分享链接转存（share/snap + share/receive）。"""
 
-from __future__ import annotations
 
 import re
 from typing import Any

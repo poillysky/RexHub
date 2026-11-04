@@ -6,7 +6,6 @@
 两个模块各自持有一个实例并转发历史符号名（调用方零改动）。
 """
 
-from __future__ import annotations
 
 from typing import Any, Iterator
 

@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """按前缀定制的番号读取标准（双库扫描抽取/截断/验收）。"""
 
-from __future__ import annotations
 
 import re
 from typing import Any
@@ -98,10 +97,3 @@ def resolve_code_read(
     return out
 
 
-def ensure_code_read_on_entry(prefix: str, entry: dict[str, Any]) -> dict[str, Any]:
-    """保证 entry 带 code_read；返回可能更新后的副本。"""
-    ent = dict(entry or {})
-    rid = str(ent.get("code_read") or "").strip()
-    if rid not in VALID_CODE_READ_IDS:
-        ent["code_read"] = infer_code_read(prefix or ent.get("prefix") or "", ent)
-    return ent

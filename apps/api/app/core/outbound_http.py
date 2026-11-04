@@ -1,6 +1,5 @@
 """出站 HTTP：curl-impersonate + 面板代理 + FlareSolverr（对齐 MDCS）。"""
 
-from __future__ import annotations
 
 import json
 import logging
@@ -32,15 +31,6 @@ def thread_allow_flare() -> bool:
     return bool(getattr(_tls, "allow_flare", True))
 
 
-def set_thread_request_timeout(seconds: float | None) -> None:
-    """刮削补齐：线程内出站请求以策略「单源超时」为准。"""
-    if seconds is None:
-        if hasattr(_tls, "request_timeout"):
-            delattr(_tls, "request_timeout")
-        return
-    _tls.request_timeout = max(1.0, float(seconds))
-
-
 def thread_request_timeout() -> float | None:
     v = getattr(_tls, "request_timeout", None)
     if v is None:
@@ -49,19 +39,6 @@ def thread_request_timeout() -> float | None:
         return max(1.0, float(v))
     except (TypeError, ValueError):
         return None
-
-
-def set_thread_cancel_event(ev: Any) -> None:
-    """刮削补齐：把「本线程所属 fetch 的取消令牌」绑到线程上。
-
-    置位后，出站调度器会在等槽时立刻放弃（`OutboundCancelled`），
-    不再发出请求 —— 源早停/暂停后回收在飞请求靠的就是这条链路。
-    """
-    if ev is None:
-        if hasattr(_tls, "cancel_event"):
-            delattr(_tls, "cancel_event")
-        return
-    _tls.cancel_event = ev
 
 
 def thread_cancel_event() -> Any:
@@ -129,13 +106,6 @@ def source_queue_budget(work_budget: float | None = None) -> float:
     if b <= 0:
         return _QUEUE_WAIT_DEFAULT_SEC
     return min(_QUEUE_WAIT_CAP_SEC, max(_QUEUE_WAIT_MIN_SEC, b))
-
-
-def new_slot_wait_meter():
-    """创建等槽记账对象（延迟 import，避免 outbound_http ↔ outbound_scheduler 耦合）。"""
-    from app.core.outbound_scheduler import SlotWaitMeter
-
-    return SlotWaitMeter()
 
 
 def set_thread_slot_meter(meter: Any) -> None:
@@ -459,17 +429,6 @@ def _host_key(url: str) -> str:
         return ""
 
 
-def _with_host_gate(host: str):
-    """兼容旧 API；优先请用 outbound_scheduler.slot(url)。"""
-    key = host or "_"
-    with _host_gates_mu:
-        gate = _host_gates.get(key)
-        if gate is None:
-            gate = threading.Semaphore(_HOST_CONCURRENCY)
-            _host_gates[key] = gate
-    return gate
-
-
 @contextmanager
 def _page_slot(url: str, *, timeout: float = 90.0):
     """详情页出站：全局 + 按 host（与封面共用调度器）。
@@ -486,36 +445,6 @@ def _page_slot(url: str, *, timeout: float = 90.0):
     to = min(to, source_queue_budget())
     with get_scheduler().slot(
         url, kind="page", timeout=to, cancel=thread_cancel_event()
-    ):
-        yield
-
-
-@contextmanager
-def api_slot(url: str, *, timeout: float | None = None):
-    """直连 API（JSON / GraphQL / POST 表单）出站：`kind="api"` 通道。
-
-    第十一轮引入。这些路径（`common.fetch_json` / `common.fetch_post_form` /
-    `dmm._post_graphql`）原来**完全不走调度器**：
-
-    - 不受任何并发上限约束 → 10 个源里 4 个（r18dev / libredmm / dmm / jav321）
-      裸奔，`page` 全局闸只治理得到另外 6 个；
-    - 不进 `SlotWaitMeter` 记账 → `meter.acquired` 恒为 0，于是 `enrich._one`
-      里「acquired==0 → busy」的兜底会把它们**真超时**也记成语义相反的 `busy`
-      （源坏了却记成「我们没轮到」→ 不计源健康度、不退避，坏源被一直重试）。
-
-    走这里之后：并发有界（`_KIND_GLOBAL["api"]`）、等槽记账正确、早停/暂停的
-    取消令牌同样生效（≤0.2s 退出，不发无用请求）。
-
-    ⚠️ 不要在已经持有 `page` 槽的代码里调它（嵌套持有两类全局槽）；当前
-    三条调用路径都是独立作用域，不存在「api → page」的反向等待，无死锁环。
-    """
-    from app.core.outbound_scheduler import get_scheduler
-
-    to = source_queue_budget()
-    if timeout is not None:
-        to = min(to, max(0.5, float(timeout)))
-    with get_scheduler().slot(
-        url, kind="api", timeout=to, cancel=thread_cancel_event()
     ):
         yield
 
@@ -632,18 +561,6 @@ def get_cached_clearance(url: str) -> dict[str, str] | None:
             "userAgent": str(hit.get("userAgent") or ""),
             "preferFlare": prefer,
         }
-
-
-def clear_cached_clearance(url_or_host: str | None = None) -> None:
-    _ensure_clearance_loaded()
-    with _clearance_lock:
-        if not url_or_host:
-            _clearance_by_host.clear()
-        else:
-            key = _host_key(url_or_host) if "://" in url_or_host else str(url_or_host).lower()
-            if key:
-                _clearance_by_host.pop(key, None)
-    _schedule_persist_clearance()
 
 
 def _cookies_to_header(cookies: list[dict[str, Any]]) -> str:
@@ -1056,29 +973,6 @@ class FlareFetchResult:
     user_agent: str = ""
 
 
-def flaresolverr_request(
-    url: str,
-    *,
-    max_timeout_ms: int = 60000,
-    referer: str | None = None,
-    cookie: str | None = None,
-    use_proxy: bool = True,
-    no_session_retry: bool = False,
-    wait_in_seconds: int = 0,
-) -> tuple[str, str]:
-    """经 FlareSolverr 拉页。返回 (html, final_url)。兼容旧调用。"""
-    hit = flaresolverr_request_full(
-        url,
-        max_timeout_ms=max_timeout_ms,
-        referer=referer,
-        cookie=cookie,
-        use_proxy=use_proxy,
-        no_session_retry=no_session_retry,
-        wait_in_seconds=wait_in_seconds,
-    )
-    return hit.html, hit.final_url
-
-
 def flaresolverr_request_full(
     url: str,
     *,
@@ -1277,42 +1171,6 @@ def decode_html_bytes(raw: bytes, *, content_type: str = "") -> str:
             continue
         return text
     return data.decode("utf-8", errors="replace")
-
-
-def curl_request(
-    method: str,
-    url: str,
-    *,
-    headers: dict[str, str] | None = None,
-    data: Any = None,
-    json_body: Any = None,
-    proxy: str | None = None,
-    use_panel_proxy: bool = True,
-    timeout: httpx.Timeout | float | None = 22.0,
-    verify: bool = True,
-    allow_redirects: bool = True,
-) -> Any:
-    """站点出站：curl-impersonate（curl_cffi）。失败抛异常。"""
-    from curl_cffi import requests as creq
-
-    if use_panel_proxy:
-        use_proxy = proxy if proxy is not None else resolve_scrape_proxy_url()
-    else:
-        use_proxy = proxy or ""
-    kwargs: dict[str, Any] = {
-        "headers": headers or {},
-        "timeout": _timeout_seconds(timeout),
-        "allow_redirects": allow_redirects,
-        "verify": verify,
-        "impersonate": _CURL_IMPERSONATE,
-    }
-    if use_proxy:
-        kwargs["proxy"] = use_proxy
-    if json_body is not None:
-        kwargs["json"] = json_body
-    if data is not None:
-        kwargs["data"] = data
-    return creq.request(method.upper(), url, **kwargs)
 
 
 def _accept_http_body(

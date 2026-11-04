@@ -1,6 +1,5 @@
 """影视榜单：TMDB 官方 API + 豆瓣榜单（服务端抓取缓存）。"""
 
-from __future__ import annotations
 
 import asyncio
 import logging

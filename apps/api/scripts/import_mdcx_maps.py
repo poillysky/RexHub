@@ -58,16 +58,6 @@ def atomic_write_json(path: Path, obj: object) -> None:
     tmp.replace(path)
 
 
-def load_json_obj(path: Path) -> dict:
-    if not path.is_file():
-        return {}
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-    return raw if isinstance(raw, dict) else {}
-
-
 def import_tags_from_info() -> dict[str, object]:
     if not INFO_XML.is_file():
         raise FileNotFoundError(f"missing {INFO_XML}")

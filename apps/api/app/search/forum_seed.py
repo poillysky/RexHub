@@ -13,7 +13,6 @@
 分区：有码/写真索引女优；其余区 want_actors=False 只写标题。
 """
 
-from __future__ import annotations
 
 import re
 from typing import Any
@@ -429,28 +428,6 @@ def _try_clean_title(raw: str, needle: str, *, allow_weak: bool = False) -> str:
     ):
         return cleaned
     return ""
-
-
-def _pick_post_title(
-    desc: str,
-    post_title: str,
-    *,
-    needle: str,
-) -> tuple[str, str]:
-    """单帖标题：片名/资源名字段优先 → 帖题 title 最后兜底。
-
-    返回 (cleaned, source)，source ∈ film|resource|post|""。
-    """
-    for raw, source in _desc_title_candidates(desc):
-        cleaned = _try_clean_title(raw, needle)
-        if cleaned:
-            return cleaned, source
-    post = str(post_title or "").strip()
-    if post:
-        cleaned = _try_clean_title(post, needle)
-        if cleaned:
-            return cleaned, "post"
-    return "", ""
 
 
 def _consider_title_candidate(

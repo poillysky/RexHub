@@ -5,7 +5,6 @@
 ``Authorization: Bearer <token>`` 携带，两者指向同一条会话记录。
 """
 
-from __future__ import annotations
 
 from fastapi import HTTPException, Request, status
 

@@ -1,6 +1,5 @@
 """Format Postgres rows → API resource objects (aligned with sehua-search)."""
 
-from __future__ import annotations
 
 import logging
 import re

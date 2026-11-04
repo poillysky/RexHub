@@ -1,6 +1,5 @@
 """Bitmagnet Postgres 搜索：对齐 Bitmagnet-Next-Web + 官方 FilesStatus 语义。"""
 
-from __future__ import annotations
 
 import logging
 import re

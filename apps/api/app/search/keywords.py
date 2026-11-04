@@ -1,6 +1,5 @@
 """Keyword extraction + WHERE / ORDER builders — Bitmagnet-style match + optional enrich."""
 
-from __future__ import annotations
 
 import math
 import re

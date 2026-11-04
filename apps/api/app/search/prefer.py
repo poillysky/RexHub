@@ -4,7 +4,6 @@
 快路径取数后做应用层过滤，避免关掉快路径并触发大量 board_fid OR/LIKE。
 """
 
-from __future__ import annotations
 
 SEARCH_NAME_EXPR = (
     "(COALESCE(r.filename, '') || E'\\n' || COALESCE(rs.title, ''))"
@@ -48,38 +47,6 @@ def crack_prefer_predicate_sql() -> str:
     OR r.filename ILIKE '%%馬賽克破壞%%'
     OR COALESCE(rs.title, '') ILIKE '%%馬賽克破壞%%'
   )"""
-
-
-def domestic_original_exclude_predicate_sql() -> str:
-    """国产原创（及强国产原创子板）——日本有码检索一律排除。"""
-    return """(
-    COALESCE(rs.board_fid, '') = '2'
-    OR COALESCE(rs.board_fid, '') LIKE '2:%%'
-    OR COALESCE(rs.board_name, '') ~ '国产原创|国产自拍|国产合集|国产无码'
-  )"""
-
-
-def clear_uncensored_exclude_predicate_sql() -> str:
-    """明确无码板块：亚洲无码原创树、无码高清/流出/破解等。"""
-    return """(
-    COALESCE(rs.board_fid, '') = '36'
-    OR COALESCE(rs.board_fid, '') LIKE '36:%%'
-    OR COALESCE(rs.board_fid, '') = '103:481'
-    OR COALESCE(rs.board_name, '') ~ '亚洲无码|无码高清|無碼高清|无码流出|無碼流出|无码破解|無碼破解'
-  )"""
-
-
-def japan_censored_exclude_sql(
-    *, exclude_uncensored: bool = True
-) -> str:
-    """日本有码检索原则：排除国产原创；默认再排除明确无码。
-
-    底池若需保留无码破解供「破解」倾向本地投影，传 exclude_uncensored=False。
-    """
-    parts = [f"NOT {domestic_original_exclude_predicate_sql()}"]
-    if exclude_uncensored:
-        parts.append(f"NOT {clear_uncensored_exclude_predicate_sql()}")
-    return "AND " + " AND ".join(f"({p})" for p in parts)
 
 
 def build_prefer_filter_sql(

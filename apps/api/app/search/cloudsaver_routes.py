@@ -1,6 +1,5 @@
 """CloudSaver 网盘搜索 HTTP 路由。"""
 
-from __future__ import annotations
 
 from typing import Any
 

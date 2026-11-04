@@ -4,7 +4,6 @@
 新增同类型的数据库服务时无需改代码即可参与搜索。
 """
 
-from __future__ import annotations
 
 import asyncio
 import base64
@@ -55,13 +54,6 @@ def _cache_get(key: tuple[str, str]) -> list[dict] | None:
         _candidates.pop(key, None)
         return None
     return entry[1]
-
-
-def _cache_put(key: tuple[str, str], rows: list[dict]) -> None:
-    if len(_candidates) >= CACHE_MAX:
-        oldest = min(_candidates, key=lambda item: _candidates[item][0])
-        _candidates.pop(oldest, None)
-    _candidates[key] = (monotonic(), rows)
 
 
 def _db_pool_get(

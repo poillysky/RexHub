@@ -1,6 +1,5 @@
 """Resource browse / search / detail HTTP routes."""
 
-from __future__ import annotations
 
 import logging
 from typing import Any

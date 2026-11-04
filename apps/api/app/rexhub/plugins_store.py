@@ -4,7 +4,6 @@
 对外由 /plugins/forward-widgets.fwd 暴露订阅索引。模块统一保存明文源码。
 """
 
-from __future__ import annotations
 
 import functools
 import json
@@ -531,10 +530,6 @@ def refresh_feed(url: str) -> dict[str, Any]:
     return fresh
 
 
-def find_feed(url: str) -> dict[str, Any] | None:
-    return next((item for item in _read()["feeds"] if item.get("url") == url), None)
-
-
 def _clean_api_url(value: str) -> str:
     text = (value or "").strip().rstrip("/")[:300]
     if not text:
@@ -665,28 +660,6 @@ def refresh_all_feeds() -> dict[str, Any]:
         return _refresh_all_locked()
 
 
-def auto_update_tick(now: int | None = None) -> bool:
-    """后台轮询入口：到点则刷新全部订阅，返回本次是否执行了更新。"""
-    current = int(now or time.time())
-    cfg = _read()["auto_update"]
-    if not cfg["enabled"] or not _read()["feeds"]:
-        return False
-    if current - int(cfg.get("last_run") or 0) < cfg["interval_minutes"] * 60:
-        return False
-    if not _AUTO_LOCK.acquire(blocking=False):
-        return False
-    try:
-        cfg = _read()["auto_update"]
-        if not cfg["enabled"]:
-            return False
-        if current - int(cfg.get("last_run") or 0) < cfg["interval_minutes"] * 60:
-            return False
-        _refresh_all_locked()
-        return True
-    finally:
-        _AUTO_LOCK.release()
-
-
 @_locked
 def update_plugin_config(
     plugin_id: str,
@@ -781,10 +754,6 @@ def shortdrama_base_url() -> str:
         if "shortdrama" in pid.lower():
             return url
     return rows[0][1] if rows else ""
-
-
-def enabled_count() -> int:
-    return sum(1 for item in _read()["plugins"] if item.get("enabled", True))
 
 
 def build_index(base_url: str) -> dict[str, Any]:

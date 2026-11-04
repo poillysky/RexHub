@@ -1,6 +1,5 @@
 """PanSou 网盘搜索客户端（外挂 Docker 实例）。"""
 
-from __future__ import annotations
 
 import logging
 import os

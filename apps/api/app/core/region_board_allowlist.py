@@ -9,7 +9,6 @@
 - 「其他」不参与任一区
 """
 
-from __future__ import annotations
 
 from typing import Any, Literal
 
@@ -101,13 +100,6 @@ def _specs_or_sql(specs: list[str]) -> str:
     if not parts:
         return "FALSE"
     return "(" + " OR ".join(parts) + ")"
-
-
-def _fid_matches_spec(fid: str, spec: str) -> bool:
-    root, _tree = _parse_spec(spec)
-    if not root or not fid:
-        return False
-    return fid == root or fid.startswith(root + ":")
 
 
 def region_allowlist_sql(

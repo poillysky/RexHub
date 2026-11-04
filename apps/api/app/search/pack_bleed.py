@@ -46,7 +46,6 @@ Smoke (manual)::
     assert len(unsplit_out["ed2k_links"]) == 2
 """
 
-from __future__ import annotations
 
 import re
 from typing import Any

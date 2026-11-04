@@ -1,6 +1,5 @@
 """User + opaque session store (Postgres meta DB)."""
 
-from __future__ import annotations
 
 import hashlib
 import re
@@ -117,15 +116,6 @@ def get_user_by_username(username: str) -> dict[str, Any] | None:
             FROM users WHERE LOWER(username) = LOWER(?)
             """,
             (username.strip(),),
-        ).fetchone()
-    return dict(row) if row else None
-
-
-def get_user_by_id(user_id: int) -> dict[str, Any] | None:
-    with connect() as conn:
-        row = conn.execute(
-            "SELECT id, username, is_admin, created_at FROM users WHERE id = ?",
-            (user_id,),
         ).fetchone()
     return dict(row) if row else None
 

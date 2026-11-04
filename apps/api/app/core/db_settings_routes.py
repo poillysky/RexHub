@@ -21,14 +21,9 @@ from pydantic import BaseModel, Field
 import app.core.pg_data_backup as pg_data_backup
 import app.core.settings_store as settings_store
 from app.auth.routes import require_admin, require_user
+from app.core.envelope import Envelope
 
 log = logging.getLogger(__name__)
-
-
-class Envelope(BaseModel):
-    data: Any = None
-    message: str = "ok"
-    status: int = 200
 
 
 class ResourceDbConfig(BaseModel):

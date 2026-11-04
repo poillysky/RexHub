@@ -1,6 +1,5 @@
 """设置页：LLM 聊天 + 向量嵌入模型。"""
 
-from __future__ import annotations
 
 import os
 from typing import Any
@@ -45,7 +44,7 @@ from app.ai.presets import (
     PROMPT_POST_PROCESSING,
     WEB_SEARCH_PROVIDERS,
 )
-from app.core.conn_settings_routes import Envelope
+from app.core.envelope import Envelope
 
 router = APIRouter(prefix="/settings/ai", tags=["settings"])
 

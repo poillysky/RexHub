@@ -4,7 +4,6 @@
 授权 Cookie 保存在 data/115_pan.json（0600），不会暴露给前端。
 """
 
-from __future__ import annotations
 
 import asyncio
 import json
@@ -98,58 +97,11 @@ def _write_auth(data: dict) -> None:
     tmp.replace(AUTH_PATH)
 
 
-def is_bound() -> bool:
-    return _read_auth() is not None
-
-
-def unbind() -> None:
-    try:
-        AUTH_PATH.unlink()
-    except FileNotFoundError:
-        pass
-    _cache.update({"at": 0.0, "data": None})
-
-
 # ---------------------------------------------------------------------------
 # Cookie 解析与账号探测
 # ---------------------------------------------------------------------------
 
 _CANON = {"uid": "UID", "cid": "CID", "seid": "SEID", "kid": "KID"}
-
-
-def parse_cookie_input(raw: str) -> dict[str, str]:
-    raw = (raw or "").strip()
-    if not raw:
-        raise Pan115Error("请粘贴 115 Cookie")
-
-    values: dict[str, str] = {}
-    if raw.startswith("{"):
-        try:
-            obj = json.loads(raw)
-        except ValueError as exc:
-            raise Pan115Error("Cookie 格式不正确") from exc
-        source = obj.get("cookies") if isinstance(obj, dict) and "cookies" in obj else obj
-        if isinstance(source, dict):
-            values = {str(k): str(v) for k, v in source.items()}
-    else:
-        for part in re.split(r"[;\n]", raw):
-            if "=" not in part:
-                continue
-            key, value = part.split("=", 1)
-            key = key.strip()
-            if key:
-                values[key] = value.strip()
-
-    cookies: dict[str, str] = {}
-    for key, value in values.items():
-        cookie_name = _CANON.get(key.lower(), key)
-        if value:
-            cookies[cookie_name] = value
-
-    missing = [name for name in ("UID", "CID", "SEID") if name not in cookies]
-    if missing:
-        raise Pan115Error(f"Cookie 缺少必要字段：{', '.join(missing)}")
-    return cookies
 
 
 def _num(value: Any) -> int | None:
@@ -371,28 +323,6 @@ def check(force: bool = False) -> dict[str, Any]:
     return result
 
 
-def bind_cookie(raw: str) -> dict[str, Any]:
-    cookies = parse_cookie_input(raw)
-    probe = _probe(cookies)
-    now = int(time.time())
-    _write_auth(
-        {
-            "cookies": cookies,
-            "app": "web",
-            "bound_at": now,
-            "username": probe["username"],
-            "total": probe["total"],
-            "used": probe["used"],
-            "last_check": now,
-            "last_status": "ok",
-            "last_message": "",
-            **_account(probe),
-        }
-    )
-    _cache.update({"at": 0.0, "data": None})
-    return check(force=True)
-
-
 # ---------------------------------------------------------------------------
 # 扫码登录
 # ---------------------------------------------------------------------------
@@ -405,182 +335,11 @@ def qr_image(text: str) -> str:
     )
 
 
-def _prune_sessions() -> None:
-    now = time.time()
-    for uid in [uid for uid, s in _sessions.items() if now - s["created"] > QR_TIMEOUT + 60]:
-        _sessions.pop(uid, None)
-
-
 async def _run(func, /, *args, timeout: float = REQ_TIMEOUT, **kwargs):
     """在线程中执行同步调用，并按接口类型限制等待时间。"""
     return await asyncio.wait_for(
         asyncio.to_thread(func, *args, **kwargs), timeout=timeout
     )
-
-
-async def create_qr(app: str = DEFAULT_APP) -> dict[str, Any]:
-    from p115client import P115Client
-
-    app = app if app in QR_APPS else DEFAULT_APP
-    try:
-        resp = await _run(P115Client.login_qrcode_token, app=app)
-    except Exception as exc:
-        raise Pan115Error(f"无法获取二维码：{exc}") from exc
-    if not resp.get("state"):
-        raise Pan115Error(resp.get("message") or "获取二维码失败")
-
-    data = resp.get("data") or {}
-    uid = str(data.get("uid") or "")
-    if not uid:
-        raise Pan115Error("获取二维码失败：缺少 uid")
-    if not data.get("qrcode"):
-        # 该端不支持手机扫码登录（电视/桌面/平板端走设备码授权）
-        raise Pan115Error(
-            f"{QR_APPS.get(app, app)} 不支持手机扫码登录，请换一个扫码端"
-        )
-
-    # 115 官方二维码实际内容为 yun.115.com/scan/dg-{uid}，
-    # token 接口返回的 qrcode 字段仍是旧域名 115.com，手机 App 扫码会被判为过期
-    url = f"https://yun.115.com/scan/dg-{uid}"
-    session = {
-        "uid": uid,
-        "app": app,
-        "time": data.get("time"),
-        "sign": data.get("sign"),
-        "url": url,
-        "status": 0,
-        "message": "等待扫码",
-        "created": time.time(),
-        "finished": False,
-    }
-    _sessions[uid] = session
-    _prune_sessions()
-
-    task = asyncio.create_task(_watch(session))
-    _tasks.add(task)
-    task.add_done_callback(_tasks.discard)
-
-    return {
-        "uid": uid,
-        "app": app,
-        "status": 0,
-        "message": session["message"],
-        "image": qr_image(url),
-        "expires_in": QR_TIMEOUT,
-    }
-
-
-async def _watch(session: dict[str, Any]) -> None:
-    from p115client import P115Client
-
-    payload = {"uid": session["uid"], "time": session["time"], "sign": session["sign"]}
-    while time.time() - session["created"] < QR_TIMEOUT:
-        try:
-            resp = await _run(
-                P115Client.login_qrcode_scan_status,
-                payload,
-                timeout=LONG_POLL_TIMEOUT,
-            )
-        except Exception:
-            await asyncio.sleep(1.0)
-            continue
-
-        status = (resp.get("data") or {}).get("status")
-        if status == 1:
-            session["status"] = 1
-            session["message"] = "已扫码，请在手机上确认"
-        elif status == 2:
-            session["status"] = 2
-            session["message"] = "已确认，正在保存授权…"
-            await _finish_qr(session)
-            return
-        elif status in (-1, -2):
-            session["status"] = status
-            session["message"] = "二维码已过期" if status == -1 else "已取消扫码"
-            session["finished"] = True
-            return
-
-    session["status"] = -1
-    session["message"] = "二维码已过期"
-    session["finished"] = True
-
-
-async def _finish_qr(session: dict[str, Any]) -> None:
-    from p115client import P115Client
-
-    try:
-        app = session.get("app") or DEFAULT_APP
-        resp = await _run(
-            P115Client.login_qrcode_scan_result,
-            session["uid"],
-            app=app,
-            timeout=LONG_POLL_TIMEOUT,
-        )
-        cookie = (resp.get("data") or {}).get("cookie")
-        if not cookie:
-            raise Pan115Error(resp.get("message") or "未获取到 Cookie")
-
-        cookies = {str(k): str(v) for k, v in cookie.items()}
-        now = int(time.time())
-        try:
-            probe = await _run(_probe, cookies, timeout=LONG_POLL_TIMEOUT)
-        except Exception:
-            probe = {
-                "username": "",
-                "user_id": None,
-                "avatar": "",
-                "vip_active": False,
-                "vip_forever": False,
-                "vip_expire": "",
-                "total": None,
-                "used": None,
-            }
-
-        _write_auth(
-            {
-                "cookies": cookies,
-                "app": app,
-                "bound_at": now,
-                "username": probe["username"],
-                "total": probe["total"],
-                "used": probe["used"],
-                "last_check": now if probe["username"] or probe["total"] else 0,
-                "last_status": "ok" if probe["username"] or probe["total"] else "pending",
-                "last_message": "",
-                **_account(probe),
-            }
-        )
-        _cache.update({"at": 0.0, "data": None})
-        session["message"] = "绑定成功"
-    except Exception as exc:
-        session["status"] = -3
-        session["message"] = f"登录成功但保存失败：{exc}"
-    finally:
-        session["finished"] = True
-
-
-def qr_status(uid: str) -> dict[str, Any]:
-    session = _sessions.get(uid)
-    if not session:
-        return {"ok": False, "status": -4, "message": "二维码已失效，请重新生成", "bound": is_bound()}
-    return {
-        "ok": True,
-        "status": session["status"],
-        "message": session["message"],
-        "bound": session["status"] == 2 and is_bound(),
-    }
-
-
-def fmt_size(value: Any) -> str:
-    if not value:
-        return "—"
-    size = float(value)
-    units = ["B", "KB", "MB", "GB", "TB", "PB"]
-    index = 0
-    while size >= 1024 and index < len(units) - 1:
-        size /= 1024
-        index += 1
-    return f"{size:.1f} {units[index]}" if size < 10 else f"{size:.0f} {units[index]}"
 
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,5 @@
 """六区元数据与番号前缀规范化（供 prefix 扫库 / 搜索共用）。"""
 
-from __future__ import annotations
 
 import re
 
@@ -78,16 +77,6 @@ def indexes_forum_actors(region: str | None) -> bool:
     return bool(rid and rid in FORUM_ACTORS_INDEX_REGIONS)
 
 
-def is_fc2_plate_maker_name(name: str) -> bool:
-    """论坛板名/前缀壳，不是真实 FC2 作者名。"""
-    s = re.sub(r"[\s·\-_/=]+", "", str(name or "").strip().lower())
-    if not s:
-        return True
-    return s in {"fc2", "fc2ppv", "fc2ppvfc2"} or s.startswith("fc2fc2") or bool(
-        re.fullmatch(r"fc2(ppv)?", s)
-    )
-
-
 def fc2_prefix_from_code(code: str) -> str:
     """番号 → catalog 前缀键：一律 FC2（旧 FC2PPV 写入也归并）。"""
     _ = code
@@ -119,8 +108,3 @@ def normalize_fc2_code(code: str) -> str:
     return s
 
 
-def db_region_for(fs_region: str | None) -> str | None:
-    meta = REGION_META.get(str(fs_region or ""))
-    if not meta:
-        return None
-    return str(meta.get("db_region") or "").strip() or None

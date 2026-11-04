@@ -1,6 +1,5 @@
 """Bitmagnet pgvector 语义检索。"""
 
-from __future__ import annotations
 
 from typing import Any
 

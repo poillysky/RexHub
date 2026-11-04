@@ -4,7 +4,6 @@
 统一挂在 ``/api/admin`` 下并校验 Web 会话 Cookie（与 ``/settings/*`` 一致）。
 """
 
-from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel

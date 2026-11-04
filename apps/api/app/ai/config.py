@@ -1,10 +1,8 @@
 """AI 模型配置：LLM 聊天 + 向量嵌入（Postgres settings，环境变量可覆盖）。"""
 
-from __future__ import annotations
 
 import json
 import os
-import re
 from typing import Any
 
 import app.core.settings_store as settings_store
@@ -488,13 +486,6 @@ def models_list_url(base_url: str) -> str:
     if base.endswith("/models"):
         return base
     return f"{base}/models"
-
-
-def embeddings_url(base_url: str) -> str:
-    base = normalize_openai_base(base_url)
-    if base.endswith("/embeddings"):
-        return base
-    return f"{base}/embeddings"
 
 
 def _stored_web_search() -> dict[str, Any]:

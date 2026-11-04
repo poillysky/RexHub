@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """转存先入「最近接收」，完成后移到程序指定目录。"""
 
-from __future__ import annotations
 
 import logging
 import re

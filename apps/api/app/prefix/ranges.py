@@ -4,7 +4,6 @@
 种子：`apps/maps/prefixes/code-ranges.json`（首次无缓存时拷贝）。
 """
 
-from __future__ import annotations
 
 import json
 import logging
@@ -12,11 +11,11 @@ import re
 import threading
 import time
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
-from app.core.db import ROOT, prefix_code_ranges_cache
+from app.core.db import prefix_code_ranges_cache
 from app.core.maps_paths import av_makers_all, prefix_code_ranges_seed, load_json_map
 
 log = logging.getLogger(__name__)
@@ -462,53 +461,3 @@ def get_range(prefix: str) -> dict[str, Any] | None:
     }
 
 
-def needs_daily_refresh() -> bool:
-    doc = ensure_loaded()
-    updated = str(doc.get("updated") or "")[:10]
-    return updated != date.today().isoformat()
-
-
-def _seconds_until_next_midnight() -> float:
-    now = datetime.now().astimezone()
-    tomorrow = now.date() + timedelta(days=1)
-    nxt = datetime.combine(tomorrow, datetime.min.time(), tzinfo=now.tzinfo)
-    return max(1.0, (nxt - now).total_seconds())
-
-
-def _scheduler_loop() -> None:
-    log.info("prefix ranges daily scheduler started (next run ~00:00 local)")
-    # 启动补跑：缓存不是今天的则后台扫一次
-    try:
-        if needs_daily_refresh():
-            log.info("prefix ranges stale → catch-up refresh")
-            refresh_from_db(incremental=True)
-    except Exception:
-        log.exception("prefix ranges catch-up refresh failed")
-
-    while not _stop.is_set():
-        wait = _seconds_until_next_midnight()
-        log.info("prefix ranges next refresh in %.0fs", wait)
-        if _stop.wait(wait):
-            break
-        try:
-            refresh_from_db(incremental=True)
-        except Exception:
-            log.exception("prefix ranges daily refresh failed")
-
-
-def start_daily_scheduler() -> None:
-    global _thread
-    ensure_loaded()
-    if _thread and _thread.is_alive():
-        return
-    _stop.clear()
-    _thread = threading.Thread(
-        target=_scheduler_loop,
-        name="prefix-ranges-daily",
-        daemon=True,
-    )
-    _thread.start()
-
-
-def stop_daily_scheduler() -> None:
-    _stop.set()

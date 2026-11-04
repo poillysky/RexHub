@@ -13,7 +13,6 @@
 以及包着 addons 列表的对象。接入后由 /stremio/{slug}/... 重新分发。
 """
 
-from __future__ import annotations
 
 import functools
 import hashlib
@@ -978,18 +977,6 @@ _DESC_ZH_RAW = {
     "stremio-addons.net": "在播放器内浏览并安装社区插件",
 }
 DESC_ZH = {_name_key(name): desc for name, desc in _DESC_ZH_RAW.items()}
-
-
-def display_name(manifest: dict | None, fallback: str = "") -> str:
-    """addon 展示名：优先中文译名，其次 manifest 原名。"""
-    name = str((manifest or {}).get("name") or fallback or "")
-    return NAME_ZH.get(_name_key(name), name)
-
-
-def display_description(manifest: dict | None, fallback: str = "") -> str:
-    """addon 一句话简介：优先中文，其次 manifest 描述。"""
-    name = str((manifest or {}).get("name") or fallback or "")
-    return DESC_ZH.get(_name_key(name), str((manifest or {}).get("description") or "").strip())
 
 
 FETCH_TIMEOUT = 20

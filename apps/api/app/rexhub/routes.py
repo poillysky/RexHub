@@ -10,13 +10,11 @@
 写接口见 ``routers/admin.py``（``/api/admin/*``，校验 Web 会话 Cookie）。
 """
 
-from __future__ import annotations
 
 from fastapi import FastAPI
 
 from app.rexhub.routers import (
     admin,
-    health,
     media,
     pan,
     plugins,
@@ -32,7 +30,6 @@ from app.rexhub.routers import (
 # 注意：不含 auth —— 登录/会话统一由 ``app.auth.routes`` 提供（/api/auth/*），
 # 同时支持 Web 的 Cookie 与 iOS 的 Bearer，避免两套账号库并存。
 REXHUB_ROUTERS = (
-    health.router,
     pan.router,
     search.router,
     services.router,

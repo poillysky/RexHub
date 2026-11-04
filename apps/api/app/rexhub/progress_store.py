@@ -4,7 +4,6 @@
 本地 `UserDefaults` 仍作缓存，断网时照常续播。
 """
 
-from __future__ import annotations
 
 import json
 import math

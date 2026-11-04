@@ -3,11 +3,10 @@
 凭据字段（用户名 / 密码 / 数据库 / API Key）只在 Web 管理台维护，不下发到 App。
 """
 
-from __future__ import annotations
 
 import asyncio
 
-from fastapi import Request, APIRouter, HTTPException, status
+from fastapi import Request, APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.rexhub import services_store
@@ -33,15 +32,12 @@ class ServiceListResponse(BaseModel):
     items: list[ServiceCard]
 
 
-def _require_token(request: Request) -> None:
-    require_session(request)
-
 
 @router.get("", response_model=ServiceListResponse)
 async def list_services(
     request: Request,
 ) -> ServiceListResponse:
-    _require_token(request)
+    require_session(request)
 
     items = services_store.list_services()
     # 端口探测是阻塞 socket，放到线程池里，避免卡住事件循环。

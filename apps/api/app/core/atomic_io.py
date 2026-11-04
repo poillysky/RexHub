@@ -12,7 +12,6 @@
 原子替换后读者只会看到「旧内容」或「新内容」，不存在中间态。
 """
 
-from __future__ import annotations
 
 import os
 import time

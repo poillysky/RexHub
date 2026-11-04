@@ -1,6 +1,5 @@
 """AV maker-code parse / ILIKE / boundary — port of sehua-search makerCodeMatch.ts (regex-only)."""
 
-from __future__ import annotations
 
 import re
 from dataclasses import dataclass
@@ -133,147 +132,6 @@ def resolve_maker_shape(prefix: str) -> str:
     return "std"
 
 
-def _pad_skip_set() -> set[str]:
-    try:
-        from app.prefix.ranges import SKIP_PREFIXES
-
-        out: set[str] = set()
-        for s in SKIP_PREFIXES:
-            out.add(_prefix_key(s))
-            out.add(_western_key(s))
-        return out
-    except Exception:
-        return set()
-
-
-def prefix_format_meta(prefix: str) -> dict[str, Any]:
-    """按前缀配置解析规范格式（非按区猜测）。
-
-    来源：PREFIX_SHAPE / DATE6 / 欧美 JSON / FC2 / alnum；
-    可编辑位数仅 std 且不在 SKIP_PREFIXES，位数读 prefix-code-ranges。
-    """
-    raw = str(prefix or "").strip()
-    key = _prefix_key(raw)
-    compact = _western_key(raw)
-    shape = resolve_maker_shape(raw)
-
-    if shape == "western_date":
-        wk = compact or key
-        return {
-            "prefix": key or wk,
-            "shape": shape,
-            "codeFormat": "western_date",
-            "codeSample": f"{wk}.2026.01.15",
-            "pad": 0,
-            "padLocked": False,
-            "padEditable": False,
-        }
-    if shape == "fc2ppv":
-        return {
-            "prefix": "FC2PPV",
-            "shape": shape,
-            "codeFormat": "fc2ppv",
-            "codeSample": "FC2-PPV-1234567",
-            "pad": 0,
-            "padLocked": False,
-            "padEditable": False,
-        }
-    if shape == "fc2":
-        return {
-            "prefix": "FC2",
-            "shape": shape,
-            "codeFormat": "fc2",
-            "codeSample": "FC2-1234567",
-            "pad": 0,
-            "padLocked": False,
-            "padEditable": False,
-        }
-    if shape == "date6":
-        label = (
-            DATE6_PREFIX_LABEL.get(key)
-            or DATE6_PREFIX_LABEL.get(compact)
-            or key
-        )
-        return {
-            "prefix": label,
-            "shape": shape,
-            "codeFormat": "date6",
-            "codeSample": f"{label}-260115-001",
-            "pad": 0,
-            "padLocked": False,
-            "padEditable": False,
-        }
-    if shape == "alnum_id":
-        # H0930 / C0930 / H4610：字母数字流水，非零补流水号
-        sample_id = {
-            "H0930": "H0930-ORI123",
-            "C0930": "C0930-ABC123",
-            "H4610": "H4610-ABC123",
-        }.get(key, f"{key}-ABC123")
-        return {
-            "prefix": key,
-            "shape": shape,
-            "codeFormat": "alnum_id",
-            "codeSample": sample_id,
-            "pad": 0,
-            "padLocked": False,
-            "padEditable": False,
-        }
-
-    # std：仅非 SKIP 前缀可读/改 ranges.pad
-    skip = _pad_skip_set()
-    if key in skip or compact in skip:
-        # 无码等特殊厂：号码形态仍是横杠流水，但不用日有码 pad 编辑
-        fixed = {
-            "HEYZO": "HEYZO-1234",
-            "TOKYOHOT": "TOKYOHOT-N1234",
-            "TOKYO-HOT": "TOKYOHOT-N1234",
-            "XXX-AV": "XXX-AV-12345",
-            "HEYDOUGA": "HEYDOUGA-1234",
-            "MESUBUTA": "MESUBUTA-123456-001",
-            "SPERMMANIA": "SPERMMANIA-123",
-            "RHJ": "RHJ-123",
-            "COSPURI": "COSPURI-123",
-            "JVID": "JVID-123",
-            "KIN8": "KIN8-1234",
-            "GACHI": "GACHI-123",
-            "GACHINCO": "GACHI-123",
-        }
-        sample = fixed.get(key) or fixed.get(compact) or f"{key}-1234"
-        return {
-            "prefix": key,
-            "shape": "std",
-            "codeFormat": "fixed_std",
-            "codeSample": sample,
-            "pad": 0,
-            "padLocked": False,
-            "padEditable": False,
-        }
-
-    pad = 3
-    pad_locked = False
-    sample = f"{key}-001"
-    try:
-        from app.prefix.ranges import get_range
-
-        rng = get_range(key)
-        if rng:
-            pad = max(1, min(8, int(rng.get("pad") or 3)))
-            pad_locked = bool(rng.get("padLocked"))
-            sample = str(rng.get("sample") or f"{key}-{1:0{pad}d}")
-    except Exception:
-        pass
-    return {
-        "prefix": key,
-        "shape": "std",
-        "codeFormat": "digit_pad",
-        "codeSample": sample,
-        "pad": pad,
-        "padLocked": pad_locked,
-        "padEditable": True,
-    }
-
-
 def maker_code_parts(code: str) -> list[str]:
     raw = normalize_maker_code(code).upper()
     spaced = [p for p in re.split(r"[-_\s.]+", raw) if p]
@@ -381,10 +239,6 @@ def _western_yyyy(yy_or_yyyy: str) -> str:
     if re.fullmatch(r"\d{2}", s):
         return f"20{s}"
     return s
-
-
-def _western_date_key(prefix: str, y: str, mo: str, d: str) -> str:
-    return f"{_western_key(prefix)}.{_western_yyyy(y)}.{mo}.{d}"
 
 
 def _parse_western(raw: str) -> ParsedMakerCode | None:
@@ -1224,14 +1078,3 @@ def code_sort_key(code: str) -> tuple[int, int, str]:
     return a, b, str(code or "").upper()
 
 
-def compare_codes(a: str, b: str) -> int:
-    ka, kb = code_sort_key(a), code_sort_key(b)
-    if ka[0] != kb[0]:
-        return -1 if ka[0] < kb[0] else 1
-    if ka[1] != kb[1]:
-        return -1 if ka[1] < kb[1] else 1
-    if ka[2] < kb[2]:
-        return -1
-    if ka[2] > kb[2]:
-        return 1
-    return 0

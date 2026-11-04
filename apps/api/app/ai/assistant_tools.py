@@ -1,6 +1,5 @@
 """小花助手：检索工具适配层。"""
 
-from __future__ import annotations
 
 import json
 import re
@@ -904,10 +903,6 @@ def collect_ui_cards(
         wants_cards=user_wants_resource_cards(message),
         limit=limit,
     )
-
-
-def source_label(source: str) -> str:
-    return _SOURCE_LABEL.get(source, source)
 
 
 async def heuristic_local_search(

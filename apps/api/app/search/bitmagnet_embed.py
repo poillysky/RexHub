@@ -1,6 +1,5 @@
 """Bitmagnet 磁力嵌入文本：种子名 + 内容标题/类型摘要。"""
 
-from __future__ import annotations
 
 import hashlib
 import re

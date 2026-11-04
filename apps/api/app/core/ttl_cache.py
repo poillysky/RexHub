@@ -1,6 +1,5 @@
 """Bounded in-memory TTL helpers（防进程级 dict 无限涨）。"""
 
-from __future__ import annotations
 
 import time
 from typing import Any, MutableMapping

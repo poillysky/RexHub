@@ -5,7 +5,6 @@
 订阅里的 REXENC 密文模块无法执行，这里直接跳过。
 """
 
-from __future__ import annotations
 
 import asyncio
 import json

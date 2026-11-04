@@ -4,7 +4,6 @@
 客户端本地 `UserDefaults` 仅作离线缓存。
 """
 
-from __future__ import annotations
 
 import json
 import os

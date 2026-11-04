@@ -1,6 +1,5 @@
 """115 离线云下载：lixian 优先，clouddownload 回退。"""
 
-from __future__ import annotations
 
 import re
 import time

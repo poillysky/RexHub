@@ -1,6 +1,5 @@
 """对话搜资源：向量检索 → LLM 整理回复；失败再抽关键词搜。"""
 
-from __future__ import annotations
 
 import json
 import re
@@ -17,7 +16,7 @@ from app.ai.config import (
     llm_sampling_payload,
     resolve_llm_config,
 )
-from app.core.conn_settings_routes import Envelope
+from app.core.envelope import Envelope
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 

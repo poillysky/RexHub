@@ -4,12 +4,10 @@ App 只拿文件列表和临时直链，Cookie 始终留在服务端；播放时
 不经过本地服务中转。
 """
 
-from __future__ import annotations
 
 import asyncio
 import os
 import tempfile
-from typing import Any
 
 from fastapi import (
     Request,
@@ -79,9 +77,6 @@ class ProgressBody(BaseModel):
     duration: float = 0
 
 
-def _require_token(request: Request) -> None:
-    require_session(request)
-
 
 def _upstream_error(exc: Exception) -> HTTPException:
     detail = str(exc) or "115 网盘请求失败"
@@ -93,7 +88,7 @@ def _upstream_error(exc: Exception) -> HTTPException:
 @router.get("/account")
 async def account(request: Request) -> dict:
     """115 账号快照：头像、用户名、VIP 与容量，Cookie 不出服务端。"""
-    _require_token(request)
+    require_session(request)
     try:
         return await asyncio.to_thread(pan115.check)
     except pan115.Pan115Error as exc:
@@ -110,7 +105,7 @@ async def cloud(
     page_size: int = Query(default=30, ge=1, le=200),
 ) -> dict:
     """云下载任务列表：stat 0 全部 / 9 失败 / 11 已完成 / 12 进行中。"""
-    _require_token(request)
+    require_session(request)
     try:
         return await asyncio.to_thread(pan115.cloud_tasks, stat, page, page_size)
     except pan115.Pan115Error as exc:
@@ -125,7 +120,7 @@ async def cloud_add(
     body: CloudAddBody,
 ) -> dict:
     """添加云下载任务：支持 HTTP / HTTPS / FTP / 磁力 / 电驴链接。"""
-    _require_token(request)
+    require_session(request)
     try:
         return await asyncio.to_thread(pan115.cloud_add, body.urls, body.cid)
     except pan115.Pan115Error as exc:
@@ -140,7 +135,7 @@ async def save_to_drive(
     request: Request,
 ) -> dict:
     """资源转存：115 分享链接走接收分享，其余链接走云下载。"""
-    _require_token(request)
+    require_session(request)
     try:
         return await asyncio.to_thread(
             pan115.save_to_drive, body.urls, body.password, body.cid
@@ -156,7 +151,7 @@ async def cloud_retry(
     body: CloudTaskBody,
     request: Request,
 ) -> dict:
-    _require_token(request)
+    require_session(request)
     try:
         return await asyncio.to_thread(pan115.cloud_retry, body.info_hash)
     except pan115.Pan115Error as exc:
@@ -170,7 +165,7 @@ async def cloud_delete(
     body: CloudTaskBody,
     request: Request,
 ) -> dict:
-    _require_token(request)
+    require_session(request)
     try:
         return await asyncio.to_thread(pan115.cloud_delete, body.info_hash)
     except pan115.Pan115Error as exc:
@@ -187,7 +182,7 @@ async def list_dir(
     limit: int = Query(default=200, ge=1, le=1150),
 ) -> dict:
     """列目录：cid=0 为根目录。"""
-    _require_token(request)
+    require_session(request)
     try:
         return await asyncio.to_thread(pan115.list_files, cid, offset, limit)
     except pan115.Pan115Error as exc:
@@ -202,7 +197,7 @@ async def folder_create(
     body: FolderBody,
 ) -> dict:
     """在当前目录新建文件夹。"""
-    _require_token(request)
+    require_session(request)
     try:
         return await asyncio.to_thread(pan115.create_folder, body.cid, body.name)
     except pan115.Pan115Error as exc:
@@ -217,7 +212,7 @@ async def delete(
     request: Request,
 ) -> dict:
     """批量删除（移入 115 回收站）。"""
-    _require_token(request)
+    require_session(request)
     try:
         return await asyncio.to_thread(pan115.delete_items, body.ids)
     except pan115.Pan115Error as exc:
@@ -232,7 +227,7 @@ async def rename(
     request: Request,
 ) -> dict:
     """重命名单个文件 / 文件夹。"""
-    _require_token(request)
+    require_session(request)
     try:
         return await asyncio.to_thread(pan115.rename_item, body.id, body.name)
     except pan115.Pan115Error as exc:
@@ -247,7 +242,7 @@ async def rename_batch(
     request: Request,
 ) -> dict:
     """批量重命名，一次请求提交多组新名称。"""
-    _require_token(request)
+    require_session(request)
     pairs = [(pair.id, pair.name) for pair in body.items]
     try:
         return await asyncio.to_thread(pan115.rename_items, pairs)
@@ -263,7 +258,7 @@ async def move(
     request: Request,
 ) -> dict:
     """批量移动到指定目录。"""
-    _require_token(request)
+    require_session(request)
     try:
         return await asyncio.to_thread(pan115.move_items, body.ids, body.cid)
     except pan115.Pan115Error as exc:
@@ -278,7 +273,7 @@ async def copy(
     request: Request,
 ) -> dict:
     """批量复制到指定目录。"""
-    _require_token(request)
+    require_session(request)
     try:
         return await asyncio.to_thread(pan115.copy_items, body.ids, body.cid)
     except pan115.Pan115Error as exc:
@@ -294,7 +289,7 @@ async def upload(
     file: UploadFile = File(...),
 ) -> dict:
     """上传文件：先落到服务端临时文件，再交给 115 上传，完成后立即删除。"""
-    _require_token(request)
+    require_session(request)
     filename = os.path.basename((file.filename or "").strip()) or "未命名文件"
 
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".upload")
@@ -322,7 +317,7 @@ async def play(
     pickcode: str,
 ) -> dict:
     """解析播放直链：只返回 URL 与所需请求头，不代理字节流。"""
-    _require_token(request)
+    require_session(request)
     if not pickcode.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="缺少 pickcode")
     try:
@@ -336,7 +331,7 @@ async def play(
 @router.get("/progress")
 async def progress_list(request: Request) -> dict:
     """跨设备观看进度：一次返回全部记录，App 拉取后合并到本地缓存。"""
-    _require_token(request)
+    require_session(request)
     return {"items": await asyncio.to_thread(progress_store.all_entries)}
 
 
@@ -346,7 +341,7 @@ async def progress_save(
     request: Request,
 ) -> dict:
     """上报单个文件的观看进度；位置过小或已到片尾视为看完，服务端直接删除记录。"""
-    _require_token(request)
+    require_session(request)
     if not body.pickcode.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="缺少 pickcode")
     try:
@@ -366,7 +361,7 @@ async def thumb(
     sha1: str = Query(default=""),
 ) -> Response:
     """按文件 sha1 代理 115 缩略图，App 无需持有 Cookie。"""
-    _require_token(request)
+    require_session(request)
     if not sha1.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="缺少 sha1")
     try:
