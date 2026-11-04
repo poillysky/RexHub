@@ -1,7 +1,8 @@
 """115 网盘登录与状态监控。
 
 使用 p115client 提供的扫码登录与账号接口，不自行实现 115 协议。
-授权 Cookie 保存在 data/115_pan.json（0600），不会暴露给前端。
+Cookie 唯一真源是 settings_store（``P115_KEY``，Web 扫码/粘贴都写到那里）；
+data/115_pan.json 只做账号状态缓存（用户名 / VIP / 容量），**绝不落 Cookie**。
 """
 
 
@@ -18,6 +19,7 @@ from urllib.parse import parse_qs, urlparse
 
 from app.rexhub import config, network_store
 
+# 账号状态缓存文件（0600；不含 Cookie）
 AUTH_PATH = config.DATA_DIR / "115_pan.json"
 
 
@@ -74,27 +76,72 @@ class Pan115Error(RuntimeError):
 
 
 # ---------------------------------------------------------------------------
-# 授权文件
+# 凭据（唯一真源：settings_store）与账号状态缓存
 # ---------------------------------------------------------------------------
 
-def _read_auth() -> dict | None:
+def _read_cache() -> dict:
+    """读取账号状态缓存；兼容旧结构（含 cookies 字段），但只取状态字段。"""
     try:
         data = json.loads(AUTH_PATH.read_text("utf-8"))
     except (OSError, ValueError):
-        return None
-    if not isinstance(data, dict) or not isinstance(data.get("cookies"), dict):
-        return None
-    if not data["cookies"]:
-        return None
+        return {}
+    if not isinstance(data, dict):
+        return {}
     return data
 
 
-def _write_auth(data: dict) -> None:
+def _write_cache(data: dict) -> None:
     config.ensure_data_dir()
+    data = {k: v for k, v in data.items() if k != "cookies"}
     tmp = AUTH_PATH.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), "utf-8")
     os.chmod(tmp, 0o600)
     tmp.replace(AUTH_PATH)
+
+
+def _settings_cookie() -> str:
+    import app.core.settings_store as settings_store
+
+    raw = settings_store.get_setting(settings_store.P115_KEY) or {}
+    return str(raw.get("cookie") or "").strip()
+
+
+def _parse_cookie(raw: str) -> dict[str, str]:
+    cookies: dict[str, str] = {}
+    for part in raw.replace("\n", ";").split(";"):
+        key, _, value = part.strip().partition("=")
+        if key and value:
+            cookies[key] = value
+    return cookies
+
+
+_legacy_migrated = False
+
+
+def _cookies() -> dict[str, str] | None:
+    """当前会话 cookies；旧版 Cookie 文件会在首次调用时迁移进 settings_store。"""
+    global _legacy_migrated
+    raw = _settings_cookie()
+    if not raw and not _legacy_migrated:
+        _legacy_migrated = True
+        legacy = _read_cache().get("cookies")
+        if isinstance(legacy, dict) and legacy.get("UID"):
+            joined = "; ".join(f"{k}={v}" for k, v in legacy.items())
+            import app.core.settings_store as settings_store
+
+            prev = settings_store.get_setting(settings_store.P115_KEY) or {}
+            settings_store.put_setting(
+                settings_store.P115_KEY, {**prev, "cookie": joined, "enabled": True}
+            )
+            raw = _settings_cookie()
+    if not raw:
+        return None
+    return _parse_cookie(raw)
+
+
+def cookie_string() -> str:
+    """原始 Cookie 串（供按 cookie 取参的实现使用，如离线清理）。"""
+    return _settings_cookie()
 
 
 # ---------------------------------------------------------------------------
@@ -233,8 +280,7 @@ def _account(auth: dict) -> dict[str, Any]:
 
 
 def snapshot() -> dict[str, Any]:
-    auth = _read_auth()
-    if not auth:
+    if not _settings_cookie():
         return {
             "bound": False,
             "status": "unbound",
@@ -249,6 +295,7 @@ def snapshot() -> dict[str, Any]:
             "vip_forever": False,
             "vip_expire": "",
         }
+    auth = _read_cache()
     return {
         "bound": True,
         "status": auth.get("last_status") or "pending",
@@ -263,26 +310,32 @@ def snapshot() -> dict[str, Any]:
 
 
 def check(force: bool = False) -> dict[str, Any]:
-    auth = _read_auth()
-    if not auth:
+    cookies = _cookies()
+    if not cookies:
         return snapshot()
 
     now = time.time()
-    if not force and _cache["data"] and now - _cache["at"] < CACHE_TTL:
+    if (
+        not force
+        and _cache["data"]
+        and _cache.get("cookie") == _settings_cookie()
+        and now - _cache["at"] < CACHE_TTL
+    ):
         return _cache["data"]
 
     result: dict[str, Any]
     try:
-        probe = _probe(auth["cookies"])
+        probe = _probe(cookies)
     except Exception as exc:
-        auth.update(
-            {
-                "last_check": int(now),
-                "last_status": "invalid",
-                "last_message": str(exc),
-            }
-        )
-        _write_auth(auth)
+        auth = {
+            **_read_cache(),
+            "total": _read_cache().get("total"),
+            "used": _read_cache().get("used"),
+            "last_check": int(now),
+            "last_status": "invalid",
+            "last_message": str(exc),
+        }
+        _write_cache(auth)
         result = {
             "bound": True,
             "status": "invalid",
@@ -295,18 +348,18 @@ def check(force: bool = False) -> dict[str, Any]:
             **_account(auth),
         }
     else:
-        auth.update(
-            {
-                "username": probe["username"] or auth.get("username") or "",
-                "total": probe["total"],
-                "used": probe["used"],
-                "last_check": int(now),
-                "last_status": "ok",
-                "last_message": "",
-                **_account(probe),
-            }
-        )
-        _write_auth(auth)
+        auth = {
+            **_read_cache(),
+            "username": probe["username"] or _read_cache().get("username") or "",
+            "total": probe["total"],
+            "used": probe["used"],
+            "bound_at": _read_cache().get("bound_at") or int(now),
+            "last_check": int(now),
+            "last_status": "ok",
+            "last_message": "",
+            **_account(probe),
+        }
+        _write_cache(auth)
         result = {
             "bound": True,
             "status": "ok",
@@ -319,7 +372,7 @@ def check(force: bool = False) -> dict[str, Any]:
             **_account(auth),
         }
 
-    _cache.update({"at": now, "data": result})
+    _cache.update({"at": now, "cookie": _settings_cookie(), "data": result})
     return result
 
 
@@ -347,10 +400,10 @@ async def _run(func, /, *args, timeout: float = REQ_TIMEOUT, **kwargs):
 # ---------------------------------------------------------------------------
 
 def _bound_client() -> tuple[dict[str, str], Any]:
-    auth = _read_auth()
-    if not auth:
-        raise Pan115Error("尚未绑定 115 网盘，请先在服务端管理台绑定")
-    return auth, _client(auth["cookies"])
+    cookies = _cookies()
+    if not cookies:
+        raise Pan115Error("尚未绑定 115 网盘，请先在设置页配置 Cookie")
+    return cookies, _client(cookies)
 
 
 def _list_item(raw: dict[str, Any]) -> dict[str, Any]:
@@ -617,11 +670,10 @@ def cloud_tasks(stat: int = 0, page: int = 1, page_size: int = 30) -> dict[str, 
     if hit and time.time() - hit[0] < _CLOUD_TASK_TTL:
         return hit[1]
 
-    auth = _read_auth()
-    if not auth:
-        raise Pan115Error("尚未绑定 115 网盘，请先在服务端管理台绑定")
+    cookies = _cookies()
+    if not cookies:
+        raise Pan115Error("尚未绑定 115 网盘，请先在设置页配置 Cookie")
 
-    cookies = auth["cookies"]
     payload = {"page": key[1], "page_size": key[2], "stat": key[0]}
     try:
         with ThreadPoolExecutor(max_workers=2) as pool:
@@ -930,14 +982,14 @@ def thumbnail(sha1: str) -> tuple[bytes, str]:
         _thumbs.move_to_end(key)
         return hit
 
-    auth, client = _bound_client()
+    cookies, client = _bound_client()
     try:
         from p115client.tool.download import get_pic_url
 
         link = str(get_pic_url(client, key, timeout=REQ_TIMEOUT))
         if not link.startswith("http"):
             raise Pan115Error("获取缩略图地址失败")
-        result = _fetch_thumb(link, auth["cookies"])
+        result = _fetch_thumb(link, cookies)
     except Pan115Error:
         raise
     except Exception as exc:

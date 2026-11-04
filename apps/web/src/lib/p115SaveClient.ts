@@ -79,7 +79,7 @@ function classifyFail(msg: string): P115SaveResult {
   return { ok: false, message: msg || "转存 115 失败" };
 }
 
-/** 分享 → /settings/p115/share；磁力/ED2K → /settings/p115/offline（含云解压） */
+/** 分享 → /pan/share；磁力/ED2K → /pan/offline（含云解压） */
 export async function runP115Save(opts: {
   urls: string[];
   password?: string | null;
@@ -104,7 +104,7 @@ export async function runP115Save(opts: {
 
   try {
     if (shareUrls.length) {
-      const res = await apiFetch("/settings/p115/share", {
+      const res = await apiFetch("/pan/share", {
         method: "POST",
         body: JSON.stringify({
           urls: shareUrls,
@@ -138,7 +138,7 @@ export async function runP115Save(opts: {
       return { ok: false, message: "没有可转存的磁力/ED2K 链接" };
     }
 
-    const res = await apiFetch("/settings/p115/offline", {
+    const res = await apiFetch("/pan/offline", {
       method: "POST",
       body: JSON.stringify({
         urls: offlineUrls,

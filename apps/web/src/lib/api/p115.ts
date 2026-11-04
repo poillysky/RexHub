@@ -197,6 +197,7 @@ export async function validateP115(body: {
 
 export type P115Task = {
   name: string;
+  /** 数值状态由 /pan/cloud 推导：2=已完成（percent>=100）、1=下载中（percent>0）、0=排队、-1=失败（status_text 含「失败」） */
   status: number;
   statusLabel: string;
   percent: number;
@@ -219,38 +220,104 @@ export type P115TasksResult = {
 
 export type P115ClearMode = 'done' | 'failed' | 'all';
 
+/** /api/pan/cloud 原始返回（snake_case，非信封直返） */
+type PanCloudResult = {
+  counts?: { total?: number | null };
+  quota?: { remaining?: number | null; total?: number | null };
+  page?: number | null;
+  page_count?: number | null;
+  tasks?: Array<{
+    info_hash?: string;
+    name?: string;
+    size?: number | null;
+    add_time?: number | null;
+    status?: string;
+    status_text?: string;
+    percent?: number | null;
+  }>;
+};
+
+function panTaskStatus(statusText: string, percent: number): number {
+  if (percent >= 100) return 2;
+  if (/失败/.test(statusText)) return -1;
+  if (percent > 0) return 1;
+  return 0;
+}
+
 export async function listP115Tasks(page = 1): Promise<P115TasksResult> {
-  const res = await apiFetch(`/settings/p115/tasks?page=${Math.max(1, page)}`);
+  const res = await apiFetch(`/pan/cloud?page=${Math.max(1, page)}`);
   if (!res.ok) throw new Error(await parseError(res));
-  return ((await res.json()) as Envelope<P115TasksResult>).data;
+  const json = (await res.json()) as PanCloudResult;
+  return {
+    tasks: (json.tasks || []).map((t) => {
+      const statusLabel = String(t.status_text || '');
+      const percent = Number(t.percent) || 0;
+      return {
+        name: String(t.name || ''),
+        status: panTaskStatus(statusLabel, percent),
+        statusLabel,
+        percent,
+        infoHash: t.info_hash,
+        size: t.size ?? null,
+        addTime: t.add_time ?? null,
+      };
+    }),
+    page: json.page ?? null,
+    pageCount: json.page_count ?? null,
+    count: json.counts?.total ?? null,
+    quota: json.quota?.remaining ?? null,
+    quotaTotal: json.quota?.total ?? null,
+  };
 }
 
 export async function clearP115Tasks(
   mode: P115ClearMode,
-): Promise<P115TasksResult & { ok?: boolean; mode?: string; message?: string }> {
-  const res = await apiFetch('/settings/p115/tasks/clear', {
+): Promise<{
+  ok?: boolean;
+  mode?: string;
+  message?: string;
+  tasks?: P115Task[];
+  quota?: number | null;
+  quotaTotal?: number | null;
+}> {
+  const res = await apiFetch('/pan/cloud/clear', {
     method: 'POST',
     body: JSON.stringify({ mode }),
   });
   if (!res.ok) throw new Error(await parseError(res));
-  const json = (await res.json()) as Envelope<
-    P115TasksResult & { ok?: boolean; mode?: string; message?: string }
-  > & { message: string };
-  return { ...json.data, message: json.message };
+  return (await res.json().catch(() => ({}))) as {
+    ok?: boolean;
+    mode?: string;
+    message?: string;
+    tasks?: P115Task[];
+    quota?: number | null;
+    quotaTotal?: number | null;
+  };
 }
 
 export async function deleteP115Task(
   infoHash: string,
-): Promise<P115TasksResult & { ok?: boolean; infoHash?: string; message?: string }> {
-  const res = await apiFetch('/settings/p115/tasks/delete', {
+): Promise<{
+  ok?: boolean;
+  infoHash?: string;
+  message?: string;
+  tasks?: P115Task[];
+  quota?: number | null;
+  quotaTotal?: number | null;
+}> {
+  const res = await apiFetch('/pan/cloud/delete', {
     method: 'POST',
-    body: JSON.stringify({ infoHash }),
+    body: JSON.stringify({ info_hash: infoHash }),
   });
   if (!res.ok) throw new Error(await parseError(res));
-  const json = (await res.json()) as Envelope<
-    P115TasksResult & { ok?: boolean; infoHash?: string; message?: string }
-  > & { message: string };
-  return { ...json.data, message: json.message };
+  return (await res.json().catch(() => ({}))) as {
+    ok?: boolean;
+    infoHash?: string;
+    message?: string;
+    tasks?: P115Task[];
+    quota?: number | null;
+    quotaTotal?: number | null;
+  };
 }
 
 export type P115QrApp = { key: string; label: string };
