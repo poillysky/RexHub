@@ -618,18 +618,6 @@ def get_p115(_user: dict[str, Any] | None = Depends(get_optional_user)) -> Envel
     )
 
 
-@router.get("/p115/account", response_model=Envelope)
-def get_p115_account(_user: dict[str, Any] | None = Depends(get_optional_user)) -> Envelope:
-    """115 账号快照（头像 / 昵称 / VIP），设置页账号卡使用。"""
-    from app.rexhub import pan115
-
-    try:
-        data = pan115.check()
-    except Exception as exc:  # noqa: BLE001 — 未绑定时返回 bound=false 即可
-        return Envelope(data={"bound": False}, message=str(exc) or "获取失败")
-    return Envelope(data=data, message="")
-
-
 @router.get("/p115/status", response_model=Envelope)
 def get_p115_status(_user: dict[str, Any] | None = Depends(get_optional_user)) -> Envelope:
     """115 实时状态：额度 / 空间 / 单任务上限。用于设置页异步补状态，避免首屏阻塞。"""

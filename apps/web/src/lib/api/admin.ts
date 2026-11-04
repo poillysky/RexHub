@@ -271,17 +271,6 @@ export type Pan115Account = {
   vip_expire: string;
 };
 
-/** 读取 115 登录状态（PWA 走 Web 会话，不必带 Bearer）。 */
-export async function getPan115Account(): Promise<{
-  configured: boolean;
-  cookieHint?: string;
-}> {
-  const res = await apiFetch('/pan/account');
-  if (!res.ok) return { configured: false };
-  const data = (await res.json()) as { configured?: boolean; cookieHint?: string };
-  return { configured: Boolean(data?.configured), cookieHint: data?.cookieHint };
-}
-
 /** 账号详情：与 iOS 共用 /pan/account；115 未绑定时返回 null，不抛错。 */
 export async function getPan115Snapshot(): Promise<Pan115Account | null> {
   const res = await apiFetch('/pan/account');
