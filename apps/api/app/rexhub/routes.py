@@ -26,7 +26,6 @@ from app.rexhub.routers import (
     widgets,
 )
 
-# 顺序与原 ``server/app/main.py`` 一致，便于对照排查。
 # 注意：不含 auth —— 登录/会话统一由 ``app.auth.routes`` 提供（/api/auth/*），
 # 同时支持 Web 的 Cookie 与 iOS 的 Bearer，避免两套账号库并存。
 REXHUB_ROUTERS = (

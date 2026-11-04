@@ -1,22 +1,11 @@
-"""Browse / search / detail against Postgres resource DB."""
+"""资源搜索主流程：结果缓存、AV/Bitmagnet 快速通道与通用 SQL 检索。"""
 
 
 import json
-import time
 from typing import Any
 
 import app.core.pg as pg
-from app.search.resource_format import (
-    FILTERED_CORE_COLS,
-    FILTER_META_JOIN,
-    HASH_RE,
-    LIST_META_JOIN,
-    PUBLIC_RESOURCE_FILTER,
-    RESOURCE_SELECT,
-    SOURCE_META_JOIN,
-    format_resource,
-    format_resources,
-)
+from app.core.region_board_allowlist import normalize_region, region_allowlist_sql
 from app.search.av import (
     apply_av_code_boundary_filter,
     build_av_code_continuation_reject,
@@ -25,7 +14,6 @@ from app.search.av import (
 )
 from app.search.constants import (
     MAX_SEARCH_OFFSET,
-    escape_ilike,
     normalize_match_mode,
     normalize_sort_type,
     resolve_sort_type_for_query,
@@ -35,100 +23,27 @@ from app.search.keywords import (
     build_relevance_order_by,
     extract_keywords,
 )
-from app.core.region_board_allowlist import (
-    board_fid_allowed,
-    normalize_region,
-    region_allowlist_sql,
-)
 from app.search.prefer import build_prefer_filter_sql
+from app.search.resource_format import (
+    FILTERED_CORE_COLS,
+    FILTER_META_JOIN,
+    HASH_RE,
+    PUBLIC_RESOURCE_FILTER,
+    format_resources,
+)
 
-# Bitmagnet service.ts?1 week / 1 month / 1 year???? 7/31/365 day?
-TIME_FILTERS = {
-    "gt-1day": "AND r.created_at > now() - interval '1 day'",
-    "gt-7day": "AND r.created_at > now() - interval '1 week'",
-    "gt-31day": "AND r.created_at > now() - interval '1 month'",
-    "gt-365day": "AND r.created_at > now() - interval '1 year'",
-}
-
-# Bitmagnet???? BETWEEN??? inclusive??gt5gb ? >
-SIZE_FILTERS = {
-    "lt100mb": "AND r.size < 100 * 1024 * 1024::bigint",
-    "gt100mb-lt500mb": (
-        "AND r.size BETWEEN 100 * 1024 * 1024::bigint "
-        "AND 500 * 1024 * 1024::bigint"
-    ),
-    "gt500mb-lt1gb": (
-        "AND r.size BETWEEN 500 * 1024 * 1024::bigint "
-        "AND 1024 * 1024 * 1024::bigint"
-    ),
-    "gt1gb-lt5gb": (
-        "AND r.size BETWEEN 1 * 1024 * 1024 * 1024::bigint "
-        "AND 5 * 1024 * 1024 * 1024::bigint"
-    ),
-    "gt5gb": "AND r.size > 5 * 1024 * 1024 * 1024::bigint",
-}
-
-SORT_SQL = {
-    "default": "r.created_at DESC",
-    "size": "r.size DESC NULLS LAST, r.created_at DESC",
-    # links_count ?? FILTER_META?????enrich ??? LIST_META ??? links
-    "count": "coalesce(rs.links_count, 1) DESC, r.created_at DESC",
-    "date": "r.created_at DESC",
-}
-
-# Bitmagnet UNION ?????????? rs?
-_BM_ARM_ORDER = {
-    "default": "r.created_at DESC",
-    "date": "r.created_at DESC",
-    "size": "r.size DESC NULLS LAST, r.created_at DESC",
-}
-_BM_OUTER_ORDER = {
-    "default": "u.created_at DESC",
-    "date": "u.created_at DESC",
-    "size": "u.size DESC NULLS LAST, u.created_at DESC",
-}
-
-_ILIKE_ESC = "ESCAPE '\\'"
-
-_trgm_ok: bool | None = None
-_SEARCH_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
-_SEARCH_CACHE_TTL = 30.0
-_SEARCH_CACHE_MAX = 64
-# 搜索 SQL 超时（毫秒）；超时后前端可重试/收窄时间范围
-_SEARCH_STATEMENT_TIMEOUT_MS = 8000
-# 精确 COUNT 上限：超过则返回 cap（列表不依赖精确总数）
-_SEARCH_COUNT_CAP = 1000
-
-
-def _search_cache_get(key: str) -> dict[str, Any] | None:
-    hit = _SEARCH_CACHE.get(key)
-    if not hit:
-        return None
-    ts, data = hit
-    if time.monotonic() - ts > _SEARCH_CACHE_TTL:
-        _SEARCH_CACHE.pop(key, None)
-        return None
-    return data
-
-
-def _search_cache_set(key: str, data: dict[str, Any]) -> None:
-    if len(_SEARCH_CACHE) >= _SEARCH_CACHE_MAX:
-        oldest = min(_SEARCH_CACHE.items(), key=lambda kv: kv[1][0])[0]
-        _SEARCH_CACHE.pop(oldest, None)
-    _SEARCH_CACHE[key] = (time.monotonic(), data)
-
-
-def pg_trgm_available() -> bool:
-    global _trgm_ok
-    if _trgm_ok is None:
-        try:
-            rows = pg.query(
-                "SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm' LIMIT 1"
-            )
-            _trgm_ok = bool(rows)
-        except Exception:
-            _trgm_ok = False
-    return _trgm_ok
+from . import cache
+from .av_union import _av_union_count, _av_union_list, _filter_rows_by_region
+from .bm_union import _bitmagnet_union_count, _bitmagnet_union_list
+from .browse import resource_by_hash
+from .cache import _search_cache_get, _search_cache_set, pg_trgm_available
+from .filters import (
+    _BM_ARM_ORDER,
+    _list_enrich_sql,
+    SIZE_FILTERS,
+    SORT_SQL,
+    TIME_FILTERS,
+)
 
 
 def _page_params(p: int, ps: int) -> tuple[int, int, int]:
@@ -137,340 +52,6 @@ def _page_params(p: int, ps: int) -> tuple[int, int, int]:
     page_size = min(max(int(ps or 10), 1), 80)
     offset = min((page - 1) * page_size, MAX_SEARCH_OFFSET)
     return page, page_size, offset
-
-
-def _browse_page_params(p: int, ps: int) -> tuple[int, int, int]:
-    page = max(1, int(p or 1))
-    # 「最新」首屏可一次拉到 500
-    page_size = min(max(int(ps or 10), 1), 500)
-    offset = min((page - 1) * page_size, MAX_SEARCH_OFFSET)
-    return page, page_size, offset
-
-
-def _list_enrich_sql(from_filtered: str = "filtered") -> str:
-    """Bitmagnet?CTE ????? LIST_META?????????"""
-    return f"""
-SELECT {RESOURCE_SELECT}
-FROM {from_filtered} r
-{LIST_META_JOIN}
-"""
-
-
-_browse_indexes_ready = False
-
-
-def _ensure_browse_indexes() -> None:
-    """?????? board_fid ??????????"""
-    global _browse_indexes_ready
-    if _browse_indexes_ready:
-        return
-    try:
-        pg.query(
-            "CREATE INDEX IF NOT EXISTS idx_resource_sources_board_fid "
-            "ON resource_sources (board_fid)"
-        )
-    except Exception:
-        pass
-    _browse_indexes_ready = True
-
-
-def browse_resources(
-    *,
-    p: int = 1,
-    ps: int = 10,
-    link_kind: str | None = None,
-    board_fid: str | None = None,
-    board: str | None = None,
-    board_parent: str | None = None,
-    keyword: str | None = None,
-    with_total_count: bool = False,
-) -> dict[str, Any]:
-    """???? / ?????
-
-    ? board_fid ?? resource_sources ???``fid`` ? ``fid:%``??
-    ???? COUNT?``ps+1`` ? has_more???? 5?10s ?????
-    """
-    page, page_size, offset = _browse_page_params(p, ps)
-    kind = (link_kind or "").strip()
-    link_sql = ""
-    if kind == "magnet":
-        link_sql = "AND lower(COALESCE(r.ed2k_link, '')) LIKE 'magnet:%%'"
-    elif kind == "ed2k":
-        link_sql = "AND lower(COALESCE(r.ed2k_link, '')) LIKE 'ed2k://%%'"
-
-    kw = (keyword or "").strip()
-    kw_sql = ""
-    kw_params: list[Any] = []
-    if len(kw) >= 2:
-        pat = f"%{escape_ilike(kw)}%"
-        kw_sql = (
-            f"AND (r.filename ILIKE %s {_ILIKE_ESC} "
-            f"OR COALESCE(rs.title, '') ILIKE %s {_ILIKE_ESC})"
-        )
-        kw_params = [pat, pat]
-
-    fid = (board_fid or "").strip()
-    board_name = (board or "").strip()
-    parent = (board_parent or "").strip()
-    fetch_limit = page_size if with_total_count else page_size + 1
-
-    # ?? ????? board_fid???? fid:%???
-    if fid:
-        _ensure_browse_indexes()
-        # ?? 141 ? 141 + 141:%??? 141:689 ? ?? + ?????
-        fid_params: list[Any] = [fid, f"{fid}:%%", *kw_params]
-        list_sql = f"""
-WITH filtered AS (
-  SELECT {FILTERED_CORE_COLS}
-  FROM resource_sources rs
-  JOIN ed2k_resources r ON r.hash = rs.hash
-  WHERE (rs.board_fid = %s OR rs.board_fid LIKE %s)
-  {PUBLIC_RESOURCE_FILTER}
-  {link_sql}
-  {kw_sql}
-  ORDER BY r.created_at DESC
-  LIMIT %s OFFSET %s
-)
-{_list_enrich_sql("filtered")}
-"""
-        rows = pg.query(list_sql, [*fid_params, fetch_limit, offset])
-        if with_total_count:
-            count_sql = f"""
-SELECT COUNT(*)::int AS total_count
-FROM resource_sources rs
-JOIN ed2k_resources r ON r.hash = rs.hash
-WHERE (rs.board_fid = %s OR rs.board_fid LIKE %s)
-{PUBLIC_RESOURCE_FILTER}
-{link_sql}
-{kw_sql}
-"""
-            total = int(
-                (pg.query(count_sql, fid_params) or [{}])[0].get(
-                    "total_count", 0
-                )
-                or 0
-            )
-            rows = rows[:page_size]
-            has_more = offset + len(rows) < total
-        else:
-            has_more = len(rows) > page_size
-            rows = rows[:page_size]
-            total = offset + len(rows) + (1 if has_more else 0)
-        return {
-            "resources": format_resources(rows, prefetch_torrents=False),
-            "total_count": total,
-            "page": page,
-            "page_size": page_size,
-            "has_more": has_more,
-        }
-
-    # ?? ???????????????????? COUNT???
-    where = ["TRUE", PUBLIC_RESOURCE_FILTER.strip()]
-    params: list[Any] = []
-    if link_sql:
-        where.append(link_sql)
-    need_meta = bool(board_name or parent or kw_sql)
-    if parent:
-        where.append(
-            "AND (rs.board_name = %s OR rs.board_name LIKE %s OR rs.board_name LIKE %s)"
-        )
-        params.extend([parent, f"{parent} ? %", f"{parent}-%"])
-    elif board_name:
-        where.append(
-            "AND replace(COALESCE(rs.board_name, ''), '-', ' ? ') = %s"
-        )
-        params.append(board_name.replace("-", " ? "))
-    if kw_sql:
-        where.append(kw_sql)
-        params.extend(kw_params)
-
-    where_sql = "\n".join(where)
-
-    if need_meta:
-        list_sql = f"""
-WITH filtered AS (
-  SELECT {FILTERED_CORE_COLS}
-  FROM resource_sources rs
-  JOIN ed2k_resources r ON r.hash = rs.hash
-  WHERE {where_sql}
-  ORDER BY r.created_at DESC
-  LIMIT %s OFFSET %s
-)
-{_list_enrich_sql("filtered")}
-"""
-    else:
-        list_sql = f"""
-WITH filtered AS (
-  SELECT {FILTERED_CORE_COLS}
-  FROM ed2k_resources r
-  WHERE {where_sql}
-  ORDER BY r.created_at DESC
-  LIMIT %s OFFSET %s
-)
-{_list_enrich_sql("filtered")}
-"""
-
-    rows = pg.query(list_sql, [*params, fetch_limit, offset])
-    if with_total_count:
-        if need_meta:
-            count_sql = f"""
-SELECT COUNT(*)::int AS total_count
-FROM resource_sources rs
-JOIN ed2k_resources r ON r.hash = rs.hash
-WHERE {where_sql}
-"""
-        else:
-            count_sql = f"""
-SELECT COUNT(*)::int AS total_count
-FROM ed2k_resources r
-WHERE {where_sql}
-"""
-        total = int(
-            (pg.query(count_sql, params) or [{}])[0].get("total_count", 0) or 0
-        )
-        rows = rows[:page_size]
-        has_more = offset + len(rows) < total
-    else:
-        has_more = len(rows) > page_size
-        rows = rows[:page_size]
-        total = offset + len(rows) + (1 if has_more else 0)
-
-    return {
-        "resources": format_resources(rows, prefetch_torrents=False),
-        "total_count": total,
-        "page": page,
-        "page_size": page_size,
-        "has_more": has_more,
-    }
-
-
-def resource_by_hash(hash_: str) -> dict[str, Any] | None:
-    h = (hash_ or "").strip().upper()
-    if not h:
-        return None
-    sql = f"""
-SELECT {RESOURCE_SELECT}
-FROM ed2k_resources r
-{SOURCE_META_JOIN}
-WHERE r.hash = %s
-{PUBLIC_RESOURCE_FILTER}
-LIMIT 1
-"""
-    rows = pg.query(sql, [h])
-    if not rows:
-        return None
-    # 色花详情不拉外网 .torrent 补文件树（会卡住首屏）；文件列表前端也不再展示
-    return format_resource(rows[0], enrich_magnets=False)
-
-
-def _av_union_count(
-    patterns: list[str], reject: str | None
-) -> int:
-    file_or = " OR ".join(
-        [f"r.filename ILIKE %s {_ILIKE_ESC}"] * len(patterns)
-    )
-    title_or = " OR ".join(
-        [f"rs.title ILIKE %s {_ILIKE_ESC}"] * len(patterns)
-    )
-    file_reject = " AND r.filename !~* %s" if reject else ""
-    title_reject = " AND rs.title !~* %s" if reject else ""
-    sql = f"""
-SELECT COUNT(*)::int AS total FROM (
-  SELECT r.hash FROM ed2k_resources r
-  WHERE ({file_or}){file_reject}
-  {PUBLIC_RESOURCE_FILTER}
-  UNION
-  SELECT r.hash FROM resource_sources rs
-  JOIN ed2k_resources r ON r.hash = rs.hash
-  WHERE ({title_or}){title_reject}
-  {PUBLIC_RESOURCE_FILTER}
-) t
-"""
-    params: list[Any] = [*patterns]
-    if reject:
-        params.append(reject)
-    params.extend(patterns)
-    if reject:
-        params.append(reject)
-    rows = pg.query(sql, params)
-    return int(rows[0]["total"]) if rows else 0
-
-
-def _filter_rows_by_region(
-    rows: list[dict[str, Any]],
-    region: str | None,
-    *,
-    include_optional: bool = True,
-) -> list[dict[str, Any]]:
-    """????????????????? board_fid SQL ?? AV/Bitmagnet??"""
-    if not region:
-        return rows
-    return [
-        r
-        for r in rows
-        if board_fid_allowed(
-            r.get("board_fid"), region, include_optional=include_optional
-        )
-    ]
-
-
-def _av_union_list(
-    patterns: list[str],
-    reject: str | None,
-    *,
-    fetch_limit: int,
-    offset: int,
-) -> list[dict[str, Any]]:
-    file_or = " OR ".join(
-        [f"r.filename ILIKE %s {_ILIKE_ESC}"] * len(patterns)
-    )
-    title_or = " OR ".join(
-        [f"rs.title ILIKE %s {_ILIKE_ESC}"] * len(patterns)
-    )
-    file_reject = " AND r.filename !~* %s" if reject else ""
-    title_reject = " AND rs.title !~* %s" if reject else ""
-    # ???? 480??? region ???????????
-    arm_limit = min(max(fetch_limit + offset, fetch_limit), 480)
-    sql = f"""
-WITH hits AS (
-  (
-    SELECT r.hash, r.created_at FROM ed2k_resources r
-    WHERE ({file_or}){file_reject}
-    {PUBLIC_RESOURCE_FILTER}
-    ORDER BY r.created_at DESC
-    LIMIT %s
-  )
-  UNION
-  (
-    SELECT r.hash, r.created_at FROM resource_sources rs
-    JOIN ed2k_resources r ON r.hash = rs.hash
-    WHERE ({title_or}){title_reject}
-    {PUBLIC_RESOURCE_FILTER}
-    ORDER BY r.created_at DESC
-    LIMIT %s
-  )
-),
-uniq AS (
-  SELECT hash, MAX(created_at) AS created_at FROM hits GROUP BY hash
-),
-filtered AS (
-  SELECT {FILTERED_CORE_COLS}
-  FROM uniq u
-  JOIN ed2k_resources r ON r.hash = u.hash
-  ORDER BY u.created_at DESC
-  LIMIT %s OFFSET %s
-)
-{_list_enrich_sql("filtered")}
-"""
-    params: list[Any] = [*patterns]
-    if reject:
-        params.append(reject)
-    params.append(arm_limit)
-    params.extend(patterns)
-    if reject:
-        params.append(reject)
-    params.extend([arm_limit, fetch_limit, offset])
-    return pg.query(sql, params)
 
 
 def _search_count_sql(where_sql: str, *, with_meta: bool) -> str:
@@ -499,100 +80,6 @@ WITH filtered AS (
 """
 
 
-def _bitmagnet_union_count(
-    file_sql: str,
-    title_sql: str,
-    file_params: list[Any],
-    title_params: list[Any],
-    extra_where: str,
-) -> int:
-    """filename ∪ title 命中数；封顶避免全库 COUNT 拖死。"""
-    sql = f"""
-SELECT COUNT(*)::int AS total FROM (
-  SELECT hash FROM (
-    SELECT r.hash FROM ed2k_resources r
-    WHERE ({file_sql})
-    {PUBLIC_RESOURCE_FILTER}
-    {extra_where}
-    UNION
-    SELECT r.hash FROM resource_sources rs
-    JOIN ed2k_resources r ON r.hash = rs.hash
-    WHERE ({title_sql})
-    {PUBLIC_RESOURCE_FILTER}
-    {extra_where}
-  ) u
-  LIMIT %s
-) t
-"""
-    rows = pg.query(
-        sql,
-        [*file_params, *title_params, _SEARCH_COUNT_CAP + 1],
-        statement_timeout_ms=_SEARCH_STATEMENT_TIMEOUT_MS,
-    )
-    n = int(rows[0]["total"]) if rows else 0
-    return min(n, _SEARCH_COUNT_CAP)
-
-
-def _bitmagnet_union_list(
-    file_sql: str,
-    title_sql: str,
-    file_params: list[Any],
-    title_params: list[Any],
-    extra_where: str,
-    *,
-    sort_key: str,
-    fetch_limit: int,
-    offset: int,
-) -> list[dict[str, Any]]:
-    """Bitmagnet?filename ? title ??????
-
-    ???? title????????????????????? SONE-996 ????
-    ???????????? title?????
-    """
-    arm_order = _BM_ARM_ORDER.get(sort_key, _BM_ARM_ORDER["default"])
-    outer_order = _BM_OUTER_ORDER.get(sort_key, _BM_OUTER_ORDER["default"])
-    arm_limit = min(max(fetch_limit, 40), 240)
-    sql = f"""
-WITH hits AS (
-  (
-    SELECT r.hash, r.created_at, r.size FROM ed2k_resources r
-    WHERE ({file_sql})
-    {PUBLIC_RESOURCE_FILTER}
-    {extra_where}
-    ORDER BY {arm_order}
-    LIMIT %s
-  )
-  UNION
-  (
-    SELECT r.hash, r.created_at, r.size FROM resource_sources rs
-    JOIN ed2k_resources r ON r.hash = rs.hash
-    WHERE ({title_sql})
-    {PUBLIC_RESOURCE_FILTER}
-    {extra_where}
-    ORDER BY {arm_order}
-    LIMIT %s
-  )
-),
-uniq AS (
-  SELECT hash, MAX(created_at) AS created_at, MAX(size) AS size
-  FROM hits GROUP BY hash
-),
-filtered AS (
-  SELECT {FILTERED_CORE_COLS}
-  FROM uniq u
-  JOIN ed2k_resources r ON r.hash = u.hash
-  ORDER BY {outer_order}
-  LIMIT %s OFFSET %s
-)
-{_list_enrich_sql("filtered")}
-"""
-    return pg.query(
-        sql,
-        [*file_params, arm_limit, *title_params, arm_limit, fetch_limit, offset],
-        statement_timeout_ms=_SEARCH_STATEMENT_TIMEOUT_MS,
-    )
-
-
 def search_resources(
     *,
     keyword: str,
@@ -611,8 +98,6 @@ def search_resources(
     region: str | None = None,
     include_optional_boards: bool = True,
 ) -> dict[str, Any]:
-    global _trgm_ok
-
     kw = (keyword or "").strip()
     if len(kw) < 2:
         raise ValueError("????? 2 ???")
@@ -819,7 +304,7 @@ def search_resources(
             except Exception as e:
                 msg = str(e).lower()
                 if use_trgm and ("similarity" in msg or "word_similarity" in msg):
-                    _trgm_ok = False
+                    cache._trgm_ok = False
                     file_sql, file_params, _ = build_keyword_filter(
                         kw_items, mode, full_keyword=full_plain, field="filename"
                     )
@@ -867,7 +352,7 @@ def search_resources(
         except Exception as e:
             msg = str(e).lower()
             if use_trgm and ("similarity" in msg or "word_similarity" in msg):
-                _trgm_ok = False
+                cache._trgm_ok = False
                 file_sql, file_params, _ = build_keyword_filter(
                     kw_items, mode, full_keyword=full_plain, field="filename"
                 )
@@ -988,7 +473,7 @@ def search_resources(
     except Exception as e:
         msg = str(e).lower()
         if use_trgm and ("similarity" in msg or "word_similarity" in msg):
-            _trgm_ok = False
+            cache._trgm_ok = False
             if sort_key == "relevance":
                 order, order_params = build_relevance_order_by(
                     kw_items, full_plain, use_trgm=False

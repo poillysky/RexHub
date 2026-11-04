@@ -23,6 +23,7 @@ from typing import Any, Callable
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "apps" / "api"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from app.search import bitmagnet_pg  # noqa: E402
 from app.core import pg  # noqa: E402
@@ -632,7 +633,7 @@ def _process_texts_parallel(
         )
 
     _report(0, percent=pct_lo)
-    from app.core.container_budget import io_threads, memory_class
+    from container_budget import io_threads, memory_class
 
     if memory_class() == "host":
         workers = max(4, min(12, (os.cpu_count() or 4)))
