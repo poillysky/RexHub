@@ -30,7 +30,6 @@ from app.search.magnet_routes import router as magnet_router
 from app.search.pansou_routes import router as pansou_router
 from app.search.cloudsaver_routes import router as cloudsaver_router
 from app.translate.routes import router as translate_router
-from app.media.routes import router as media_router
 
 # DB 连接设置端点：resource-db / bitmagnet-db 由同一个参数化工厂生成。
 from app.core.db_settings_routes import (
@@ -103,7 +102,6 @@ _BUSINESS_ROUTERS = [
     pansou_router,
     cloudsaver_router,
     translate_router,
-    media_router,
 ]
 
 # auth router 前缀已是 /api/auth，直接挂载

@@ -46,16 +46,6 @@ _cloud_tokens: dict[str, tuple[float, str]] = {}
 _cloud_pools: dict[tuple[str, str], tuple[float, dict]] = {}
 
 
-def _cache_get(key: tuple[str, str]) -> list[dict] | None:
-    entry = _candidates.get(key)
-    if entry is None:
-        return None
-    if monotonic() - entry[0] > CACHE_TTL:
-        _candidates.pop(key, None)
-        return None
-    return entry[1]
-
-
 def _db_pool_get(
     key: tuple[str, str],
 ) -> tuple[float, list[dict], int, bool | None] | None:

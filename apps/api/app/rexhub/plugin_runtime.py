@@ -19,6 +19,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 from typing import Any
 
 from app.rexhub import config, network_store, plugin_analyzer
@@ -338,8 +339,10 @@ def run_function(
         {"source": source, "function": function, "params": params or {}, "proxy": proxy},
         ensure_ascii=False,
     ).encode("utf-8")
+    # 子进程要 import app 包：定位到 app/ 所在目录（apps/api），不能用 BASE_DIR（仓库根）
+    app_root = str(Path(__file__).resolve().parents[2])
     env = dict(os.environ)
-    env["PYTHONPATH"] = str(config.BASE_DIR) + os.pathsep + env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = app_root + os.pathsep + env.get("PYTHONPATH", "")
     if not _RUN_SLOTS.acquire(timeout=RUN_SLOT_TIMEOUT):
         raise PluginRuntimeError("插件执行任务过多，请稍后重试")
     try:
@@ -347,7 +350,7 @@ def run_function(
             [sys.executable, "-m", "app.rexhub.plugin_runtime", "--child"],
             input=payload,
             capture_output=True,
-            cwd=str(config.BASE_DIR),
+            cwd=app_root,
             env=env,
             timeout=RUN_TIMEOUT + 5,
             check=False,

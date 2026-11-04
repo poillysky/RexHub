@@ -100,8 +100,8 @@ async function httpRequest(options) {
 const Widget = {
   http: {
     get: (url, options) => httpRequest({ ...(options || {}), url, method: "GET" }),
-    post: (url, body, options) =>
-      httpRequest({ ...(options || {}), url, body, method: "POST" }),
+    post: (url, options) =>
+      httpRequest({ ...(options || {}), url, method: "POST" }),
     request: (options) => httpRequest(options || {}),
   },
 };

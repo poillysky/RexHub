@@ -20,6 +20,14 @@ from urllib.request import ProxyHandler, Request, build_opener
 from app.rexhub import stremio_bridge
 
 PLUGIN_ID = "rexhub.tmdb"
+# source → 插件：bangumi / bgm / anilist 共用同一个 rexhub.bangumi 插件。
+PLUGIN_IDS = {
+    "tmdb": "rexhub.tmdb",
+    "douban": "rexhub.douban",
+    "bangumi": "rexhub.bangumi",
+    "bgm": "rexhub.bangumi",
+    "anilist": "rexhub.bangumi",
+}
 LIST_TTL = 300
 EXTRAS_TTL = 900
 IMAGE_TTL = 86400
@@ -86,11 +94,43 @@ def _image_path(value: Any) -> str:
     return text if _IMAGE_PATH_RE.match(text) else ""
 
 
-def _plugin() -> dict[str, Any]:
-    plugin = stremio_bridge._find_plugin(PLUGIN_ID)
+def _normalize_source(source: str) -> str:
+    key = _text(source).lower() or "tmdb"
+    return "bangumi" if key == "bgm" else key
+
+
+def _plugin(source: str = "tmdb") -> dict[str, Any]:
+    key = _normalize_source(source)
+    plugin_id = PLUGIN_IDS.get(key)
+    if plugin_id is None:
+        raise ValueError(f"未知数据源: {source}")
+    plugin = stremio_bridge._find_plugin(plugin_id)
     if plugin is None:
-        raise ValueError("影视插件未安装或未启用")
+        raise ValueError(f"{plugin_id} 插件未安装或未启用")
     return plugin
+
+
+def _parse_media_id(media_id: str) -> tuple[str, str]:
+    """拆 `source:native` 前缀；无前缀默认 tmdb（兼容旧 id 写法）。"""
+
+    target = _text(media_id)
+    prefix, _, rest = target.partition(":")
+    if rest and _normalize_source(prefix) in PLUGIN_IDS:
+        return _normalize_source(prefix), rest.strip()
+    return "tmdb", target
+
+
+def _catalog_target(catalog_id: str) -> tuple[str, str]:
+    """按栏目 id 前缀定位插件；tmdb 栏目在 catalogs() 里带 `tmdb:` 前缀。"""
+
+    cid = _text(catalog_id)
+    if cid.startswith("tmdb:"):
+        return "tmdb", cid[len("tmdb:") :]
+    if cid.startswith("douban-"):
+        return "douban", cid
+    if cid.startswith(("bgm-", "anilist-")):
+        return "bangumi", cid
+    return "tmdb", cid
 
 
 def _modules(plugin: dict[str, Any]) -> list[dict[str, Any]]:
@@ -106,23 +146,49 @@ def _module(plugin: dict[str, Any], catalog_id: str) -> dict[str, Any]:
     raise ValueError("影视栏目不存在")
 
 
-def catalogs() -> list[dict[str, Any]]:
-    """插件声明的前台栏目，按插件里的顺序返回。"""
+_CATALOG_SKIP_FUNCTIONS = {
+    "loadDetail",
+    "loadResource",
+    "search",
+    "loadDiscover",
+    "loadPersonWorks",
+    "loadGenres",
+}
 
-    plugin = _plugin()
+
+def catalogs() -> list[dict[str, Any]]:
+    """聚合 tmdb + douban + bangumi 三插件声明的前台栏目，每个目录带 source。
+
+    anilist 目录由 rexhub.bangumi 插件透出（id 带 `anilist-` 前缀），
+    source 单独标成 anilist，方便前台按数据源分组。
+    缺某个插件时跳过该源，不影响其他源。
+    """
+
     items: list[dict[str, Any]] = []
-    for module in _modules(plugin):
-        function = _text(module.get("function"))
-        if not function or function in {"loadDetail", "loadResource", "search"}:
+    for source in ("tmdb", "douban", "bangumi"):
+        try:
+            plugin = _plugin(source)
+        except ValueError:
             continue
-        media_type = "movie" if _text(module.get("mediaType")).lower() == "movie" else "series"
-        items.append(
-            {
-                "id": _text(module.get("id")) or function,
-                "title": _text(module.get("title")) or function,
-                "mediaType": media_type,
-            }
-        )
+        for module in _modules(plugin):
+            function = _text(module.get("function"))
+            if not function or function in _CATALOG_SKIP_FUNCTIONS:
+                continue
+            module_id = _text(module.get("id")) or function
+            catalog_source = (
+                "anilist"
+                if source == "bangumi" and module_id.startswith("anilist-")
+                else source
+            )
+            media_type = "movie" if _text(module.get("mediaType")).lower() == "movie" else "series"
+            items.append(
+                {
+                    "id": f"tmdb:{module_id}" if source == "tmdb" else module_id,
+                    "title": _text(module.get("title")) or function,
+                    "mediaType": media_type,
+                    "source": catalog_source,
+                }
+            )
     return items
 
 
@@ -158,8 +224,9 @@ async def list_catalog(
     if cached is not None:
         return cached, len(cached) >= PAGE_SIZE
 
-    plugin = _plugin()
-    module = _module(plugin, catalog_id)
+    source, module_ref = _catalog_target(catalog_id)
+    plugin = _plugin(source)
+    module = _module(plugin, module_ref)
     function = _text(module.get("function"))
     if not function:
         raise ValueError("栏目没有可用的插件函数")
@@ -174,6 +241,134 @@ async def list_catalog(
     with _LOCK:
         _LIST_CACHE[(catalog_id, page)] = (time.monotonic() + LIST_TTL, items)
     return items, len(items) >= PAGE_SIZE
+
+
+def _raw_items(raw: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw, list):
+        return []
+    return [
+        _list_item(item)
+        for item in raw
+        if isinstance(item, dict) and _text(item.get("id"))
+    ]
+
+
+def _search_function(plugin: dict[str, Any]) -> str:
+    """插件声明的搜索函数：analysis.search.function（兼容 metadata.search）。"""
+
+    analysis = plugin.get("analysis") or {}
+    metadata = analysis.get("metadata") or {}
+    for holder in (analysis, metadata):
+        search = holder.get("search") if isinstance(holder, dict) else None
+        if isinstance(search, dict):
+            name = _text(search.get("function") or search.get("functionName"))
+            if name:
+                return name
+    raise ValueError("插件不支持搜索")
+
+
+async def search_media(
+    source: str, keyword: str, page: int
+) -> tuple[list[dict[str, Any]], bool]:
+    """按数据源搜索：module.metadata.search.function({keyword, page})。"""
+
+    page = max(1, min(int(page or 1), 500))
+    keyword = _text(keyword)
+    if not keyword:
+        raise ValueError("请输入关键词")
+    plugin = _plugin(source)
+    function = _search_function(plugin)
+    raw = await stremio_bridge._call_plugin(
+        plugin,
+        function,
+        stremio_bridge._merge_params(plugin, {"keyword": keyword, "page": page}),
+    )
+    items = _raw_items(raw)
+    return items, len(items) >= PAGE_SIZE
+
+
+async def discover(params: dict[str, Any]) -> tuple[list[dict[str, Any]], bool]:
+    """TMDB 发现页：tmdb 插件 module "discover" 的 loadDiscover。"""
+
+    media_type = _text(params.get("mediaType")).lower()
+    if media_type not in {"movie", "tv"}:
+        raise ValueError("mediaType 须为 movie 或 tv")
+    page = max(1, min(int(params.get("page") or 1), 500))
+    plugin = _plugin("tmdb")
+    if not stremio_bridge._has_function(plugin, "loadDiscover"):
+        raise ValueError("影视插件不支持发现")
+    raw = await stremio_bridge._call_plugin(
+        plugin,
+        "loadDiscover",
+        stremio_bridge._merge_params(
+            plugin,
+            {
+                "mediaType": media_type,
+                "genre": _text(params.get("genre")),
+                "year": _text(params.get("year")),
+                "sortBy": _text(params.get("sortBy")) or "popularity.desc",
+                "page": page,
+            },
+        ),
+    )
+    items = _raw_items(raw)
+    return items, len(items) >= PAGE_SIZE
+
+
+async def person_works(person_id: str) -> dict[str, Any]:
+    """影人作品：loadPersonWorks({id})，id 形如 tmdb:person/456。"""
+
+    target = _text(person_id)
+    if not target:
+        raise ValueError("缺少影人 ID")
+    source, _native = _parse_media_id(target)
+    plugin = _plugin(source)
+    if not stremio_bridge._has_function(plugin, "loadPersonWorks"):
+        raise ValueError("插件不支持影人作品")
+    raw = await stremio_bridge._call_plugin(
+        plugin,
+        "loadPersonWorks",
+        stremio_bridge._merge_params(plugin, {"id": target}),
+    )
+    name = ""
+    rows: Any = raw
+    if isinstance(raw, dict):
+        name = _text(raw.get("name"))
+        rows = raw.get("items")
+    return {
+        "source": source,
+        "personId": target,
+        "name": name or target,
+        "items": _raw_items(rows),
+    }
+
+
+def _genre_rows(raw: Any) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for item in raw if isinstance(raw, list) else []:
+        if not isinstance(item, dict):
+            continue
+        try:
+            genre_id = int(item.get("id"))
+        except (TypeError, ValueError):
+            continue
+        name = _text(item.get("name"))
+        if name:
+            rows.append({"id": genre_id, "name": name})
+    return rows
+
+
+async def genres() -> dict[str, list[dict[str, Any]]]:
+    """TMDB 题材：loadGenres() → {movie:[{id,name}], series:[…]}。"""
+
+    plugin = _plugin("tmdb")
+    if not stremio_bridge._has_function(plugin, "loadGenres"):
+        raise ValueError("影视插件不支持题材列表")
+    raw = await stremio_bridge._call_plugin(
+        plugin, "loadGenres", stremio_bridge._global_params(plugin)
+    )
+    data = raw if isinstance(raw, dict) else {}
+    return {"movie": _genre_rows(data.get("movie")), "series": _genre_rows(data.get("series"))}
 
 
 def _detail_videos(raw: dict[str, Any]) -> list[dict[str, Any]]:
@@ -264,7 +459,7 @@ def _tmdb_json(
 
 
 def _tmdb_target(media_id: str) -> tuple[str, str] | None:
-    match = re.match(r"^tmdb:(movie|tv):(\d+)", media_id)
+    match = re.match(r"^tmdb:(movie|tv)[/:](\d+)", media_id)
     if not match:
         return None
     return match.group(1), match.group(2)
@@ -285,8 +480,10 @@ def _cast_people(credits: dict[str, Any]) -> list[dict[str, Any]]:
             roles = person.get("roles")
             if isinstance(roles, list) and roles and isinstance(roles[0], dict):
                 character = _text(roles[0].get("character"))
+        person_id = str(person.get("id") or "").strip()
         people.append(
             {
+                "id": f"tmdb:person/{person_id}" if person_id.isdigit() else "",
                 "name": name,
                 "character": character,
                 "profile": _image_path(person.get("profile_path")),
@@ -311,7 +508,7 @@ def _recommended(data: dict[str, Any], media_type: str) -> list[dict[str, Any]]:
         released = _text(raw.get("release_date") or raw.get("first_air_date"))
         items.append(
             {
-                "id": f"tmdb:{'tv' if media_type == 'series' else 'movie'}:{tmdb_id}",
+                "id": f"tmdb:{'tv' if media_type == 'series' else 'movie'}/{tmdb_id}",
                 "mediaType": media_type,
                 "title": _text(raw.get("title") or raw.get("name")),
                 "poster": poster,
@@ -360,12 +557,13 @@ def _extras(plugin: dict[str, Any], target: tuple[str, str]) -> dict[str, Any]:
 
 
 async def detail(media_id: str) -> dict[str, Any]:
-    """影视详情：简介、演职员、预告片与分集。"""
+    """影视详情：简介、演职员、预告片与分集。按 `source:native` 前缀选插件。"""
 
     target = _text(media_id)
     if not target:
         raise ValueError("缺少影视 ID")
-    plugin = _plugin()
+    source, _native = _parse_media_id(target)
+    plugin = _plugin(source)
     if not stremio_bridge._has_function(plugin, "loadDetail"):
         raise ValueError("影视插件不支持详情")
     raw = await stremio_bridge._call_plugin(

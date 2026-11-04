@@ -157,28 +157,24 @@ def tool_definitions(*, include_web: bool = True) -> list[dict[str, Any]]:
             "function": {
                 "name": "media_person_works",
                 "description": (
-                    "按影人姓名列出参演/相关电影电视剧作品。"
+                    "按影人 ID 列出参演/相关电影电视剧作品。"
                     "适合「某某演过哪些」「某片女主演的其他电影」等多跳查询的第二步。"
+                    "影人 ID 从 media_search 返回的 facts.personIds 或详情 castPeople 获得。"
                 ),
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "name": {
-                            "type": "string",
-                            "description": "影人姓名，如女主/男主/导演名",
-                        },
                         "person_id": {
                             "type": "string",
-                            "description": "可选：已知影人 id",
+                            "description": "影人 ID，形如 tmdb:person/123（必填，来源见 description）",
                         },
-                        "source": {
+                        "name": {
                             "type": "string",
-                            "enum": ["tmdb", "douban", "bangumi", "anilist"],
-                            "description": "默认 tmdb",
+                            "description": "影人姓名，仅用于展示，取作品必须给 person_id",
                         },
                         "limit": {"type": "integer", "description": "条数 1-12，默认 8"},
                     },
-                    "required": ["name"],
+                    "required": ["person_id"],
                 },
             },
         },
@@ -492,15 +488,12 @@ async def run_media_search(args: dict[str, Any]) -> dict[str, Any]:
         source = "tmdb"
     limit = _limit(args.get("limit"), 6)
     try:
-        from app.media.routes import media_search
+        from app.rexhub import media_bridge
 
-        wrapped = await media_search(q=q, source=source, page=1)
+        items, _has_more = await media_bridge.search_media(source, q, 1)
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "error": str(e), "cards": [], "total": 0}
-    data = wrapped.get("data") if isinstance(wrapped, dict) else None
-    if not isinstance(data, dict):
-        return {"ok": False, "error": "影视搜索无数据", "cards": [], "total": 0}
-    items = list(data.get("items") or [])[:limit]
+    items = list(items or [])[:limit]
     cards: list[dict[str, Any]] = []
     for it in items:
         if not isinstance(it, dict):
@@ -513,30 +506,35 @@ async def run_media_search(args: dict[str, Any]) -> dict[str, Any]:
         meta_parts = [year, media_type]
         if isinstance(rating, (int, float)):
             meta_parts.append(f"{float(rating):.1f}")
-        cover = str(it.get("posterUrl") or it.get("poster_url") or "")
+        cover = str(it.get("posterUrl") or it.get("poster_url") or it.get("poster") or "")
+        full_id = mid if ":" in mid else f"{source}:{mid}"
         cards.append(
             make_card(
                 source="media",
                 title=title,
-                subtitle=str(it.get("originalTitle") or "")[:40],
+                subtitle=str(it.get("originalTitle") or it.get("overview") or "")[:40],
                 meta=" · ".join(p for p in meta_parts if p),
                 cover=cover,
-                key=f"{source}:{mid}",
-                open_payload={"kind": "media", "item": it},
+                key=full_id,
+                open_payload={"kind": "media", "item": {**it, "id": full_id}},
             )
         )
 
     # 取头条详情主演，方便多跳（片名 → 演员 → 作品）
     facts: list[dict[str, Any]] = []
     if items:
-        cast_names = await _media_top_cast(source, items[0])
-        if cast_names:
+        first = items[0]
+        mid = str(first.get("id") or "").strip()
+        full_id = mid if ":" in mid else f"{source}:{mid}"
+        cast = await _media_top_cast(full_id)
+        if cast:
             facts.append(
                 {
-                    "title": str(items[0].get("title") or q),
-                    "year": str(items[0].get("year") or ""),
-                    "cast": cast_names,
-                    "hint": "若用户要该片主演的其他作品，下一步用 media_person_works(name=主演名)",
+                    "title": str(first.get("title") or q),
+                    "year": str(first.get("year") or ""),
+                    "cast": [c["name"] for c in cast],
+                    "personIds": {c["name"]: c["id"] for c in cast if c.get("id")},
+                    "hint": "若用户要该片主演的其他作品，下一步用 media_person_works(person_id=影人ID)",
                 }
             )
 
@@ -553,68 +551,61 @@ async def run_media_search(args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def _media_top_cast(source: str, item: dict[str, Any]) -> list[str]:
-    """尽量拉取作品主演名（失败则空，不影响主流程）。"""
-    mid = str(item.get("id") or "").strip()
-    if not mid:
+async def _media_top_cast(media_id: str) -> list[dict[str, Any]]:
+    """尽量拉取作品主演（name + 影人 id），失败则空，不影响主流程。"""
+    if not media_id:
         return []
-    media_type = str(item.get("mediaType") or item.get("media_type") or "movie").strip() or "movie"
     try:
-        if source == "tmdb":
-            from app.media.routes import tmdb_detail
+        from app.rexhub import media_bridge
 
-            mt = media_type if media_type in {"movie", "tv"} else "movie"
-            wrapped = await tmdb_detail(mt, mid)
-        elif source == "douban":
-            from app.media.routes import douban_detail
-
-            wrapped = await douban_detail(mid)
-        else:
-            return []
+        detail = await media_bridge.detail(media_id)
     except Exception:  # noqa: BLE001
         return []
-    if not isinstance(wrapped, dict):
+    if not isinstance(detail, dict):
         return []
-    data = wrapped.get("data") if isinstance(wrapped.get("data"), dict) else wrapped
-    cast = data.get("cast") if isinstance(data, dict) else None
-    if not isinstance(cast, list):
-        return []
-    names: list[str] = []
-    # tmdb_detail / 部分源会把导演排在 cast 前部，跳过前 1 位更易拿到主演
-    start = 1 if len(cast) > 2 else 0
-    for p in cast[start : start + 10]:
+    cast = detail.get("castPeople") if isinstance(detail.get("castPeople"), list) else None
+    if not cast:
+        names = detail.get("cast")
+        if isinstance(names, list):
+            cast = [{"name": n} for n in names if isinstance(n, str) and n.strip()]
+    people: list[dict[str, Any]] = []
+    # castPeople 通常把导演排在前部，跳过前 1 位更易拿到主演
+    for p in cast[1 if len(cast) > 2 else 0 :]:
         if not isinstance(p, dict):
             continue
         role = str(p.get("role") or p.get("job") or "").strip().lower()
         name = str(p.get("name") or "").strip()
-        if not name:
+        if not name or role in {"director", "导演"}:
             continue
-        if role in {"director", "导演"}:
-            continue
-        if name not in names:
-            names.append(name)
-        if len(names) >= 5:
+        people.append({"name": name, "id": str(p.get("id") or "").strip()})
+        if len(people) >= 5:
             break
-    return names
+    return people
 
 
 async def run_media_person_works(args: dict[str, Any]) -> dict[str, Any]:
     name = str(args.get("name") or args.get("q") or "").strip()
     person_id = str(args.get("person_id") or args.get("personId") or "").strip()
     if not name and not person_id:
-        return {"ok": False, "error": "需要影人姓名", "cards": [], "total": 0}
-    source = str(args.get("source") or "tmdb").strip().lower() or "tmdb"
-    if source not in {"tmdb", "douban", "bangumi", "anilist"}:
-        source = "tmdb"
+        return {"ok": False, "error": "需要影人 ID（可从影视详情 castPeople 获得）", "cards": [], "total": 0}
     limit = _limit(args.get("limit"), 8)
+    target = person_id.strip()
+    if not target:
+        # 桥按 ID 取影人作品；只有姓名时给出可操作提示
+        return {
+            "ok": False,
+            "error": f"缺少影人 ID，请先 media_search 后从 castPeople 取 {name} 的 ID",
+            "cards": [],
+            "total": 0,
+            "summary": f"暂无「{name}」的影人 ID",
+        }
     try:
-        from app.media.routes import media_person_works
+        from app.rexhub import media_bridge
 
-        wrapped = await media_person_works(source=source, q=name, person_id=person_id)
+        data = await media_bridge.person_works(target)
     except Exception as e:  # noqa: BLE001
         err = str(getattr(e, "detail", None) or e)
         return {"ok": False, "error": err, "cards": [], "total": 0, "summary": err}
-    data = wrapped.get("data") if isinstance(wrapped, dict) else None
     if not isinstance(data, dict):
         return {"ok": False, "error": "影人作品无数据", "cards": [], "total": 0}
     display = str(data.get("name") or name or person_id)
@@ -634,7 +625,8 @@ async def run_media_person_works(args: dict[str, Any]) -> dict[str, Any]:
         meta_parts = [year, media_type]
         if isinstance(rating, (int, float)):
             meta_parts.append(f"{float(rating):.1f}")
-        cover = str(it.get("posterUrl") or it.get("poster_url") or "")
+        cover = str(it.get("posterUrl") or it.get("poster_url") or it.get("poster") or "")
+        full_id = mid if ":" in mid else f"tmdb:{mid}"
         cards.append(
             make_card(
                 source="media",
@@ -642,15 +634,15 @@ async def run_media_person_works(args: dict[str, Any]) -> dict[str, Any]:
                 subtitle=display[:40],
                 meta=" · ".join(p for p in meta_parts if p),
                 cover=cover,
-                key=f"person-work:{source}:{mid or title}",
-                open_payload={"kind": "media", "item": it},
+                key=full_id or f"person-work:{title}",
+                open_payload={"kind": "media", "item": {**it, "id": full_id}},
             )
         )
     facts = [{"person": display, "works": titles[:8]}]
     return {
         "ok": True,
         "source": "media",
-        "mode": f"person_works:{source}",
+        "mode": "person_works",
         "query": name or person_id,
         "total": len(cards),
         "cards": cards,

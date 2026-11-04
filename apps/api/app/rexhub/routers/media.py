@@ -19,6 +19,7 @@ class MediaCatalogItem(BaseModel):
     id: str
     title: str
     mediaType: str
+    source: str = "tmdb"
 
 
 class MediaCatalogsResponse(BaseModel):
@@ -59,6 +60,7 @@ class MediaVideo(BaseModel):
 
 
 class MediaCastMember(BaseModel):
+    id: str = ""
     name: str
     character: str = ""
     profile: str = ""
@@ -86,6 +88,42 @@ class MediaDetail(BaseModel):
     videos: list[MediaVideo] = Field(default_factory=list)
     castPeople: list[MediaCastMember] = Field(default_factory=list)
     recommendations: list[MediaListItem] = Field(default_factory=list)
+
+
+class MediaGenre(BaseModel):
+    id: int
+    name: str
+
+
+class MediaGenresResponse(BaseModel):
+    movie: list[MediaGenre] = Field(default_factory=list)
+    series: list[MediaGenre] = Field(default_factory=list)
+
+
+class MediaSearchResponse(BaseModel):
+    source: str
+    query: str
+    page: int
+    hasMore: bool
+    items: list[MediaListItem]
+
+
+class MediaDiscoverResponse(BaseModel):
+    source: str = "tmdb"
+    mediaType: str
+    genre: str = ""
+    sortBy: str = "popularity.desc"
+    year: str = ""
+    page: int
+    hasMore: bool
+    items: list[MediaListItem]
+
+
+class MediaPersonWorksResponse(BaseModel):
+    source: str
+    personId: str
+    name: str
+    items: list[MediaListItem]
 
 
 
@@ -132,6 +170,108 @@ async def media_list(
         page=page,
         hasMore=has_more,
         items=[MediaListItem(**item) for item in items],
+    )
+
+
+@router.get("/search", response_model=MediaSearchResponse)
+async def media_search(
+    request: Request,
+    q: str = Query(..., min_length=1, max_length=200),
+    source: str = Query("tmdb", max_length=16),
+    page: int = Query(1, ge=1, le=500),
+) -> MediaSearchResponse:
+    """按数据源搜索（tmdb / douban / bangumi / anilist）。"""
+
+    require_session(request)
+    try:
+        items, has_more = await media_bridge.search_media(source, q, page)
+    except ValueError as exc:
+        raise _upstream_error(exc) from exc
+    return MediaSearchResponse(
+        source=source,
+        query=q,
+        page=page,
+        hasMore=has_more,
+        items=[MediaListItem(**item) for item in items],
+    )
+
+
+@router.get("/discover", response_model=MediaDiscoverResponse)
+async def media_discover(
+    request: Request,
+    mediaType: str = Query("movie", max_length=16),
+    genre: str = Query("", max_length=32),
+    year: str = Query("", max_length=8),
+    sortBy: str = Query("popularity.desc", max_length=48),
+    page: int = Query(1, ge=1, le=500),
+) -> MediaDiscoverResponse:
+    """TMDB 发现页：类型 / 题材 / 排序 / 年份筛选。"""
+
+    require_session(request)
+    try:
+        items, has_more = await media_bridge.discover(
+            {
+                "mediaType": mediaType,
+                "genre": genre,
+                "year": year,
+                "sortBy": sortBy,
+                "page": page,
+            }
+        )
+    except ValueError as exc:
+        raise _upstream_error(exc) from exc
+    return MediaDiscoverResponse(
+        mediaType=mediaType,
+        genre=genre,
+        sortBy=sortBy,
+        year=year,
+        page=page,
+        hasMore=has_more,
+        items=[MediaListItem(**item) for item in items],
+    )
+
+
+@router.get("/person/works", response_model=MediaPersonWorksResponse)
+async def media_person_works(
+    request: Request,
+    id: str = Query("", max_length=120),
+    q: str = Query("", max_length=120),
+) -> MediaPersonWorksResponse:
+    """影人作品：id 形如 tmdb:person/456；只有姓名时返回空列表由前端降级。"""
+
+    require_session(request)
+    target = id.strip()
+    if not target:
+        return MediaPersonWorksResponse(
+            source="tmdb", personId="", name=q.strip(), items=[]
+        )
+    try:
+        payload = await media_bridge.person_works(target)
+    except ValueError as exc:
+        raise _upstream_error(exc) from exc
+    return MediaPersonWorksResponse(
+        source=payload["source"],
+        personId=payload["personId"],
+        name=payload["name"],
+        items=[MediaListItem(**item) for item in payload["items"]],
+    )
+
+
+@router.get("/genres", response_model=MediaGenresResponse)
+async def media_genres(
+    request: Request,
+    source: str = Query("tmdb", max_length=16),
+) -> MediaGenresResponse:
+    """TMDB 题材列表（movie / series 各一份）。"""
+
+    require_session(request)
+    try:
+        data = await media_bridge.genres()
+    except ValueError as exc:
+        raise _upstream_error(exc) from exc
+    return MediaGenresResponse(
+        movie=[MediaGenre(**row) for row in data["movie"]],
+        series=[MediaGenre(**row) for row in data["series"]],
     )
 
 
