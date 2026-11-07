@@ -1,8 +1,7 @@
-"""AI 模型配置：LLM 聊天 + 向量嵌入（Postgres settings，环境变量可覆盖）。"""
+"""AI 模型配置：LLM 聊天 + 向量嵌入（只读数据库设置，页面配置）。"""
 
 
 import json
-import os
 from typing import Any
 
 import app.core.settings_store as settings_store
@@ -92,47 +91,6 @@ def parse_custom_headers(text: str | None) -> dict[str, str]:
     return out
 
 
-def _llm_env() -> dict[str, str]:
-    key = _strip(os.environ.get("LLM_API_KEY")) or _strip(os.environ.get("OPENAI_API_KEY"))
-    base = _strip(os.environ.get("LLM_BASE_URL"))
-    model = _strip(os.environ.get("LLM_MODEL"))
-    out: dict[str, str] = {}
-    if key:
-        out["apiKey"] = key
-    if base:
-        out["baseUrl"] = base
-    if model:
-        out["model"] = model
-    return out
-
-
-def _embed_env() -> dict[str, Any]:
-    out: dict[str, Any] = {}
-    provider = _strip(os.environ.get("EMBED_PROVIDER")).lower()
-    if provider in {"local", "openai"}:
-        out["provider"] = provider
-    base = _strip(os.environ.get("EMBED_BASE_URL"))
-    if base:
-        out["baseUrl"] = base
-    key = _strip(os.environ.get("EMBED_API_KEY"))
-    if key:
-        out["apiKey"] = key
-    model = _strip(os.environ.get("EMBED_MODEL"))
-    if model:
-        out["model"] = model
-    dim_raw = _strip(os.environ.get("EMBED_DIM"))
-    if dim_raw.isdigit():
-        out["dim"] = int(dim_raw)
-    device = _strip(os.environ.get("EMBED_DEVICE")).lower()
-    if device in {"nvidia", "n"}:
-        device = "cuda"
-    elif device in {"amd", "a", "dml"}:
-        device = "directml"
-    if device in EMBED_DEVICE_VALUES:
-        out["device"] = device
-    return out
-
-
 def probe_onnx_providers() -> set[str]:
     try:
         import onnxruntime as ort
@@ -198,13 +156,12 @@ def _stored_embed() -> dict[str, Any]:
 
 
 def _merge_llm_stored(stored: dict[str, Any]) -> dict[str, Any]:
-    env = _llm_env()
-    api_key = _strip(env.get("apiKey")) or _strip(stored.get("apiKey") or stored.get("api_key"))
+    api_key = _strip(stored.get("apiKey") or stored.get("api_key"))
     base_url = normalize_openai_base(
-        _strip(env.get("baseUrl")) or _strip(stored.get("baseUrl") or stored.get("base_url")),
+        _strip(stored.get("baseUrl") or stored.get("base_url")),
         default=DEFAULT_LLM_BASE,
     )
-    model = _strip(env.get("model")) or _strip(stored.get("model")) or DEFAULT_LLM_MODEL
+    model = _strip(stored.get("model")) or DEFAULT_LLM_MODEL
     sampling = stored.get("sampling") if isinstance(stored.get("sampling"), dict) else {}
     return {
         "enabled": bool(stored.get("enabled", True)),
@@ -287,9 +244,9 @@ def _merge_llm_stored(stored: dict[str, Any]) -> dict[str, Any]:
                 else sampling.get("show_thoughts")
             ),
         },
-        "fromEnvKey": bool(env.get("apiKey")),
-        "fromEnvBase": bool(env.get("baseUrl")),
-        "fromEnvModel": bool(env.get("model")),
+        "fromEnvKey": False,
+        "fromEnvBase": False,
+        "fromEnvModel": False,
         "configured": bool(api_key and model and base_url),
     }
 
@@ -342,10 +299,8 @@ def _default_dim_for_model(model: str) -> int:
 
 
 def _merge_embed_stored(stored: dict[str, Any]) -> dict[str, Any]:
-    env = _embed_env()
     provider = (
-        _strip(env.get("provider"))
-        or _strip(stored.get("provider"))
+        _strip(stored.get("provider"))
         or DEFAULT_EMBED_PROVIDER
     ).lower()
     if provider not in {"local", "openai"}:
@@ -353,23 +308,20 @@ def _merge_embed_stored(stored: dict[str, Any]) -> dict[str, Any]:
     use_main_llm = bool(stored.get("useMainLlm") if "useMainLlm" in stored else stored.get("use_main_llm", False))
     llm = _merge_llm_stored(_stored_llm()) if use_main_llm else None
     base_url = normalize_openai_base(
-        _strip(env.get("baseUrl"))
-        or _strip(stored.get("baseUrl") or stored.get("base_url"))
+        _strip(stored.get("baseUrl") or stored.get("base_url"))
         or (llm or {}).get("baseUrl", ""),
         default=DEFAULT_LLM_BASE,
     )
     model = (
-        _strip(env.get("model"))
-        or _strip(stored.get("model"))
+        _strip(stored.get("model"))
         or (llm or {}).get("model", "")
         or DEFAULT_EMBED_MODEL
     )
     api_key = (
-        _strip(env.get("apiKey"))
-        or _strip(stored.get("apiKey") or stored.get("api_key"))
+        _strip(stored.get("apiKey") or stored.get("api_key"))
         or (llm or {}).get("apiKey", "")
     )
-    dim = env.get("dim") if isinstance(env.get("dim"), int) else stored.get("dim")
+    dim = stored.get("dim")
     try:
         dim_i = int(dim) if dim is not None else _default_dim_for_model(model)
     except (TypeError, ValueError):
@@ -378,7 +330,7 @@ def _merge_embed_stored(stored: dict[str, Any]) -> dict[str, Any]:
     top_k = _optional_int(stored.get("topK") if "topK" in stored else stored.get("top_k"))
     min_score = _optional_float(stored.get("minScore") if "minScore" in stored else stored.get("min_score"))
     chunk_size = _optional_int(stored.get("chunkSize") if "chunkSize" in stored else stored.get("chunk_size"))
-    device = normalize_embed_device(env.get("device") or stored.get("device"))
+    device = normalize_embed_device(stored.get("device"))
     if not device:
         device = default_embed_device()
     configured = enabled and bool(model) and (provider == "local" or bool(api_key))
@@ -394,7 +346,7 @@ def _merge_embed_stored(stored: dict[str, Any]) -> dict[str, Any]:
         "topK": max(1, min(50, top_k if top_k is not None else DEFAULT_EMBED_TOP_K)),
         "minScore": max(0.0, min(1.0, min_score if min_score is not None else DEFAULT_EMBED_MIN_SCORE)),
         "chunkSize": max(100, min(2000, chunk_size if chunk_size is not None else DEFAULT_EMBED_CHUNK_SIZE)),
-        "fromEnv": bool(env),
+        "fromEnv": False,
         "configured": configured,
     }
 
@@ -498,37 +450,16 @@ def _stored_assistant() -> dict[str, Any]:
     return raw if isinstance(raw, dict) else {}
 
 
-def _web_search_env() -> dict[str, str]:
-    out: dict[str, str] = {}
-    key = _strip(os.environ.get("WEB_SEARCH_API_KEY")) or _strip(
-        os.environ.get("SERPER_API_KEY")
-    ) or _strip(os.environ.get("BRAVE_API_KEY"))
-    provider = _strip(os.environ.get("WEB_SEARCH_PROVIDER")).lower()
-    base = _strip(os.environ.get("SEARXNG_BASE_URL")) or _strip(
-        os.environ.get("WEB_SEARCH_BASE_URL")
-    )
-    if key:
-        out["apiKey"] = key
-    if provider in WEB_SEARCH_PROVIDERS:
-        out["provider"] = provider
-    if base:
-        out["baseUrl"] = base.rstrip("/")
-    return out
-
-
 def _merge_web_search_stored(stored: dict[str, Any]) -> dict[str, Any]:
-    env = _web_search_env()
-    api_key = _strip(env.get("apiKey")) or _strip(stored.get("apiKey") or stored.get("api_key"))
+    api_key = _strip(stored.get("apiKey") or stored.get("api_key"))
     provider = (
-        _strip(env.get("provider"))
-        or _strip(stored.get("provider"))
+        _strip(stored.get("provider"))
         or DEFAULT_WEB_SEARCH_PROVIDER
     ).lower()
     if provider not in WEB_SEARCH_PROVIDERS:
         provider = DEFAULT_WEB_SEARCH_PROVIDER
     base_url = (
-        _strip(env.get("baseUrl"))
-        or _strip(stored.get("baseUrl") or stored.get("base_url"))
+        _strip(stored.get("baseUrl") or stored.get("base_url"))
         or (DEFAULT_SEARXNG_BASE if provider == "searxng" else "")
     ).rstrip("/")
     enabled = bool(stored.get("enabled", False))
@@ -542,8 +473,8 @@ def _merge_web_search_stored(stored: dict[str, Any]) -> dict[str, Any]:
         "apiKey": api_key,
         "baseUrl": base_url,
         "configured": configured,
-        "fromEnvKey": bool(env.get("apiKey")),
-        "fromEnvBase": bool(env.get("baseUrl")),
+        "fromEnvKey": False,
+        "fromEnvBase": False,
     }
 
 

@@ -1,7 +1,6 @@
 """设置页：LLM 聊天 + 向量嵌入模型。"""
 
 
-import os
 from typing import Any
 
 import httpx
@@ -132,13 +131,8 @@ class AiEmbedTestBody(AiEmbedBody):
 
 
 def _resolve_llm_key(body_key: str | None, stored: dict[str, Any]) -> str:
-    env_key = (
-        os.environ.get("LLM_API_KEY", "").strip()
-        or os.environ.get("OPENAI_API_KEY", "").strip()
-    )
     return (
         str(body_key or "").strip()
-        or env_key
         or str(stored.get("apiKey") or stored.get("api_key") or "").strip()
     )
 

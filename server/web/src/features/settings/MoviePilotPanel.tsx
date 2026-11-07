@@ -12,11 +12,9 @@ import { cn } from '@/lib/utils';
 import { testResultText, usePanelAction } from '@/hooks/usePanelAction';
 import { ConnectionPanelShell } from './connection/ConnectionPanelShell';
 
-const FALLBACK_BASE = 'http://192.168.2.38:3000';
-
 export function MoviePilotPanel({ onBack }: { onBack: () => void }) {
   const [enabled, setEnabled] = useState(true);
-  const [baseUrl, setBaseUrl] = useState(FALLBACK_BASE);
+  const [baseUrl, setBaseUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [hasApiKey, setHasApiKey] = useState(false);
   const [timeoutSec, setTimeoutSec] = useState('15');
@@ -28,7 +26,7 @@ export function MoviePilotPanel({ onBack }: { onBack: () => void }) {
       try {
         const d = await getMoviePilotSettings();
         setEnabled(d.enabled !== false);
-        setBaseUrl(d.baseUrl || FALLBACK_BASE);
+        setBaseUrl(d.baseUrl || '');
         setHasApiKey(Boolean(d.hasApiKey));
         setTimeoutSec(String(d.timeoutSec ?? 15));
       } catch (e) {
@@ -40,10 +38,14 @@ export function MoviePilotPanel({ onBack }: { onBack: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const base = (baseUrl.trim() || FALLBACK_BASE).replace(/\/+$/, '');
+  const base = baseUrl.trim().replace(/\/+$/, '');
   const exampleUrl = `${base}/api/v1/user/?apikey={token}`;
 
   async function onTest() {
+    if (!base) {
+      setMsg('请填写服务地址');
+      return;
+    }
     await run('测试失败', async () => {
       await putMoviePilotSettings({
         enabled,
@@ -139,7 +141,7 @@ export function MoviePilotPanel({ onBack }: { onBack: () => void }) {
               <span className="app-label">地址</span>
               <input
                 className="allow-select"
-                placeholder={FALLBACK_BASE}
+                placeholder="https://moviepilot.example.com"
                 value={baseUrl}
                 onChange={(e) => setBaseUrl(e.target.value)}
                 autoCapitalize="off"

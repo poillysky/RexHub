@@ -14,13 +14,11 @@ import { cn } from '@/lib/utils';
 import { usePanelAction } from '@/hooks/usePanelAction';
 import { ConnectionPanelShell } from './connection/ConnectionPanelShell';
 
-const FALLBACK_BASE = 'http://192.168.2.38:2233';
-
 export function MoreplayPanel({ onBack }: { onBack: () => void }) {
   const [enabled, setEnabled] = useState(true);
-  const [baseUrl, setBaseUrl] = useState(FALLBACK_BASE);
+  const [baseUrl, setBaseUrl] = useState('');
   const [timeoutSec, setTimeoutSec] = useState('15');
-  const [searchSite, setSearchSite] = useState('nodejs_wogg');
+  const [searchSite, setSearchSite] = useState('');
   const [sites, setSites] = useState<MorePlaySite[]>([]);
   const [loading, setLoading] = useState(true);
   const { msg, setMsg, busy, run } = usePanelAction();
@@ -30,7 +28,7 @@ export function MoreplayPanel({ onBack }: { onBack: () => void }) {
       try {
         const d = await getMorePlaySettings();
         setEnabled(d.enabled !== false);
-        setBaseUrl(d.baseUrl || FALLBACK_BASE);
+        setBaseUrl(d.baseUrl || '');
         setTimeoutSec(String(d.timeoutSec ?? 15));
         if (d.searchSite) setSearchSite(d.searchSite);
       } catch (e) {
@@ -39,7 +37,9 @@ export function MoreplayPanel({ onBack }: { onBack: () => void }) {
         setLoading(false);
       }
       try {
-        setSites(await getMorePlaySites());
+        const loaded = await getMorePlaySites();
+        setSites(loaded);
+        if (loaded.length) setSearchSite((current) => current || loaded[0].id);
       } catch {
         // 站点列表读取失败时沿用已保存的站点 ID
       }
@@ -47,11 +47,15 @@ export function MoreplayPanel({ onBack }: { onBack: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const base = (baseUrl.trim() || FALLBACK_BASE).replace(/\/+$/, '');
+  const base = baseUrl.trim().replace(/\/+$/, '');
   const siteConfigUrl = `${base}/bridge/cat-source-settings/primary/website`;
   const t4Url = `${base}/bridge/t4`;
 
   async function onTest() {
+    if (!base) {
+      setMsg('请填写服务地址');
+      return;
+    }
     await run('测试失败', async () => {
       await putMorePlaySettings({
         enabled,
@@ -70,6 +74,10 @@ export function MoreplayPanel({ onBack }: { onBack: () => void }) {
   }
 
   async function onSave() {
+    if (!base) {
+      setMsg('请填写服务地址');
+      return;
+    }
     await run('保存失败', async () => {
       const next = await putMorePlaySettings({
         enabled,
@@ -137,7 +145,7 @@ export function MoreplayPanel({ onBack }: { onBack: () => void }) {
               <span className="app-label">地址</span>
               <input
                 className="allow-select"
-                placeholder={FALLBACK_BASE}
+                placeholder="http://moreplay.example.com:2233"
                 value={baseUrl}
                 onChange={(e) => setBaseUrl(e.target.value)}
                 autoCapitalize="off"

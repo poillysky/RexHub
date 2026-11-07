@@ -2,7 +2,6 @@
 
 
 import logging
-import os
 import re
 from typing import Any
 from urllib.parse import urlparse
@@ -15,7 +14,7 @@ from app.search.pansou_client import _normalize_base, cloud_label
 log = logging.getLogger("app.cloudsaver")
 
 CLOUDSAVER_KEY = "cloudsaver"
-DEFAULT_BASE_URL = "http://192.168.2.38:8008"
+DEFAULT_BASE_URL = ""
 DEFAULT_TIMEOUT_S = 60.0
 
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -30,28 +29,9 @@ def get_config(*, include_secrets: bool = False) -> dict[str, Any]:
     raw = settings_store.get_setting(CLOUDSAVER_KEY) or {}
     if not isinstance(raw, dict):
         raw = {}
-    env_base = os.environ.get("CLOUDSAVER_BASE_URL") or os.environ.get(
-        "SNS_CLOUDSAVER_BASE_URL"
-    )
-    env_user = os.environ.get("CLOUDSAVER_USERNAME")
-    env_pass = os.environ.get("CLOUDSAVER_PASSWORD")
-    base = (
-        _normalize_base(env_base)
-        if env_base
-        else _normalize_base(str(raw.get("baseUrl") or ""))
-    )
-    if not base:
-        base = DEFAULT_BASE_URL
-    username = (
-        str(env_user).strip()
-        if env_user is not None
-        else str(raw.get("username") or "").strip()
-    )
-    password = (
-        str(env_pass)
-        if env_pass is not None
-        else str(raw.get("password") or "")
-    )
+    base = _normalize_base(str(raw.get("baseUrl") or ""))
+    username = str(raw.get("username") or "").strip()
+    password = str(raw.get("password") or "")
     enabled = raw.get("enabled")
     if enabled is None:
         enabled = True

@@ -31,8 +31,8 @@ from app.search.pansou_client import _normalize_base
 router = APIRouter(tags=["moreplay"])
 
 MOREPLAY_KEY = "moreplay"
-DEFAULT_BASE_URL = "http://192.168.2.38:2233"
-DEFAULT_SEARCH_SITE = "nodejs_wogg"
+DEFAULT_BASE_URL = ""
+DEFAULT_SEARCH_SITE = ""
 DEFAULT_TIMEOUT_S = 15.0
 
 _PLAY_CACHE_TTL_S = 900.0
@@ -166,11 +166,11 @@ def get_config() -> dict[str, Any]:
     raw = settings_store.get_setting(MOREPLAY_KEY) or {}
     if not isinstance(raw, dict):
         raw = {}
-    base = _normalize_base(str(raw.get("baseUrl") or "")) or DEFAULT_BASE_URL
+    base = _normalize_base(str(raw.get("baseUrl") or ""))
     enabled = raw.get("enabled")
     if enabled is None:
         enabled = True
-    search_site = str(raw.get("searchSite") or "").strip() or DEFAULT_SEARCH_SITE
+    search_site = str(raw.get("searchSite") or "").strip()
     return {
         "enabled": bool(enabled),
         "baseUrl": base,
@@ -405,7 +405,7 @@ def put_moreplay_settings(request: Request, body: MorePlayConfigBody) -> dict[st
             "enabled": body.enabled,
             "baseUrl": base,
             "timeoutSec": body.timeoutSec,
-            "searchSite": body.searchSite.strip() or DEFAULT_SEARCH_SITE,
+            "searchSite": body.searchSite.strip(),
         },
     )
     return _wrap(get_config(), "saved")
@@ -418,6 +418,8 @@ def moreplay_health(request: Request) -> dict[str, Any]:
     base = str(cfg["baseUrl"])
     if not cfg["enabled"]:
         return _wrap({"ok": False, "configured": False, "baseUrl": base, "message": "未启用"})
+    if not base:
+        return _wrap({"ok": False, "configured": False, "baseUrl": "", "message": "未配置服务地址"})
     result = _probe(base, float(cfg["timeoutSec"]))
     return _wrap({"configured": True, "baseUrl": base, **result})
 
@@ -426,6 +428,8 @@ def moreplay_health(request: Request) -> dict[str, Any]:
 def moreplay_sites(request: Request) -> dict[str, Any]:
     require_session(request)
     cfg = get_config()
+    if not cfg["baseUrl"]:
+        raise HTTPException(status_code=400, detail="请先配置 MorePlay 服务地址")
     try:
         sites = _load_sites(str(cfg["baseUrl"]), float(cfg["timeoutSec"]))
     except Exception as e:
@@ -448,6 +452,8 @@ def moreplay_streams(
     if not cfg["enabled"]:
         return MorePlayStreamsResponse(streams=[], reason="MorePlay 未启用")
     base = str(cfg["baseUrl"])
+    if not base:
+        return MorePlayStreamsResponse(streams=[], reason="MorePlay 未配置服务地址")
     timeout = min(max(float(cfg["timeoutSec"]), 10.0), 20.0)
     is_tv = mediaType == "tv"
     season_no = max(1, season if season > 0 else 1)

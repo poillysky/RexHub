@@ -6,7 +6,6 @@
 
 
 import hashlib
-import os
 import re
 import time
 from typing import Any
@@ -21,8 +20,7 @@ from app.search.pansou_client import _normalize_base
 router = APIRouter(tags=["moviepilot"])
 
 MOVIEPILOT_KEY = "moviepilot"
-DEFAULT_BASE_URL = "http://192.168.2.38:3000"
-DEFAULT_API_KEY = ""
+DEFAULT_BASE_URL = ""
 DEFAULT_TIMEOUT_S = 15.0
 # 需要鉴权的轻量接口：能返回用户列表即代表地址与令牌都有效
 _PROBE_PATH = "/api/v1/user/"
@@ -40,22 +38,8 @@ def get_config(*, include_secrets: bool = False) -> dict[str, Any]:
     raw = settings_store.get_setting(MOVIEPILOT_KEY) or {}
     if not isinstance(raw, dict):
         raw = {}
-    env_base = os.environ.get("MOVIEPILOT_BASE_URL")
-    env_key = os.environ.get("MOVIEPILOT_API_KEY")
-    base = (
-        _normalize_base(env_base)
-        if env_base
-        else _normalize_base(str(raw.get("baseUrl") or ""))
-    )
-    if not base:
-        base = DEFAULT_BASE_URL
-    api_key = (
-        str(env_key).strip()
-        if env_key is not None
-        else str(raw.get("apiKey") or "").strip()
-    )
-    if not api_key:
-        api_key = DEFAULT_API_KEY
+    base = _normalize_base(str(raw.get("baseUrl") or ""))
+    api_key = str(raw.get("apiKey") or "").strip()
     enabled = raw.get("enabled")
     if enabled is None:
         enabled = True
@@ -108,6 +92,8 @@ def moviepilot_health() -> dict[str, Any]:
     base = str(cfg["baseUrl"])
     if not cfg["enabled"]:
         return _wrap({"ok": False, "configured": False, "baseUrl": base, "message": "未启用"})
+    if not base:
+        return _wrap({"ok": False, "configured": False, "baseUrl": "", "message": "未配置服务地址"})
     result = _probe(base, str(cfg.get("apiKey") or ""), float(cfg["timeoutSec"]))
     return _wrap({"configured": True, "baseUrl": base, **result})
 
@@ -230,6 +216,8 @@ def _fetch_list(path: str, params: dict[str, str]) -> list[dict[str, Any]]:
     if not cfg["enabled"]:
         raise HTTPException(status_code=400, detail="MoviePilot 未启用")
     base = str(cfg["baseUrl"])
+    if not base:
+        raise HTTPException(status_code=400, detail="MoviePilot 未配置服务地址")
     api_key = str(cfg.get("apiKey") or "")
     try:
         with httpx.Client(
@@ -319,6 +307,8 @@ def _mp_get(
     if not cfg["enabled"]:
         raise HTTPException(status_code=400, detail="MoviePilot 未启用")
     base = str(cfg["baseUrl"])
+    if not base:
+        raise HTTPException(status_code=400, detail="MoviePilot 未配置服务地址")
     try:
         with httpx.Client(
             timeout=float(timeout_s or cfg["timeoutSec"]),
@@ -355,6 +345,8 @@ def _mp_post(
     if not cfg["enabled"]:
         raise HTTPException(status_code=400, detail="MoviePilot 未启用")
     base = str(cfg["baseUrl"])
+    if not base:
+        raise HTTPException(status_code=400, detail="MoviePilot 未配置服务地址")
     try:
         with httpx.Client(
             timeout=float(timeout_s or cfg["timeoutSec"]),

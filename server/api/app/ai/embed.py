@@ -3,7 +3,6 @@
 
 import asyncio
 import logging
-import os
 import re
 import threading
 from typing import Any
@@ -24,13 +23,6 @@ _local_providers: tuple[str, ...] | None = None
 _onnx_dml_patched = False
 # DirectML / ONNX Runtime 非线程安全：多番号并发补齐时必须串行编码，否则整进程崩
 _local_embed_lock = threading.RLock()
-
-
-def _env_flag(name: str, default: bool = False) -> bool:
-    raw = str(os.environ.get(name) or "").strip().lower()
-    if not raw:
-        return default
-    return raw in {"1", "true", "yes", "on"}
 
 
 def _patch_onnx_for_directml() -> None:
@@ -92,9 +84,6 @@ def _patch_onnx_for_directml() -> None:
 
 def _resolve_local_providers(*, device: str | None = None) -> list[str]:
     """按设置选择 CPU / CUDA / DirectML。"""
-    if _env_flag("EMBED_FORCE_CPU"):
-        return ["CPUExecutionProvider"]
-
     cfg_device = ""
     if device:
         cfg_device = str(device).strip().lower()
@@ -111,14 +100,6 @@ def _resolve_local_providers(*, device: str | None = None) -> list[str]:
         cfg_device = "cuda"
     elif cfg_device in {"amd", "a", "dml"}:
         cfg_device = "directml"
-
-    env_device = str(os.environ.get("EMBED_DEVICE") or "").strip().lower()
-    if env_device in {"nvidia", "n"}:
-        env_device = "cuda"
-    elif env_device in {"amd", "a", "dml"}:
-        env_device = "directml"
-    if env_device in {"cpu", "cuda", "directml"}:
-        cfg_device = env_device
 
     try:
         import onnxruntime as ort

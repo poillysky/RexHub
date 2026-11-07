@@ -285,9 +285,6 @@ def shared_plugin_base(row: dict[str, Any]) -> dict[str, str]:
 
 
 def _tmdb_api_key() -> str:
-    env_key = os.environ.get("TMDB_API_KEY", "").strip()
-    if env_key:
-        return env_key
     try:
         from app.core import settings_store
 

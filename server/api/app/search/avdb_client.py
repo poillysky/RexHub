@@ -6,7 +6,6 @@
 """
 
 
-import os
 from typing import Any
 
 import httpx
@@ -15,8 +14,7 @@ import app.core.settings_store as settings_store
 from app.search.pansou_client import _normalize_base
 
 AVDB_KEY = "avdb"
-DEFAULT_BASE_URL = "http://192.168.2.38:8000"
-DEFAULT_API_KEY = "n5RVEAKuVqtNGsmDHyHhS2ODjxFCf2Bf"
+DEFAULT_BASE_URL = ""
 DEFAULT_TIMEOUT_S = 15.0
 TORRENTS_PATH = "/api/v1/articles/torrents"
 
@@ -32,22 +30,8 @@ def get_config(*, include_secrets: bool = False) -> dict[str, Any]:
     raw = settings_store.get_setting(AVDB_KEY) or {}
     if not isinstance(raw, dict):
         raw = {}
-    env_base = os.environ.get("AVDB_BASE_URL")
-    env_key = os.environ.get("AVDB_API_KEY")
-    base = (
-        _normalize_base(env_base)
-        if env_base
-        else _normalize_base(str(raw.get("baseUrl") or ""))
-    )
-    if not base:
-        base = DEFAULT_BASE_URL
-    api_key = (
-        str(env_key).strip()
-        if env_key is not None
-        else str(raw.get("apiKey") or "").strip()
-    )
-    if not api_key:
-        api_key = DEFAULT_API_KEY
+    base = _normalize_base(str(raw.get("baseUrl") or ""))
+    api_key = str(raw.get("apiKey") or "").strip()
     enabled = raw.get("enabled")
     if enabled is None:
         enabled = True

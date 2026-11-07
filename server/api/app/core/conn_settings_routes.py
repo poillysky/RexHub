@@ -176,20 +176,16 @@ def _p115_public(raw: dict[str, Any] | None, *, include_cookie: bool = False) ->
 
 
 def _tmdb_public(raw: dict[str, Any] | None, *, include_key: bool = False) -> dict[str, Any]:
-    import os
-
-    env_key = os.environ.get("TMDB_API_KEY", "").strip()
     stored = str((raw or {}).get("apiKey") or (raw or {}).get("api_key") or "").strip()
-    effective = env_key or stored
     hint = ""
-    if effective:
-        hint = f"{effective[:4]}…{effective[-4:]}" if len(effective) > 10 else "****"
+    if stored:
+        hint = f"{stored[:4]}…{stored[-4:]}" if len(stored) > 10 else "****"
     data: dict[str, Any] = {
-        "configured": bool(effective),
-        "fromEnv": bool(env_key),
+        "configured": bool(stored),
+        "fromEnv": False,
         "apiKeyHint": hint,
     }
-    if include_key and stored and not env_key:
+    if include_key and stored:
         data["apiKey"] = stored
     return data
 
@@ -269,9 +265,7 @@ async def test_tmdb(
     body: TmdbConfig,
     _user: dict[str, Any] = Depends(require_user),
 ) -> Envelope:
-    import os
-
-    key = body.api_key.strip() or os.environ.get("TMDB_API_KEY", "").strip()
+    key = body.api_key.strip()
     if not key:
         stored = settings_store.get_setting(settings_store.TMDB_KEY) or {}
         key = str(stored.get("apiKey") or stored.get("api_key") or "").strip()

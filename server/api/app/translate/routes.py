@@ -2,7 +2,6 @@
 
 
 import logging
-import os
 import re
 from typing import Any
 from urllib.parse import quote
@@ -53,10 +52,7 @@ def _wrap(data: Any, message: str = "ok", status: int = 200) -> dict[str, Any]:
 
 
 def get_tmdb_api_key() -> str:
-    """环境变量优先，其次设置页保存的 key。"""
-    env = os.environ.get("TMDB_API_KEY", "").strip()
-    if env:
-        return env
+    """仅使用设置页保存的 key。"""
     raw = settings_store.get_setting(settings_store.TMDB_KEY) or {}
     if isinstance(raw, dict):
         return str(raw.get("apiKey") or raw.get("api_key") or "").strip()
@@ -257,7 +253,6 @@ async def translate_lingva(text: str, source: str, *, target: str = "en") -> str
     sl = _source_lang(source, target=target, flavor="lingva")
     tl = "zh" if target == "zh" else "en"
     bases = [
-        os.environ.get("LINGVA_URL", "").rstrip("/"),
         "https://lingva.ml",
         "https://lingva.thedaviddelta.com",
     ]

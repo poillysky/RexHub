@@ -14,7 +14,7 @@ import { ConnectionPanelShell } from './connection/ConnectionPanelShell';
 
 export function CloudSaverPanel({ onBack }: { onBack: () => void }) {
   const [enabled, setEnabled] = useState(true);
-  const [baseUrl, setBaseUrl] = useState('http://192.168.2.38:8008');
+  const [baseUrl, setBaseUrl] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [hasPassword, setHasPassword] = useState(false);
@@ -27,7 +27,7 @@ export function CloudSaverPanel({ onBack }: { onBack: () => void }) {
       try {
         const d = await getCloudSaverSettings();
         setEnabled(d.enabled !== false);
-        setBaseUrl(d.baseUrl || 'http://192.168.2.38:8008');
+        setBaseUrl(d.baseUrl || '');
         setUsername(d.username || '');
         setHasPassword(Boolean(d.hasPassword));
         setTimeoutSec(String(d.timeoutSec ?? 60));
@@ -41,6 +41,10 @@ export function CloudSaverPanel({ onBack }: { onBack: () => void }) {
   }, []);
 
   async function onTest() {
+    if (!baseUrl.trim()) {
+      setMsg('请填写服务地址');
+      return;
+    }
     await run('测试失败', async () => {
       await putCloudSaverSettings({
         enabled,
@@ -147,7 +151,7 @@ export function CloudSaverPanel({ onBack }: { onBack: () => void }) {
             <span className="app-label">地址</span>
             <input
               className="allow-select"
-              placeholder="http://192.168.2.38:8008"
+              placeholder="https://cloudsaver.example.com"
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
               autoCapitalize="off"

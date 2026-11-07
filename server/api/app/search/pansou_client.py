@@ -2,7 +2,6 @@
 
 
 import logging
-import os
 from typing import Any
 from urllib.parse import urlparse
 
@@ -13,7 +12,7 @@ import app.core.settings_store as settings_store
 log = logging.getLogger("app.pansou")
 
 PANSOU_KEY = "pansou"
-DEFAULT_BASE_URL = "http://192.168.2.38:8188"
+DEFAULT_BASE_URL = ""
 DEFAULT_TIMEOUT_S = 60.0
 
 CLOUD_TYPE_LABELS: dict[str, str] = {
@@ -50,10 +49,7 @@ def get_config() -> dict[str, Any]:
     raw = settings_store.get_setting(PANSOU_KEY) or {}
     if not isinstance(raw, dict):
         raw = {}
-    env = os.environ.get("PANSOU_BASE_URL") or os.environ.get("SNS_PANSOU_BASE_URL")
-    base = _normalize_base(env) if env else _normalize_base(str(raw.get("baseUrl") or ""))
-    if not base:
-        base = DEFAULT_BASE_URL
+    base = _normalize_base(str(raw.get("baseUrl") or ""))
     enabled = raw.get("enabled")
     if enabled is None:
         enabled = True
