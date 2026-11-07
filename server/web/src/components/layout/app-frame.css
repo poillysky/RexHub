@@ -1,0 +1,116 @@
+/* 全屏应用容器（PWA 浏览器里不再画 iPhone 外框） */
+:root {
+  --bg: #f2f2f7;
+}
+
+/* theme-dark（手动深色 / 跟随系统深色都适用） */
+html.theme-dark {
+    --bg: #000000;
+  }
+
+.app-stage {
+  position: relative;
+  width: 100%;
+  min-height: var(--app-height, 100vh);
+  height: var(--app-height, 100vh);
+  background: var(--bg);
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: manipulation;
+}
+
+.app-content {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background-color: var(--app-bg-solid, #f2f2f7);
+  border-radius: inherit;
+}
+
+.app-overlay-root {
+  position: absolute;
+  inset: 0;
+  z-index: 600;
+  pointer-events: none;
+  overflow: visible;
+}
+
+/* 全局顶栏：不使用毛玻璃材质，由页面背景一层铺满 */
+.app-tab-pane__inner {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background-color: var(--app-bg-solid, #f2f2f7);
+}
+
+/* 全站顶栏：不画毛玻璃 / 白色高光 / 底部塞条。
+   这些顶栏只占布局高度，正文都在各自独立的滚动容器里，不会从顶栏下方穿过；
+   顶栏保持透明，让页面自身的 --app-bg 一层铺到底，真机上才不会出现上下色差。 */
+.media-hub__top,
+.settings-hub__top,
+.home-landing__top,
+.app-push__bar,
+.settings-push__bar,
+.home-results-header {
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+
+.media-hub__top::after,
+.settings-hub__top::after,
+.home-landing__top::after,
+.app-push__bar::after,
+.settings-push__bar::after,
+.home-results-header::after {
+  content: none;
+}
+
+.media-hub__top .app-hub__title,
+.settings-hub__title,
+.home-landing__chrome-title {
+  font-size: var(--chrome-title-size, 28px);
+  font-weight: var(--chrome-title-weight, 700);
+  letter-spacing: var(--chrome-title-tracking, -0.032em);
+  line-height: 1.08;
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+}
+
+
+/* 内部模版 h-dvh 相对应用容器高度，而不是桌面视口 */
+.app-content .h-dvh,
+.app-content .min-h-dvh,
+html[data-shell='native'] .h-dvh,
+html[data-shell='native'] .min-h-dvh,
+html[data-standalone='1'] .h-dvh,
+html[data-standalone='1'] .min-h-dvh {
+  height: 100% !important;
+  max-height: 100% !important;
+  min-height: 0 !important;
+}
+
+.app-content .auth-viewport,
+.app-content .login-screen,
+.app-content .auth-boot {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  /* 只用 inset 拉满，避免 height:100% 与 bottom 冲突留下底缝 */
+  width: auto;
+  height: auto;
+  max-height: none;
+  min-height: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  border-radius: inherit;
+}

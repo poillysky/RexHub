@@ -1,0 +1,10 @@
+/* 全局样式入口：实现按功能拆到 ./styles/，@import 顺序即级联顺序（勿调换）。 */
+@import "./styles/01-base.css";
+@import "./styles/02-settings.css";
+@import "./styles/03-push-115.css";
+@import "./styles/04-scrape.css";
+@import "./styles/05-media.css";
+@import "./styles/06-catalog-ai.css";
+@import "./styles/07-settings-panels.css";
+@import "./styles/08-misc.css";
+@import "./styles/09-drama.css";

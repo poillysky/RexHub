@@ -117,7 +117,7 @@ features/settings/AiModelsPanel      1,316
 
 ### 问题 4：16 个死代码 shim 文件
 
-`apps/api/app/` 根目录下 16 个 8 行文件，靠 `import_module` 把 `app.core.pg` 的符号灌进 `app.pg`：
+`server/api/app/` 根目录下 16 个 8 行文件，靠 `import_module` 把 `app.core.pg` 的符号灌进 `app.pg`：
 
 ```
 pg.py  outbound_http.py  bitmagnet_pg.py  search_av.py  prefix_ranges.py
@@ -128,7 +128,7 @@ makers_catalog_routes.py  makers_providers_extra.py
 ```
 
 **⚠️ 2026-09-22 更正**：初版检索结论「全仓零引用」**是错的**。当时正则写成 `app\.(pg|...)`，漏掉了 `from app import pg` 这种写法。
-实情：`apps/api/scripts/` 下 **85 处**（35 个脚本）依赖这些 shim，连 `app/tests/test_prefix_code_read.py` 都被间接牵连。
+实情：`server/api/scripts/` 下 **85 处**（35 个脚本）依赖这些 shim，连 `app/tests/test_prefix_code_read.py` 都被间接牵连。
 
 **已处理**：把这 85 处全部迁移到真实模块路径（`from app.search import bitmagnet_pg` 等），迁移后残留复查 = 0，shim 才真正成为死代码并归档。
 教训：**死代码判定必须同时覆盖 `from X import Y` 与 `import X.Y` 两种形式**，且必须跑回归验证。
@@ -148,7 +148,7 @@ makers_catalog_routes.py  makers_providers_extra.py
 
 ## 三、目标结构
 
-### 后端 `apps/api/app/`
+### 后端 `server/api/app/`
 
 ```
 app/
@@ -184,7 +184,7 @@ app/
 └── (删除 16 个根级 shim)
 ```
 
-### 前端 `apps/web/src/`
+### 前端 `server/web/src/`
 
 ```
 src/
@@ -213,7 +213,7 @@ src/
 ### Phase 0 · 安全网（必做前置）
 
 - 建分支 `refactor/modular`（当前 `main` 干净）
-- 跑测试基线：`cd apps/api && PYTHONPATH=. .venv/Scripts/python.exe -m pytest app/tests -q` → 期望 **285 passed / 19 subtests**
+- 跑测试基线：`cd server/api && PYTHONPATH=. .venv/Scripts/python.exe -m pytest app/tests -q` → 期望 **285 passed / 19 subtests**
 - 前端类型基线：`& <node.exe> node_modules\typescript\bin\tsc --noEmit -p tsconfig.json`
 - 列出每个待拆模块的外部导入点（拆分后逐项验证）
 
@@ -312,7 +312,7 @@ src/
 | 项 | 结果 | 验证方式 |
 |---|---|---|
 | 分支与归档 | `refactor-modular`（本地）；`_archive/` 归档 **173 个文件 / 34.8 MB**（清单见 `_archive/MANIFEST.md`） | `git status` 干净；删除能力实测可用 |
-| 旧路径迁移 | `apps/api/scripts/` 下 **85 处** `from app import <shim>` → 真实模块 | AST 静态解析（360 文件/1256 导入），残留 = 0 |
+| 旧路径迁移 | `server/api/scripts/` 下 **85 处** `from app import <shim>` → 真实模块 | AST 静态解析（360 文件/1256 导入），残留 = 0 |
 | `main.py` 瘦身 | **738 → 160 行**；DB 设置端点 → `app/core/db_settings_routes.py` 参数化工厂 | OpenAPI 路由 **25/25 逐条一致**，请求体 model 名与 operationId 全等 |
 | 连接池合并 | `core/pg_pool.py::DbPool`；`core/pg.py` / `search/bitmagnet_pg.py` 变薄封装 | 25 项行为断言（超时、游标名、池参数、重建、异常类型）全过 |
 | 重复实现消除 | `_cache_get`×2、`_abs`×2、`_build_fanza_trailer`×2、`_madou_std`×2=`std_code`、`_normalize_proxy_url`×2、`_is_clear_ok`=`_is_del_ok` | 参考实现差分测试 **103 例**全一致 |

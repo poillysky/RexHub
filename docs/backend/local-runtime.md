@@ -4,7 +4,7 @@
 
 ## `data/`
 
-相对仓库根。短说明见 [`data/README.md`](../data/README.md)。
+相对仓库根。短说明见 [`data/README.md`](../../server/data/README.md)。
 
 | 子路径 | 用途 |
 |--------|------|
@@ -18,31 +18,20 @@
 | `debug/` | 脚本报告 / 探针输出 |
 
 用户/会话/设置主体在 **SQLite 元库**（`data/meta.db`，可用 `SNS_META_DB` 覆盖），不在这些 JSON 文件里。
-演员/标签/番号标题映射只在 **`apps/maps/scrape/`**（勿再写 `data/scrape_maps/`；刮削流水线已移除）。
+演员/标签/番号标题映射只在 **`server/maps/scrape/`**（勿再写 `data/scrape_maps/`；刮削流水线已移除）。
 
-## `media/`
+## `server/api/_local_refs/mdcx/`
 
-见 [`media/README.md`](../media/README.md)。
-
-| 子路径 | 用途 |
-|--------|------|
-| `scrap-library/` | 刮削 NFO/海报（含 `_actress/` 女优头像） |
-| `strm-library/` | 七区 STRM |
-
-## `apps/api/_local_refs/mdcx/`
-
-MDCX 原始映射（gitignore），导入写入 `apps/maps/scrape/` 唯一完整表：
+MDCX 原始映射（gitignore），导入写入 `server/maps/scrape/` 唯一完整表：
 
 | 文件 | 导入产物 |
 |------|----------|
-| `mapping_actor.xml` | `apps/maps/scrape/actors.zh-CN.json` |
+| `mapping_actor.xml` | `server/maps/scrape/actors.zh-CN.json` |
 | `Actress-*.db` | 同上（别名 enrichment） |
-| `mapping_info.xml` | `apps/maps/scrape/tags.zh-CN.json` |
-| `c_number.json` | `apps/maps/scrape/code-titles.json` |
 
 ```bash
-cd apps/api
-.venv/Scripts/python.exe scripts/import_mdcx_maps.py
+cd server/api
+.venv/bin/python scripts/build_actor_map_from_mdcx.py
 ```
 
 ## `backups/`

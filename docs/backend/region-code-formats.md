@@ -3,10 +3,10 @@
 后续逐站测源、对番号能否查到时，**以本表为输入形态**。  
 实现依据：
 
-- 本仓库：`apps/maps/prefixes/code-read.json`、`code-shapes.json`、`apps/api/app/search/av.py`
+- 本仓库：`server/maps/prefixes/code-read.json`、`code-shapes.json`、`server/api/app/search/av.py`
 - 对照 MDCX：`.refs/mdcx/mdcx/number.py` → `get_file_number`（从文件名抽出番号）
 
-六区顺序与 `apps/maps/regions/regions.json` 一致。
+六区顺序与 `server/maps/regions/regions.json` 一致。
 
 ---
 
@@ -307,5 +307,5 @@ BrazzersExxtra.26.07.09
 
 ## 维护
 
-- 前缀级 pad / shape 变更：改 `apps/maps/prefixes/` 后同步改本表「规范示例」。  
+- 前缀级 pad / shape 变更：改 `server/maps/prefixes/` 后同步改本表「规范示例」。  
 - 逐站审计结论仍记在 [source-region-code-audit.md](./source-region-code-audit.md)；测源时**先按本表造输入**。

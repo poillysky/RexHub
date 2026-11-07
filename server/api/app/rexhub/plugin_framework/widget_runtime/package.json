@@ -1,0 +1,11 @@
+{
+  "name": "rexhub-widget-runtime",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "acorn": "^8.11.0",
+    "adm-zip": "^0.6.1",
+    "cheerio": "^1.0.0",
+    "undici": "^7.19.0"
+  }
+}

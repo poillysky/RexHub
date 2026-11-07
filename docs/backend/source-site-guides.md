@@ -55,7 +55,7 @@
 
 实现入口：
 
-- 列表 / 搜索 / 详情：`apps/api/app/makers/catalog_routes.py`（`_javbus_*`）  
+- 列表 / 搜索 / 详情：`server/api/app/makers/catalog_routes.py`（`_javbus_*`）  
 - 丰富详情桥：`scrape_details` → `_legacy_javbus`  
 - 番号候选：`javbus_code_candidates`（`scrape_details/common.py`）
 
@@ -149,9 +149,9 @@
 
 ### 相关代码与文档
 
-- `apps/api/app/scrape/source_catalog.py` · `javbus`  
-- `apps/api/app/makers/catalog_routes.py` · `KIND_SHELVES` / `_javbus_detail`  
-- `apps/api/scripts/sync_prefixes_from_authority_sites.py`  
+- `server/api/app/scrape/source_catalog.py` · `javbus`  
+- `server/api/app/makers/catalog_routes.py` · `KIND_SHELVES` / `_javbus_detail`  
+- `server/api/scripts/sync_prefixes_from_authority_sites.py`  
 - 审计：[source-region-code-audit.md](./source-region-code-audit.md) § JavBus  
 - 番号格式：[region-code-formats.md](./region-code-formats.md)
 
@@ -172,7 +172,7 @@
 | 访问 | 自适应；Cookie 默认 `age_check_done=1; ckcy=1; cklg=ja; is_overseas=0` |
 | 官网生态 | DMM 综合站 + **FANZA** 成人数字发行（本源只吃后者的 AV 数字商品） |
 
-实现：`apps/api/app/scrape_details/dmm.py`（`guess_dmm_cids` → GraphQL `ppvContent`）。
+实现：`server/api/app/scrape_details/dmm.py`（`guess_dmm_cids` → GraphQL `ppvContent`）。
 
 ### 官网实际有什么
 
@@ -233,7 +233,7 @@ HTML 站内搜索页本次 `cid_hits=0`（登录墙 / 反爬），**以 GraphQL 
 |------|------|
 | 输入 | 规范有码键 `PREFIX-NNN`（pad=3）；胶合 `ssni00123` 可还原 |
 | CID | `{digit}{series}{zfill5}`，如 `SSNI-123`→`ssni00123`；`ABP-900` 常先试 `118abp00900` |
-| digit | 目录 `dmm_digit` → `dmm-series-digit.json` → 常见板号表 |
+| digit | 目录 `dmm_digit` → 常见板号表 |
 | 分盘尾 | `…C` / `…A` **不规范**；`_dmm_base_code` 剥掉再查 |
 | 失败策略 | GraphQL 全未中 → **`未找到`**（已去掉「假封面 URL 冒充成功」） |
 | 无搜索回退 | 与 JavBus 不同，没有 list search 补洞，全靠 CID 猜中 |
@@ -260,8 +260,8 @@ HTML 站内搜索页本次 `cid_hits=0`（登录墙 / 反爬），**以 GraphQL 
 
 ### 相关代码与文档
 
-- `apps/api/app/scrape_details/dmm.py`  
-- `apps/api/app/prefix/catalog_dmm.py` · `apps/maps/sites/dmm-series-digit.json`  
+- `server/api/app/scrape_details/dmm.py`  
+- `server/api/app/prefix/catalog_dmm.py`  
 - 审计：[source-region-code-audit.md](./source-region-code-audit.md) § DMM  
 - 番号格式：[region-code-formats.md](./region-code-formats.md)
 
@@ -282,7 +282,7 @@ HTML 站内搜索页本次 `cid_hits=0`（登录墙 / 反爬），**以 GraphQL 
 | 详情 API | `GET /movies/{CODE}.json`；可返回 `processing` 需短轮询 |
 | 搜索 API | `GET /search.json?q=`（与详情同构单条） |
 
-实现：`apps/api/app/scrape_details/libredmm.py`。
+实现：`server/api/app/scrape_details/libredmm.py`。
 
 ### 官网实际有什么（2026-09 探针）
 
@@ -374,7 +374,7 @@ HTML 站内搜索页本次 `cid_hits=0`（登录墙 / 反爬），**以 GraphQL 
 
 ### 相关代码与文档
 
-- `apps/api/app/scrape_details/libredmm.py`  
+- `server/api/app/scrape_details/libredmm.py`  
 - 审计：[source-region-code-audit.md](./source-region-code-audit.md) § LibreDMM  
 - 番号格式：[region-code-formats.md](./region-code-formats.md)
 
@@ -394,7 +394,7 @@ HTML 站内搜索页本次 `cid_hits=0`（登录墙 / 反爬），**以 GraphQL 
 | 访问 | 自适应 |
 | 详情形态 | 搜索 → `/cn/video?hid=…`（hid 不含番号，靠标题匹配） |
 
-实现：`apps/api/app/scrape_details/airav_io.py`；hid 可缓存于 `detail_path_cache`。
+实现：`server/api/app/scrape_details/airav_io.py`；hid 可缓存于 `detail_path_cache`。
 
 ### 官网实际有什么（2026-09 探针）
 
@@ -487,8 +487,8 @@ HTML 站内搜索页本次 `cid_hits=0`（登录墙 / 反爬），**以 GraphQL 
 
 ### 相关代码与文档
 
-- `apps/api/app/scrape_details/airav_io.py`  
-- `apps/api/app/core/detail_path_cache.py`  
+- `server/api/app/scrape_details/airav_io.py`  
+- `server/api/app/core/detail_path_cache.py`  
 - 番号格式：[region-code-formats.md](./region-code-formats.md)
 
 ---
@@ -606,8 +606,8 @@ AIO 分工（同源前端，不同 `js-module`）：
 
 ### 相关代码与文档
 
-- `apps/api/app/scrape_details/avmoo.py`  
-- `apps/api/app/scrape_details/aio_common.py`  
+- `server/api/app/scrape_details/avmoo.py`  
+- `server/api/app/scrape_details/aio_common.py`  
 - 姊妹站目录项：`avsox`、`avheat`  
 - 审计：[source-region-code-audit.md](./source-region-code-audit.md) § Avmoo  
 - 番号格式：[region-code-formats.md](./region-code-formats.md)
@@ -627,7 +627,7 @@ AIO 分工（同源前端，不同 `js-module`）：
 | 访问 | `proxy_adaptive`；**NEVER_FLARE**（稳定 curl/代理，不走 Flare） |
 | 官网自称 | 标题「JAV321 dmm」——偏 DMM/有码 + 站内分类聚合 |
 
-实现：`apps/api/app/scrape_details/jav321.py`（POST `/search` `sn=`，对齐 MDCS）。
+实现：`server/api/app/scrape_details/jav321.py`（POST `/search` `sn=`，对齐 MDCS）。
 
 ### 官网实际有什么（2026-09 探针）
 
@@ -723,7 +723,7 @@ GET `/search?sn=` 往往只有壳；**必须以 POST `sn=`**（实现已如此�
 
 ### 相关代码与文档
 
-- `apps/api/app/scrape_details/jav321.py`  
+- `server/api/app/scrape_details/jav321.py`  
 - 测试：`app/tests/test_jav321_avbase_candidates.py`  
 - `code_equiv` 板号：`scrape_details/common.py`；测试 `app/tests/test_code_equiv_board_prefix.py`  
 - 审计：[source-region-code-audit.md](./source-region-code-audit.md) § Jav321  
@@ -744,7 +744,7 @@ GET `/search?sn=` 往往只有壳；**必须以 POST `sn=`**（实现已如此�
 | 访问 | `proxy_adaptive`（Next.js；页内 `__NEXT_DATA__` JSON） |
 | 官网自称 | 「AV検索データベース \| アダルトビデオの情報基地！」 |
 
-实现：`apps/api/app/scrape_details/avbase.py`（直链 `/works/{CODE}` → 否则 `/works?q=` 再进详情）。
+实现：`server/api/app/scrape_details/avbase.py`（直链 `/works/{CODE}` → 否则 `/works?q=` 再进详情）。
 
 ### 官网实际有什么（2026-09 探针）
 
@@ -834,7 +834,7 @@ GET `/search?sn=` 往往只有壳；**必须以 POST `sn=`**（实现已如此�
 
 ### 相关代码与文档
 
-- `apps/api/app/scrape_details/avbase.py`  
+- `server/api/app/scrape_details/avbase.py`  
 - 测试：`app/tests/test_avbase_work_id_match.py`、`test_jav321_avbase_candidates.py`  
 - 审计：[source-region-code-audit.md](./source-region-code-audit.md) § AVBase  
 - 番号格式：[region-code-formats.md](./region-code-formats.md)
@@ -854,7 +854,7 @@ GET `/search?sn=` 往往只有壳；**必须以 POST `sn=`**（实现已如此�
 | 访问 | `proxy_adaptive`；**须 Cookie `adc=1`**（目录 `defaultCookie`） |
 | 官网自称 | 「エロ動画・アダルトビデオ - **MGS動画＜プレステージ グループ＞**」 |
 
-实现：`apps/api/app/scrape_details/mgstage.py`（对齐 MDCS）。
+实现：`server/api/app/scrape_details/mgstage.py`（对齐 MDCS）。
 
 ### 官网实际有什么（2026-09-23 实页）
 
@@ -922,7 +922,7 @@ GET `/search?sn=` 往往只有壳；**必须以 POST `sn=`**（实现已如此�
 
 ### 相关代码与文档
 
-- `apps/api/app/scrape_details/mgstage.py`（`mgstage_code_candidates`）  
+- `server/api/app/scrape_details/mgstage.py`（`mgstage_code_candidates`）  
 - 测试：`test_mgstage_code_candidates.py`、`test_mgstage_pick_href.py`、`test_soup_reuse_and_mgstage_table.py`  
 - [region-code-formats.md](./region-code-formats.md) § 素人 · [source-region-code-audit.md](./source-region-code-audit.md) § MGStage  
 
@@ -941,7 +941,7 @@ GET `/search?sn=` 往往只有壳；**必须以 POST `sn=`**（实现已如此�
 | 访问 | `proxy_adaptive` |
 | 官网自称 | 「FREE JAV BT \| 每日更新」 |
 
-实现：`apps/api/app/scrape_details/freejavbt.py`（直链 `/{CODE}` / `/zh|ja|en/{CODE}`）。
+实现：`server/api/app/scrape_details/freejavbt.py`（直链 `/{CODE}` / `/zh|ja|en/{CODE}`）。
 
 ### 官网实际有什么（2026-09 探针）
 
@@ -1017,7 +1017,7 @@ GET `/search?sn=` 往往只有壳；**必须以 POST `sn=`**（实现已如此�
 
 ### 相关代码与文档
 
-- `apps/api/app/scrape_details/freejavbt.py`  
+- `server/api/app/scrape_details/freejavbt.py`  
 - 测试：`app/tests/test_freejavbt_code_candidates.py`  
 - 审计：[source-region-code-audit.md](./source-region-code-audit.md) § FreeJavBT  
 
@@ -1036,7 +1036,7 @@ GET `/search?sn=` 往往只有壳；**必须以 POST `sn=`**（实现已如此�
 | 访问 | `proxy_adaptive` |
 | 官网自称 | 「7mmtv.sx - Watch JAV Online」 |
 
-实现：`apps/api/app/scrape_details/sevenmmtv.py`（搜索 → 详情；路径缓存）。
+实现：`server/api/app/scrape_details/sevenmmtv.py`（搜索 → 详情；路径缓存）。
 
 ### 官网实际有什么（2026-09 探针）
 
@@ -1114,7 +1114,7 @@ GET `/search?sn=` 往往只有壳；**必须以 POST `sn=`**（实现已如此�
 
 ### 相关代码与文档
 
-- `apps/api/app/scrape_details/sevenmmtv.py`（`sevenmmtv_code_candidates` / `_href_matches_code`）  
+- `server/api/app/scrape_details/sevenmmtv.py`（`sevenmmtv_code_candidates` / `_href_matches_code`）  
 - 测试：`app/tests/test_sevenmmtv_code_candidates.py`  
 - 审计：[source-region-code-audit.md](./source-region-code-audit.md) § 7MMTV  
 
@@ -1133,7 +1133,7 @@ GET `/search?sn=` 往往只有壳；**必须以 POST `sn=`**（实现已如此�
 | 访问 | `proxy_adaptive` |
 | 官网自称 | 「iQQTV - …线上成人A片高清直播」 |
 
-实现：`apps/api/app/scrape_details/iqqtv.py`（`/jp|/cn` 搜索 → `player.php?uuid=`；中文优先）。
+实现：`server/api/app/scrape_details/iqqtv.py`（`/jp|/cn` 搜索 → `player.php?uuid=`；中文优先）。
 
 ### 官网实际有什么（2026-09 探针）
 
@@ -1210,7 +1210,7 @@ GET `/search?sn=` 往往只有壳；**必须以 POST `sn=`**（实现已如此�
 
 ### 相关代码与文档
 
-- `apps/api/app/scrape_details/iqqtv.py`（`iqqtv_code_candidates` / `match_iqqtv_number`）  
+- `server/api/app/scrape_details/iqqtv.py`（`iqqtv_code_candidates` / `match_iqqtv_number`）  
 - 测试：`app/tests/test_iqqtv_code_candidates.py`  
 - 审计：[source-region-code-audit.md](./source-region-code-audit.md) § iQQTV  
 
@@ -1229,7 +1229,7 @@ GET `/search?sn=` 往往只有壳；**必须以 POST `sn=`**（实现已如此�
 | 访问 | `proxy_adaptive`（**非 Flare**；HTML 首页可被 CF，JSON 走面板代理） |
 | 官网能力 | FANZA/DMM 系 **JSON API**（`dvd_id` / `combined=content_id`） |
 
-实现：`apps/api/app/scrape_details/r18dev.py`。
+实现：`server/api/app/scrape_details/r18dev.py`。
 
 ### 官网实际有什么（2026-09 探针）
 
@@ -1238,7 +1238,7 @@ GET `/search?sn=` 往往只有壳；**必须以 POST `sn=`**（实现已如此�
 | 接口 | URL 形态 | 含义 |
 |------|----------|------|
 | DVD 检索 | `/videos/vod/movies/detail/-/dvd_id={series}{5位}/json` | 例 `ssis00001` |
-| 详情合并 | `/videos/vod/movies/detail/-/combined={content_id}/json` | 厂牌前缀 + 品番（见 `r18-content-id-prefixes.json`） |
+| 详情合并 | `/videos/vod/movies/detail/-/combined={content_id}/json` | 厂牌前缀 + 品番 |
 
 字段含日/英标题、女优、片商、发行日、jacket、样片、分类等。实现将 `mosaic` 固定标 **有码**（FANZA 数字盘库）。
 
@@ -1299,8 +1299,7 @@ GET `/search?sn=` 往往只有壳；**必须以 POST `sn=`**（实现已如此�
 
 ### 相关代码与文档
 
-- `apps/api/app/scrape_details/r18dev.py`（`r18dev_code_candidates` / `_r18_detail_matches_code`）  
-- 映射：`r18-content-id-prefixes.json`  
+- `server/api/app/scrape_details/r18dev.py`（`r18dev_code_candidates` / `_r18_detail_matches_code`）  
 - 测试：`app/tests/test_r18dev_code_candidates.py`、`test_direct_api_slot.py`（限速）  
 - 审计：[source-region-code-audit.md](./source-region-code-audit.md) § R18.dev  
 
@@ -1412,7 +1411,7 @@ GET `/search?sn=` 往往只有壳；**必须以 POST `sn=`**（实现已如此�
 
 **结论**
 
-- **ThePornDB**：欧美主源（REST）；须填 API Key；厂牌别名见 `western-studio-search-aliases.json`。  
+- **ThePornDB**：欧美主源（REST）；须填 API Key。  
 - **AVHeat**：AIO 欧美姊妹站；详情须 Flare；库存偏 RealityKings / Brazzers 子系列等，**不是 Blacked 全库镜像**；不当有码源。
 
 实现：`scrape_details/theporndb.py`、`avheat.py` → `aio_common`；测试 `test_western_code_candidates.py`。
@@ -1432,7 +1431,7 @@ GET `/search?sn=` 往往只有壳；**必须以 POST `sn=`**（实现已如此�
 | 访问 | `proxy_adaptive`（**非**强制 CF；curl+代理可过，**不算**删站条件的「真 Flare」） |
 | 官网自称 | 「MissAV \| 免费高清AV在线看」 |
 
-实现：`apps/api/app/scrape_details/miss_av.py`（`/cn/{slug}` 直链 → 搜索回退）。
+实现：`server/api/app/scrape_details/miss_av.py`（`/cn/{slug}` 直链 → 搜索回退）。
 
 ### 官网实际有什么（2026-09 探针）
 
@@ -1500,7 +1499,7 @@ GET `/search?sn=` 往往只有壳；**必须以 POST `sn=`**（实现已如此�
 
 ### 相关代码与文档
 
-- `apps/api/app/scrape_details/miss_av.py`  
+- `server/api/app/scrape_details/miss_av.py`  
 - 测试：`test_miss_av_code_candidates.py`  
 - [region-code-formats.md](./region-code-formats.md) · [source-region-code-audit.md](./source-region-code-audit.md) § MissAV  
 
@@ -1519,7 +1518,7 @@ GET `/search?sn=` 往往只有壳；**必须以 POST `sn=`**（实现已如此�
 | 访问 | `proxy_adaptive`（curl+代理可过，**非**强制 CF 过盾） |
 | 官网自称 | 「123AV - 無料JAV・日本AVをHDでオンライン視聴」 |
 
-实现：`apps/api/app/scrape_details/njav.py`（缓存 → `/v/{slug}` 直链 → 搜索）。
+实现：`server/api/app/scrape_details/njav.py`（缓存 → `/v/{slug}` 直链 → 搜索）。
 
 ### 官网实际有什么（2026-09 探针）
 
@@ -1585,7 +1584,7 @@ GET `/search?sn=` 往往只有壳；**必须以 POST `sn=`**（实现已如此�
 
 ### 相关代码与文档
 
-- `apps/api/app/scrape_details/njav.py`  
+- `server/api/app/scrape_details/njav.py`  
 - 测试：`test_njav_code_candidates.py`  
 - [source-region-code-audit.md](./source-region-code-audit.md) § NJAV  
 

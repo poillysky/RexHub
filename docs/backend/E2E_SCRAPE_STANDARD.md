@@ -2,16 +2,16 @@
 
 > **目标**：每一号测完都能发现缺口、修映射、改逻辑，最终让合并刮削在「字段全、中文优先、女优/标签准、封面合规、入库可读、女优资料/头像齐」上接近完美。  
 > **用法**：开测前读一遍检查清单；测完按「反问 → 记案例 → 补标准」闭环更新本文。  
-> **脚本**：`apps/api/_gap_reports/_e2e_one_code.py`  
-> **样本**：`apps/api/_gap_reports/e2e_prefix_sample.json`  
-> **单号报告**：`apps/api/_gap_reports/e2e_one_by_one/<CODE>.json`
+> **脚本**：`server/api/_gap_reports/_e2e_one_code.py`  
+> **样本**：`server/api/_gap_reports/e2e_prefix_sample.json`  
+> **单号报告**：`server/api/_gap_reports/e2e_one_by_one/<CODE>.json`
 
 ---
 
 ## 0. 怎么跑
 
 ```text
-cd apps/api
+cd server/api
 .venv\Scripts\python.exe -u _gap_reports\_e2e_one_code.py --index=N --write --fix-maps
 # 或指定番号
 .venv\Scripts\python.exe -u _gap_reports\_e2e_one_code.py --code=XXXX-000 --write --fix-maps
@@ -104,8 +104,8 @@ cd apps/api
 | drop | 女优名、噪声、过短无意义词 |
 | 合并结果 | NFO `<genre>` 与向量 `类型：` 一致且已收敛；**全样本 merged 命中通用噪声必须为 0** |
 
-> 回归工具：`apps/api/_gap_reports/_probe_noise_rules.py`（不联网）。断言噪声规则、繁简折叠、女优折叠，并扫描全部 `e2e_one_by_one/*.json` 的 raw/merged 标签；**merged 残留数必须为 0，否则脚本以非 0 退出**。  
-> 另一回归工具：`apps/api/_gap_reports/_probe_tag_variants.py`（不联网）。断言「合并标签字形归一去重」12 条用例（繁简/异体/日文旧字），任一失败以非 0 退出。
+> 回归工具：`server/api/_gap_reports/_probe_noise_rules.py`（不联网）。断言噪声规则、繁简折叠、女优折叠，并扫描全部 `e2e_one_by_one/*.json` 的 raw/merged 标签；**merged 残留数必须为 0，否则脚本以非 0 退出**。  
+> 另一回归工具：`server/api/_gap_reports/_probe_tag_variants.py`（不联网）。断言「合并标签字形归一去重」12 条用例（繁简/异体/日文旧字），任一失败以非 0 退出。
 
 ### 1.5 封面落盘
 
@@ -146,14 +146,9 @@ cd apps/api
 
 报告字段：`actress_assets.items[]`（`db` / `avatar_ok` / `birthday` / `age` / `height` / `cup` / `careerPeriod` / `bioSource`）。
 
-### 1.9 本地番号映射参与度（`local_maps`，仅报告不设门禁）
+### 1.9 本地番号映射参与度（已退役）
 
-| 检查 | 通过标准 |
-|---|---|
-| codeActors | `apps/maps/scrape/code-actors.json`（av_metadata 导出，7263 号）有该番号 → 报告 `raw`（原始日文名）与 `used`；`used=true`＝provider 全没给演员、本地兜底采信；provider 在场时 `used=false` 是**正常**让位，不算 FAIL |
-| codeTitles | `code-titles.json` 有该番号 → 报告标题与 `used`（=`mdcx_c_number` 优选采信） |
-
-重点看两处异常：① 本地映射在表且 `used=false`，但 provider 演员与映射译名明显冲突 → 疑似 provider 错页，人工判定；② 本地兜底采信后译名可疑（映射错绑）→ 修 `actors.zh-CN.json`（番号→女优表存原始日文名，翻译走运行时映射链，修映射即生效）。
+`code-actors.json` / `code-titles.json` 已删除，演员与标题只认 provider（插件）结果，本节不再设检查项。
 
 ---
 
@@ -188,8 +183,8 @@ cd apps/api
 
 ### P1 — 映射与清洗
 
-- `apps/maps/scrape/actors.zh-CN.json` 纠错、补别名（人工确认）
-- `apps/maps/scrape/tags.zh-CN.json` 繁简/同义/drop
+- `server/maps/scrape/actors.zh-CN.json` 纠错、补别名（人工确认）
+- `server/maps/scrape/tags.zh-CN.json` 繁简/同义/drop
 - 剧情广告尾巴剥离（DMM コンビニ受取 等）
 - 半截括号、半角假名、NFKC
 
@@ -307,30 +302,28 @@ ARCH = 架构变更记录（非单号样本）。
 
 | 用途 | 路径 |
 |---|---|
-| 单号 E2E | `apps/api/_gap_reports/_e2e_one_code.py` |
-| 样本列表 | `apps/api/_gap_reports/e2e_prefix_sample.json` |
-| 单号 JSON | `apps/api/_gap_reports/e2e_one_by_one/` |
+| 单号 E2E | `server/api/_gap_reports/_e2e_one_code.py` |
+| 样本列表 | `server/api/_gap_reports/e2e_prefix_sample.json` |
+| 单号 JSON | `server/api/_gap_reports/e2e_one_by_one/` |
 | **落盘根目录** | `media/scrap-library/<分区>/<前缀>/<番号>/`（**只应有 `poster.jpg` + `.nfo`**；root 取 embed 设置，缺省 `scrap-library`。注意：`media/日本有码/...` 是旧 STRM 库，**不是**刮削落盘点） |
-| 离线映射烟测 | `apps/api/_gap_reports/_probe_0511_maps.py`（改映射表后先跑，不联网） |
-| **通用噪声/折叠回归** | `apps/api/_gap_reports/_probe_noise_rules.py`（改噪声或折叠规则后先跑，不联网；**merged 残留必须为 0**，否则非 0 退出） |
-| **标签字形去重回归** | `apps/api/_gap_reports/_probe_tag_variants.py`（不联网，12 用例，非 0 退出=回归） |
-| **合并回归（标签映射/女优名剔除/剧情链）** | `apps/api/_gap_reports/_probe_merge_regressions.py`（不联网，6 断言，非 0 退出=回归） |
-| **标题 × 对抽取回归** | `apps/api/_gap_reports/_probe_title_pairs.py`（离线对比新旧 `_names_from_title_pairs`，防表情占位 `●` 造垃圾女优） |
-| **女优来源溯源探针** | `apps/api/_gap_reports/_probe_actor_provenance.py`（找 merged 中无任何源支撑的女优） |
-| **女优别名链扁平化** | `apps/api/_gap_reports/_normalize_actor_aliases.py`（默认 dry-run；`--apply` 写回；幂等，`chains=0` 即干净） |
-| **批量跑全样本** | `apps/api/_gap_reports/_run_batch.py`（`--all --tag=batch2d`；输出 SUMMARY 准确率 / `invalid_skeleton` / `not_ok`） |
-| **扫描全部报告** | `apps/api/_gap_reports/_scan_reports.py`（汇总非满分项 + 全量标签繁简重复） |
-| 女优映射 | `apps/maps/scrape/actors.zh-CN.json` |
-| 标签映射 | `apps/maps/scrape/tags.zh-CN.json` |
-| 番号→中文标题 | `apps/maps/scrape/code-titles.json`（enrich 内源站定稿后与 `mdcx_c_number` 比分优选） |
-| 番号→女优 | `apps/maps/scrape/code-actors.json`（av_metadata 导出；`local_code_actors` 兜底，存日文名走映射链） |
-| 合并/入库 | `apps/api/app/scrap_library/enrich.py` |
-| 封面裁剪 | `apps/api/app/cover_scrape.py` |
-| NFO 易读写出 | `apps/api/app/scrap_library_nfo.py` → `write_nfo` |
-| 刮削策略 UI | `apps/web/src/features/settings/EnrichStrategyPanel.tsx` |
+| 离线映射烟测 | `server/api/_gap_reports/_probe_0511_maps.py`（改映射表后先跑，不联网） |
+| **通用噪声/折叠回归** | `server/api/_gap_reports/_probe_noise_rules.py`（改噪声或折叠规则后先跑，不联网；**merged 残留必须为 0**，否则非 0 退出） |
+| **标签字形去重回归** | `server/api/_gap_reports/_probe_tag_variants.py`（不联网，12 用例，非 0 退出=回归） |
+| **合并回归（标签映射/女优名剔除/剧情链）** | `server/api/_gap_reports/_probe_merge_regressions.py`（不联网，6 断言，非 0 退出=回归） |
+| **标题 × 对抽取回归** | `server/api/_gap_reports/_probe_title_pairs.py`（离线对比新旧 `_names_from_title_pairs`，防表情占位 `●` 造垃圾女优） |
+| **女优来源溯源探针** | `server/api/_gap_reports/_probe_actor_provenance.py`（找 merged 中无任何源支撑的女优） |
+| **女优别名链扁平化** | `server/api/_gap_reports/_normalize_actor_aliases.py`（默认 dry-run；`--apply` 写回；幂等，`chains=0` 即干净） |
+| **批量跑全样本** | `server/api/_gap_reports/_run_batch.py`（`--all --tag=batch2d`；输出 SUMMARY 准确率 / `invalid_skeleton` / `not_ok`） |
+| **扫描全部报告** | `server/api/_gap_reports/_scan_reports.py`（汇总非满分项 + 全量标签繁简重复） |
+| 女优映射 | `server/maps/scrape/actors.zh-CN.json` |
+| 标签繁简折叠 | `server/maps/scrape/tags.variant-fold.zh-CN.json` |
+| 合并/入库 | `server/api/app/scrap_library/enrich.py` |
+| 封面裁剪 | `server/api/app/cover_scrape.py` |
+| NFO 易读写出 | `server/api/app/scrap_library_nfo.py` → `write_nfo` |
+| 刮削策略 UI | `server/web/src/features/settings/EnrichStrategyPanel.tsx` |
 | MDCS 对照 | `.refs/mdcs/apps/server/src/organize/poster.ts` 等 |
 | MDCX / Amane | `.refs/mdcx` · `.refs/amane`（字段链见 `aggregate/engine.py`） |
-| 无网烟测 | `apps/api/_gap_reports/_test_amane_gate_smoke.py` |
+| 无网烟测 | `server/api/_gap_reports/_test_amane_gate_smoke.py` |
 
 ---
 
@@ -549,7 +542,7 @@ issue 0 例；折叠表 641 对 + 女优 12 键 + 标签 20 键补齐；「あ�
 | 源 | 仅 javbus/dmm/jav321 有货；10 源未收录（2026-09-02 新作，属预期级失败） |
 | 封面 | DMM `pl` 落盘成功；javbus/jav321 传输超时被跳过后回落（记入 `coverTried`） |
 
-**修复**：`apps/maps/scrape/tags.zh-CN.json` 补 `りんさん:{drop}` 与 `配信専用→独占配信`。
+**修复**：`server/maps/scrape/tags.zh-CN.json` 补 `りんさん:{drop}` 与 `配信専用→独占配信`。
 复验后 `tag_map.suggested=[]`（此前误把女优名当待补标签）。
 
 **遗留**：各源 overview 皆空 → 无中文剧情；片商仍日文「きゃんたま清掃員」。
@@ -702,7 +695,7 @@ issue 0 例；折叠表 641 对 + 女优 12 键 + 标签 20 键补齐；「あ�
 
 | 项 | 结果 |
 |---|---|
-| 工具 | `apps/api/_gap_reports/_probe_noise_rules.py`（离线，非 0 退出=有回归） |
+| 工具 | `server/api/_gap_reports/_probe_noise_rules.py`（离线，非 0 退出=有回归） |
 | 断言 | `tag_is_noise` 22 条断言 **0 失败**（前缀/促销/年代元标签/白名单） |
 | 折叠 | 繁简折叠表 567 条；`义母/義母/繼母/継母`→继母、`连裤袜/連褲襪/黑絲`→连裤袜；女优 `藤宮櫻花`→藤宫樱花、`濱崎真緒`→滨崎真绪 |
 | 全样本扫描 | 47 份历史报告：**raw 命中通用噪声 44 处**（规则生效，源侧脏标签会被剔）；**merged 残留 = 0** |
@@ -799,7 +792,7 @@ NSFS-289 NASS-024 KFNE-087 PPT-057 RBB-186 ARM-897 SHYN-067 AARM-064 REAL-970 MD
    → overview `margin` 收窄到 **5**（title 仍 8，其余字段 35）。
 2. **假名标签无映射**（CJOB-134）— `男の潮吹き` 在各源都是日文原样，tags 表里没有这个键 →
    合并结果残留假名 → `tag_map_ok=False`，且该 issue 不以信息前缀开头，连带 `2_merge_optimal=False`。
-   → `apps/maps/scrape/tags.zh-CN.json` 补 `男の潮吹き / 男人喷 → 男潮吹`（seed 同步）。
+   → `server/maps/scrape/tags.zh-CN.json` 补 `男の潮吹き / 男人喷 → 男潮吹`（seed 同步）。
 3. **合集女优名漏出为标签**（CJOB-134）— 合并收尾 `polish_tag_names(exclude=...)` 原来只排
    **最终 merged 名单**；BEST 合集里没进最终 12 人的女优名（javbus 把出演者当标签塞进来：
    `ERINA / AIKA / 久留木玲`）因此漏删。→ 排除集改用**全源女优名并集** `allowed_for_plot`。
@@ -1026,9 +1019,9 @@ tags 分支的锚点也改从 `merged` 取 title/titleJa。
 | 封面 | DMM `pl` 落盘；目录仅 `poster.jpg` + NFO |
 | 向量 | 骨架→正式；`skel=False`；`vectorSynced=True` |
 
-**工具修复（本号前置）**：`_gap_reports` 工作区曾被清空，从 `backups/workspace/2026-09-12/from-api/_gap_reports` 恢复脚本；对齐 maps 重构：`app.core.db` / `app.scrap_library.enrich` / `app.scrape.metadata_optimize` / `app.ai.embed`；映射表改指向 `apps/maps/scrape/`。
+**工具修复（本号前置）**：`_gap_reports` 工作区曾被清空，从 `backups/workspace/2026-09-12/from-api/_gap_reports` 恢复脚本；对齐 maps 重构：`app.core.db` / `app.scrap_library.enrich` / `app.scrape.metadata_optimize` / `app.ai.embed`；映射表改指向 `server/maps/scrape/`。
 
-**已修**：`enrich._merge_got` / `merge_nfo_with_detail` 写盘前走片商展示映射（`apps/maps/makers/makers.json` → `resolve_studio_display`）。PRWF-011 复验：`プレミアム` → NFO/向量 `Premium`。
+**已修**：`enrich._merge_got` / `merge_nfo_with_detail` 写盘前走片商展示映射（`server/maps/makers/makers.json` → `resolve_studio_display`）。PRWF-011 复验：`プレミアム` → NFO/向量 `Premium`。
 
 **遗留**：小松空待人工确认后自映射；标签近义双份可接受级。多数日厂 `card` 为英文品牌名；表里若写了中文 `card`/`i18n[0]` 会优先用中文。
 
@@ -1505,7 +1498,7 @@ batch19 满分（10/10），但 `ROYD-266` 暴露一个**同类系统性缺口**
 
 ### S. 变体折叠表缺「日本新字体 → 简体」若干高频字
 
-`apps/maps/scrape/tags.variant-fold.zh-CN.json` 原本 **662** 条，覆盖面不错
+`server/maps/scrape/tags.variant-fold.zh-CN.json` 原本 **662** 条，覆盖面不错
 （`沢/浜/歩/広/涼/島/嶋/恵/徳/売/読/髙/﨑` 都在），但缺一批高频字：
 演员表里仅 `穂` 就有 **53 个键**、`穗` **32 个键**；`桜`族（`桜`+`櫻`）合计 **687** 次出现。
 

@@ -2,7 +2,7 @@
 
 > **目标**：在**小硬盘**前提下，让「番号 → 多源 → 合并 → 封面 → NFO → 入库 → 女优资产」稳定达到合格，而不是堆文件。  
 > **对照**：MDCX（`.refs/mdcx`，主流程 `core/scraper` → `file_crawler` → `image`/`web` → `nfo`/`translate`）。不对比 MDCS。  
-> **现状锚点**：`apps/api/app/scrap_library/enrich.py`、`cover_scrape.py`、`embed.py`、策略面板、E2E 标准 `docs/E2E_SCRAPE_STANDARD.md`。  
+> **现状锚点**：`server/api/app/scrap_library/enrich.py`、`cover_scrape.py`、`embed.py`、策略面板、E2E 标准 `docs/E2E_SCRAPE_STANDARD.md`。  
 > **用法**：每节四段——MDCX 做法 → 我们现状 → 差距/风险 → 优化建议。实施时优先「合格率 + 省盘」，少开新资产类型。  
 > **审计结论（2026-09-13）**：A–H 共 40 条是「库刮削合格 + 省盘」主干；**I 节（I41–I52，含 I46b）** 为审计后确认值得学习的补充规格。并非 MDCX 全功能镜像，也尚未全部落地。详见文末「深度审计」。
 

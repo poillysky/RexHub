@@ -8,10 +8,10 @@
 
 六区：`japan_censored`（有码）· `japan_uncensored`（无码）· `japan_amateur`（素人）· `fc2` · `china`（国产）· `western`（欧美）。
 
-权威映射参考：`apps/api/scripts/sync_prefixes_from_authority_sites.py`  
-默认丰富链：`apps/api/app/scrap_library/enrich_strategy.py`（`_DEFAULT_REGION_SOURCES`）  
-货架：`apps/api/app/makers/catalog_routes.py`（`KIND_SHELVES`）  
-目录顺序：`apps/api/app/scrape/source_catalog.py`
+权威映射参考：`server/api/scripts/sync_prefixes_from_authority_sites.py`  
+默认丰富链：`server/api/app/scrap_library/enrich_strategy.py`（`_DEFAULT_REGION_SOURCES`）  
+货架：`server/api/app/makers/catalog_routes.py`（`KIND_SHELVES`）  
+目录顺序：`server/api/app/scrape/source_catalog.py`
 
 ---
 

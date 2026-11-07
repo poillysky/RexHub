@@ -1,0 +1,704 @@
+/* 短剧 Tab：片源卡片 / 片单 / 详情播放 */
+
+/* 与影视页共用同一套材质与动效 token */
+.drama-stack {
+  --media-ease: cubic-bezier(0.25, 1, 0.5, 1);
+  --media-fill: var(--surface-fill, rgba(120, 120, 128, 0.1));
+  --media-elevated: var(--surface-elevated, rgba(255, 255, 255, 0.94));
+  --media-shadow-poster:
+    0 1px 2px rgba(15, 20, 30, 0.04),
+    0 8px 24px rgba(15, 20, 30, 0.1);
+  --media-radius-poster: 14px;
+  --media-title-track: -0.022em;
+}
+
+.dark .drama-stack {
+  --media-fill: rgba(120, 120, 128, 0.24);
+  --media-elevated: rgba(44, 44, 46, 0.96);
+  --media-shadow-poster:
+    0 1px 2px rgba(0, 0, 0, 0.35),
+    0 10px 28px rgba(0, 0, 0, 0.4);
+}
+
+.drama-hub .media-hub__top {
+  padding-bottom: 4px;
+}
+
+.drama-hub__section {
+  padding: 8px 0 28px;
+}
+
+.drama-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 12px;
+  padding: 0 6px 0 12px;
+  border-radius: 12px;
+  background: rgba(118, 118, 128, 0.12);
+}
+
+.drama-search__icon {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+}
+
+.drama-search__input {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.drama-search__input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.drama-search__submit {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #fff;
+  background: var(--primary);
+}
+
+.drama-search__submit:disabled {
+  opacity: 0.4;
+}
+
+.drama-search--page {
+  margin-top: 2px;
+}
+
+.drama-sites {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.drama-site-card {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 13px 16px 13px 18px;
+  border: 0.5px solid color-mix(in srgb, var(--site-accent, #8e8e93) 18%, var(--hairline));
+  border-radius: 18px;
+  background:
+    radial-gradient(
+      120% 150% at 0% 50%,
+      color-mix(in srgb, var(--site-accent, #8e8e93) 9%, transparent) 0%,
+      transparent 62%
+    ),
+    var(--surface-elevated, #fff);
+  box-shadow:
+    0 1px 2px rgba(15, 20, 30, 0.04),
+    0 10px 26px rgba(15, 20, 30, 0.07);
+  text-align: left;
+  color: var(--ink);
+  overflow: hidden;
+  transition:
+    transform 0.18s var(--media-ease, ease),
+    box-shadow 0.18s var(--media-ease, ease),
+    border-color 0.18s var(--media-ease, ease);
+}
+
+/* 左侧品牌色细条：四个片源在列表里各有识别色 */
+.drama-site-card::before {
+  content: '';
+  position: absolute;
+  top: 22%;
+  bottom: 22%;
+  left: 0;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(
+    180deg,
+    var(--site-accent, #8e8e93),
+    color-mix(in srgb, var(--site-accent, #8e8e93) 45%, #fff)
+  );
+  opacity: 0.9;
+}
+
+.drama-site-card:active {
+  transform: scale(0.985);
+}
+
+.drama-site-card:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--site-accent, #0a84ff) 55%, transparent);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) {
+  .drama-site-card:hover {
+    transform: translateY(-1px);
+    border-color: color-mix(in srgb, var(--site-accent, #8e8e93) 34%, var(--hairline));
+    box-shadow:
+      0 2px 4px rgba(15, 20, 30, 0.05),
+      0 16px 34px rgba(15, 20, 30, 0.1);
+  }
+
+  .drama-site-card:hover .drama-site-card__arrow {
+    color: var(--site-accent, var(--ink));
+    background: color-mix(in srgb, var(--site-accent, #8e8e93) 18%, transparent);
+    transform: translateX(2px);
+  }
+}
+
+.drama-site-card__logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 13px;
+  color: #fff;
+  background: linear-gradient(135deg, #0a84ff, #5ac8fa);
+}
+
+.drama-site-card__logo.is-hot {
+  background: linear-gradient(135deg, #ff5f45, #ff2d55);
+  box-shadow: 0 6px 16px rgba(255, 45, 85, 0.28);
+}
+
+.drama-site-card__main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.drama-site-card__name {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.012em;
+}
+
+.drama-site-card__badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  vertical-align: 1px;
+  color: color-mix(in srgb, var(--site-accent, #8e8e93) 70%, var(--ink));
+  background: color-mix(in srgb, var(--site-accent, #8e8e93) 13%, transparent);
+}
+
+.drama-site-card__glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+}
+
+.drama-site-card__glyph svg {
+  width: 22px;
+  height: 22px;
+}
+
+.drama-site-card__logo-img {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+  border-radius: 5px;
+}
+
+.drama-site-card__logo.is-logo-image {
+  background: none;
+  box-shadow: none;
+}
+
+.drama-site-card__logo.is-logo-image .drama-site-card__logo-img {
+  width: 40px;
+  height: 40px;
+  border-radius: 0;
+}
+
+.drama-site-card__desc {
+  font-size: 12.5px;
+  line-height: 1.3;
+  color: var(--muted-foreground);
+}
+
+.drama-site-card__arrow {
+  flex-shrink: 0;
+  padding: 4px;
+  border-radius: 999px;
+  color: var(--muted-foreground);
+  background: color-mix(in srgb, var(--site-accent, #8e8e93) 8%, transparent);
+  opacity: 0.9;
+  transition:
+    color 0.18s ease,
+    background 0.18s ease,
+    transform 0.18s ease;
+}
+
+.drama-site-skel {
+  display: block;
+  height: 70px;
+  border-radius: 18px;
+  background: linear-gradient(
+    90deg,
+    rgba(118, 118, 128, 0.1) 25%,
+    rgba(118, 118, 128, 0.18) 37%,
+    rgba(118, 118, 128, 0.1) 63%
+  );
+  background-size: 400% 100%;
+  animation: drama-skel-shimmer 1.4s ease infinite;
+}
+
+@keyframes drama-skel-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: 0 0;
+  }
+}
+
+html.theme-dark .drama-site-card {
+  border-color: color-mix(in srgb, var(--site-accent, #8e8e93) 26%, rgba(255, 255, 255, 0.1));
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.4),
+    0 12px 30px rgba(0, 0, 0, 0.3);
+}
+
+html.theme-dark .drama-site-card__arrow {
+  background: color-mix(in srgb, var(--site-accent, #8e8e93) 14%, transparent);
+}
+
+@media (hover: hover) {
+  html.theme-dark .drama-site-card:hover {
+    box-shadow:
+      0 2px 6px rgba(0, 0, 0, 0.45),
+      0 18px 38px rgba(0, 0, 0, 0.42);
+  }
+}
+
+/* ── 片单 ── */
+
+.drama-catalog {
+  padding-top: 4px;
+}
+
+.drama-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px 10px;
+}
+
+.drama-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  color: var(--ink);
+  transition: transform 0.16s ease;
+}
+
+.drama-card:active {
+  transform: scale(0.97);
+}
+
+.drama-card__cover {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  border-radius: var(--media-radius-poster, 14px);
+  background: rgba(118, 118, 128, 0.14);
+  box-shadow: var(--media-shadow-poster);
+}
+
+.drama-card__cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.drama-card__badge {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  padding: 1px 5px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.52);
+  backdrop-filter: blur(6px);
+}
+
+.drama-card__title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 1px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  line-height: 1.32;
+}
+
+.drama-card-skel {
+  display: block;
+  aspect-ratio: 3 / 4;
+  border-radius: 10px;
+  background: rgba(118, 118, 128, 0.12);
+}
+
+.drama-more {
+  display: block;
+  width: 100%;
+  margin-top: 18px;
+  padding: 11px 0;
+  border: 0;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--primary);
+  background: rgba(118, 118, 128, 0.12);
+}
+
+.drama-more:disabled {
+  opacity: 0.6;
+}
+
+.drama-empty {
+  margin: 12px 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+
+/* ── 榜单 ── */
+
+.drama-catalog > .media-source-switch {
+  margin-bottom: 12px;
+}
+
+.drama-shelves {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding-bottom: 12px;
+}
+
+.drama-shelves .media-shelf__head {
+  padding-bottom: 10px;
+}
+
+.drama-card--rail {
+  flex: 0 0 104px;
+  scroll-snap-align: start;
+}
+
+.drama-card-skel--rail {
+  flex: 0 0 104px;
+}
+
+.drama-shelf-skel-title {
+  display: block;
+  width: 96px;
+  height: 22px;
+  margin-bottom: 10px;
+  border-radius: 7px;
+  background: rgba(120, 120, 128, 0.14);
+}
+
+/* 榜单「全部」页：滚动到底自动加载 */
+.drama-rank-more {
+  margin: 14px 0 0;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+
+.drama-rank-sentinel {
+  height: 1px;
+}
+
+/* 片单页：类型切换 + 独立筛选入口 */
+.drama-stage-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.drama-stage-bar > .media-source-switch {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.drama-filter-trigger {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 38px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 11px;
+  background: var(--media-fill);
+  color: var(--ink-muted, #8e8e93);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    color 200ms var(--media-ease),
+    background 200ms var(--media-ease),
+    box-shadow 200ms var(--media-ease);
+}
+
+.drama-filter-trigger:active {
+  opacity: 0.7;
+}
+
+.drama-filter-trigger.is-active {
+  background: var(--media-elevated);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 3px 8px rgba(var(--shadow-color), 0.06);
+}
+
+/* 筛选面板：维度 + 选项 */
+.drama-filter-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: -2px 0 14px;
+}
+
+.drama-filter-panel .media-source-switch {
+  overflow-x: auto;
+}
+
+.drama-filter-panel .media-source-switch__btn {
+  flex: 0 0 auto;
+  padding: 0 12px;
+}
+
+.drama-filter-row {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.drama-filter-row::-webkit-scrollbar {
+  display: none;
+}
+
+.drama-filter-chip {
+  flex: 0 0 auto;
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--media-fill);
+  color: var(--ink-muted, #8e8e93);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    color 200ms var(--media-ease),
+    background 200ms var(--media-ease),
+    box-shadow 200ms var(--media-ease);
+}
+
+.drama-filter-chip:active {
+  opacity: 0.7;
+}
+
+.drama-filter-chip.is-active {
+  background: var(--media-elevated);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 3px 8px rgba(var(--shadow-color), 0.06);
+}
+
+/* ── 详情 + 播放 ── */
+
+.drama-detail {
+  padding-top: 2px;
+}
+
+.drama-player {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  background: #000;
+}
+
+.drama-player__video {
+  display: block;
+  width: 100%;
+  max-height: 58vh;
+  aspect-ratio: 3 / 4;
+  object-fit: contain;
+  background: #000;
+}
+
+.drama-player__poster {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  max-height: 58vh;
+  padding: 0;
+  border: 0;
+  background: #111;
+  overflow: hidden;
+}
+
+.drama-player__poster img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.72;
+}
+
+.drama-player__mask {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.1), rgba(0, 0, 0, 0.55));
+}
+
+.drama-player__play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 58px;
+  height: 58px;
+  margin: -29px 0 0 -29px;
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.42);
+}
+
+.drama-player__label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 14px;
+  font-size: 12px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.drama-detail__head {
+  padding: 14px 2px 4px;
+}
+
+.drama-detail__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.drama-detail__meta {
+  margin: 5px 0 0;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.drama-detail__desc {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: rgba(60, 60, 67, 0.72);
+}
+
+.dark .drama-detail__desc {
+  color: rgba(235, 235, 245, 0.68);
+}
+
+.drama-episodes {
+  margin-top: 16px;
+}
+
+.drama-episodes__head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.drama-episodes__count {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+.drama-episodes__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+  gap: 8px;
+  padding-bottom: 20px;
+}
+
+.drama-episode {
+  padding: 9px 0;
+  border: 0.5px solid var(--hairline);
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+  background: var(--surface-elevated, #fff);
+}
+
+.drama-episode:disabled {
+  opacity: 0.4;
+}
+
+.drama-episode.is-active {
+  color: #fff;
+  border-color: transparent;
+  background: var(--primary);
+}
