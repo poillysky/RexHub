@@ -28,8 +28,6 @@ from app.search.forum_title.titles import (
     is_likely_japanese,
 )
 
-# 兼容旧名
-_clean_forum_zh_title = clean_forum_zh_title
 
 __all__ = [
     "clean_forum_zh_title",

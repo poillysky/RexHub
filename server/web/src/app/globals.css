@@ -95,7 +95,7 @@
 }
 
 .dark {
-  --background: #000000;
+  --background: #05070c;
   --foreground: #f5f5f7;
   --card: #1c1c1e;
   --card-foreground: #f5f5f7;
@@ -154,7 +154,8 @@
   }
   html.dark {
     color-scheme: dark;
-    background-color: #000000;
+    /* 与 --app-bg-solid 保持一致，避免首帧或状态栏露出纯黑 */
+    background-color: #05070c;
   }
   body {
     margin: 0;
@@ -171,7 +172,7 @@
     -webkit-touch-callout: none;
   }
   .dark body {
-    background-color: #000000;
+    background-color: #05070c;
   }
   body > * {
     height: var(--app-height, 100vh);
@@ -266,18 +267,14 @@ html[data-keyboard='1'] .app-tabbar {
 }
 
 html[data-keyboard='1'] .app-push,
-html[data-keyboard='1'] .settings-push,
-html[data-page-lock='1'] .app-push,
-html[data-page-lock='1'] .settings-push {
+html[data-page-lock='1'] .app-push {
   overflow: hidden !important;
   overscroll-behavior: none !important;
   touch-action: none !important;
 }
 
 html[data-keyboard='1'] .app-push__body,
-html[data-keyboard='1'] .settings-push__body,
-html[data-page-lock='1'] .app-push__body,
-html[data-page-lock='1'] .settings-push__body {
+html[data-page-lock='1'] .app-push__body {
   overflow: hidden !important;
   overscroll-behavior: none !important;
   touch-action: none !important;
@@ -287,8 +284,6 @@ html[data-page-lock='1'] .settings-push__body {
 /* 含表单的 Push / 主页搜索 / 登录：键盘期允许内滚（PWA 全屏） */
 html[data-page-lock='1'] .app-push__body:has(input, textarea, select):not(.ai-chat-push),
 html[data-keyboard='1'] .app-push__body:has(input, textarea, select):not(.ai-chat-push),
-html[data-page-lock='1'] .settings-push__body:has(input, textarea, select),
-html[data-keyboard='1'] .settings-push__body:has(input, textarea, select),
 html[data-page-lock='1'] .home-search-body,
 html[data-keyboard='1'] .home-search-body,
 html[data-scroll-lock='1'] .home-search-body,
@@ -315,7 +310,6 @@ html[data-scroll-lock='1'] .home-search-screen {
 
 /* 表单页随键盘上抬（settled 后才动，避免和 push 滑入动画抢 transform） */
 .app-push.app-push--settled:not(:has(.ai-chat-push)),
-.settings-push.app-push--settled,
 .login-screen,
 .auth-viewport {
   transform: translate3d(0, calc(-1 * var(--form-lift, 0px)), 0);
@@ -325,7 +319,6 @@ html[data-scroll-lock='1'] .home-search-screen {
 
 @media (prefers-reduced-motion: reduce) {
   .app-push.app-push--settled:not(:has(.ai-chat-push)),
-  .settings-push.app-push--settled,
   .login-screen,
   .auth-viewport {
     transition: none;
@@ -334,7 +327,6 @@ html[data-scroll-lock='1'] .home-search-screen {
 
 /* 表单键盘：少量垫底即可，长表单靠内滚 */
 html[data-form-keyboard='1'] .app-push__body:has(input, textarea, select):not(.ai-chat-push),
-html[data-form-keyboard='1'] .settings-push__body:has(input, textarea, select),
 html[data-form-keyboard='1'] .home-search-body,
 html[data-form-keyboard='1'] .home-search-screen,
 html[data-form-keyboard='1'] .login-screen,
@@ -393,11 +385,6 @@ body,
   background: transparent;
 }
 
-/* Hide scrollbar on the horizontal tab container */
-.snap-x::-webkit-scrollbar {
-  display: none;
-}
-
 /* ============================================
    Custom utilities & animations
    ============================================ */
@@ -425,49 +412,6 @@ body,
   to { opacity: 1; }
 }
 
-/* Breathing glow for timer */
-@keyframes breathe {
-  0%, 100% {
-    box-shadow: 0 0 0 0 rgba(0, 122, 255, 0);
-  }
-  50% {
-    box-shadow: 0 0 40px 8px rgba(0, 122, 255, 0.12);
-  }
-}
-
-/* Gentle pulse for active indicator */
-@keyframes gentle-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
-}
-
-/* Staggered card entry */
-@keyframes slide-up {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* Success check pop */
-@keyframes check-pop {
-  0% {
-    transform: scale(0);
-    opacity: 0;
-  }
-  50% {
-    transform: scale(1.15);
-  }
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
 @layer utilities {
   .animate-fade-in-up {
     animation: fade-in-up 0.4s ease-out both;
@@ -475,32 +419,7 @@ body,
   .animate-fade-in {
     animation: fade-in 0.3s ease-out both;
   }
-  .animate-breathe {
-    animation: breathe 4s ease-in-out infinite;
-  }
-  .animate-gentle-pulse {
-    animation: gentle-pulse 2s ease-in-out infinite;
-  }
-  .animate-slide-up {
-    animation: slide-up 0.35s ease-out both;
-  }
-  .animate-check-pop {
-    animation: check-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
-  }
 }
-
-/* Stagger children animation delays */
-.stagger-children > * {
-  animation: slide-up 0.35s ease-out both;
-}
-.stagger-children > *:nth-child(1) { animation-delay: 0ms; }
-.stagger-children > *:nth-child(2) { animation-delay: 50ms; }
-.stagger-children > *:nth-child(3) { animation-delay: 100ms; }
-.stagger-children > *:nth-child(4) { animation-delay: 150ms; }
-.stagger-children > *:nth-child(5) { animation-delay: 200ms; }
-.stagger-children > *:nth-child(6) { animation-delay: 250ms; }
-.stagger-children > *:nth-child(7) { animation-delay: 300ms; }
-.stagger-children > *:nth-child(8) { animation-delay: 350ms; }
 
 /* Warm texture overlay on body (subtle noise) */
 body::before {

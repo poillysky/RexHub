@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 /** 统一的「异常 → 提示文案」转换（原先各面板各写一遍 `instanceof` 判断） */
 export function errorText(e: unknown, fallback: string): string {
@@ -52,6 +52,8 @@ export type PanelAction = {
 export function usePanelAction(): PanelAction {
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
+  // busy 的 state 要等下一次渲染才生效，失焦保存 + 手动提交会在同一帧内重复触发
+  const running = useRef(false);
 
   const withBusy = useCallback(async <T>(fn: () => Promise<T>): Promise<T> => {
     setBusy(true);
@@ -64,11 +66,20 @@ export function usePanelAction(): PanelAction {
   }, []);
 
   const run = useCallback(
-    async (fallback: string, fn: () => Promise<void>): Promise<void> => {
+    async (
+      fallback: string,
+      fn: () => Promise<void>,
+      onError?: (e: unknown) => void,
+    ): Promise<void> => {
+      if (running.current) return;
+      running.current = true;
       try {
         await withBusy(fn);
       } catch (e) {
         setMsg(errorText(e, fallback));
+        onError?.(e);
+      } finally {
+        running.current = false;
       }
     },
     [withBusy],

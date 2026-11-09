@@ -71,6 +71,10 @@ def iter_batches(
 
 def close_pool() -> None:
     _IMPL.close_pool()
+    # 换库后 cjk_bigrams 是否存在要重新探测，否则会沿用旧库的判断
+    import app.search.bitmagnet_client as bitmagnet_client
+
+    bitmagnet_client.reset_cjk_state()
 
 
 def is_configured() -> bool:

@@ -20,6 +20,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections import OrderedDict
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse, StreamingResponse
@@ -29,11 +30,13 @@ from app.rexhub import network_store
 from app.rexhub.auth_guard import require_session
 from app.rexhub.plugin_framework import runtime as plugin_runtime
 from app.rexhub.plugin_framework import store as plugin_store
+from app.rexhub.plugin_framework.manifest import clean_icon
 
 router = APIRouter(prefix="/api/shortdrama", tags=["shortdrama"])
 
 TIMEOUT = 15
 CACHE_TTL = 60
+CACHE_MAX = 256
 UPSTREAM_STREAM_HEADERS = (
     "content-type",
     "content-length",
@@ -52,7 +55,7 @@ SITE_ALIASES = {"hongguo": "rexhub.hongguo.video"}
 DEFAULT_DRAMA_PLUGIN = "rexhub.hongguo.video"
 _PLACEHOLDER_RE = re.compile(r"\{([A-Za-z0-9_.-]+)\}")
 
-_cache: dict[str, tuple[float, dict]] = {}
+_cache: OrderedDict[str, tuple[float, dict]] = OrderedDict()
 _lock = threading.Lock()
 
 
@@ -129,11 +132,18 @@ def _cached(key: str, loader) -> dict:
     now = time.time()
     with _lock:
         hit = _cache.get(key)
-    if hit and now - hit[0] < CACHE_TTL:
-        return hit[1]
+        if hit and now - hit[0] < CACHE_TTL:
+            _cache.move_to_end(key)
+            return hit[1]
+        if hit:
+            _cache.pop(key, None)
     value = loader()
     with _lock:
         _cache[key] = (now, value)
+        _cache.move_to_end(key)
+        # key 带插件端口，插件重启后会换 key，必须有上限兜底
+        while len(_cache) > CACHE_MAX:
+            _cache.popitem(last=False)
     return value
 
 
@@ -148,6 +158,11 @@ def _get_json(path: str, base: str) -> dict:
             method="GET",
         )
         try:
+            # 本地插件地址必须直连，否则启用代理后会把 127.0.0.1 送进代理导致整体不可用
+            host = (urllib.parse.urlparse(base).hostname or "").lower()
+            if host in {"127.0.0.1", "localhost", "::1"}:
+                with network_store.open_direct(request, TIMEOUT) as response:
+                    return json.loads(response.read().decode("utf-8"))
             with network_store.open_url(request, TIMEOUT, "shortdrama") as response:
                 return json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as error:
@@ -247,6 +262,11 @@ def _query(params: dict) -> str:
     return urllib.parse.urlencode(clean)
 
 
+def _base_async(row: dict) -> "asyncio.Future[str]":
+    """启动插件会阻塞（等待 healthcheck），不能在事件循环里直接跑。"""
+    return asyncio.to_thread(_base, row)
+
+
 async def _call(row: dict, capability: str, params: dict) -> dict:
     spec = _endpoint(row, capability)
     if not spec:
@@ -255,7 +275,15 @@ async def _call(row: dict, capability: str, params: dict) -> dict:
     query = _query(params)
     if query:
         path += ("&" if "?" in path else "?") + query
-    return await _fetch_json(path, _base(row))
+    base = await _base_async(row)
+    return await _fetch_json(path, base)
+
+
+def _safe_int(value: object, default: int = 0) -> int:
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
 
 
 def _cover(site: str, value: object) -> str:
@@ -278,27 +306,32 @@ def _card(site: str, site_name: str, item: dict) -> dict:
         "title": str(item.get("title") or ""),
         "cover": _cover(site, item.get("cover")),
         "description": str(item.get("description") or ""),
-        "season": int(item.get("season") or 1),
-        "episodeCount": int(
-            item.get("episodeCount") or item.get("total") or item.get("episode_count") or 0
+        "season": _safe_int(item.get("season"), 1) or 1,
+        "episodeCount": _safe_int(
+            item.get("episodeCount") or item.get("total") or item.get("episode_count")
         ),
     }
 
 
 def _page(payload: dict, page: int, site: str, site_name: str) -> dict:
+    raw_items = payload.get("items") if isinstance(payload.get("items"), list) else []
     items = [
         _card(site, site_name, item)
-        for item in payload.get("items") or []
+        for item in raw_items
         if isinstance(item, dict) and item.get("id")
     ]
-    next_page = payload.get("nextPage") or payload.get("next_page")
-    has_more = bool(payload.get("hasMore") or payload.get("has_more")) or bool(next_page)
+    next_page = _safe_int(
+        payload.get("nextPage") or payload.get("next_page")
+    )
+    has_more = (
+        bool(payload.get("hasMore") or payload.get("has_more")) or next_page > 0
+    )
     return {
         "site": site,
         "siteName": site_name,
         "items": items,
         "hasMore": has_more,
-        "nextPage": int(next_page) if next_page else (page + 1 if has_more else None),
+        "nextPage": next_page if has_more else None,
     }
 
 
@@ -309,6 +342,9 @@ def _site_meta(row: dict) -> tuple[str, str]:
 def _site_ui(row: dict) -> dict:
     ui = row.get("ui") if isinstance(row.get("ui"), dict) else {}
     block = dict(ui.get("shortdrama") or {})
+    if "icon" in block:
+        # 老版本安装的插件可能没经过 manifest 净化
+        block["icon"] = clean_icon(block.get("icon"))
     logo = str(block.get("logo") or "")
     if logo.startswith("/") and not logo.startswith("//"):
         site_id, _name = _site_meta(row)
@@ -324,11 +360,15 @@ def _site_ui(row: dict) -> dict:
 @router.get("/sites", response_model=SiteListResponse)
 async def list_sites(request: Request) -> SiteListResponse:
     require_session(request)
+    rows = _visible_rows()
+    # 插件未启动时 _base 会阻塞到 healthcheck 超时，必须并发且放到线程池
+    bases = await asyncio.gather(
+        *(_base_async(row) for row in rows),
+        return_exceptions=True,
+    )
     items: list[SiteCard] = []
-    for row in _visible_rows():
-        try:
-            _base(row)
-        except HTTPException:
+    for row, base in zip(rows, bases):
+        if isinstance(base, BaseException):
             continue
         site_id, name = _site_meta(row)
         items.append(
@@ -348,16 +388,28 @@ async def search_all(
     request: Request,
     q: str = Query(min_length=1, max_length=100),
     page: int = Query(default=1, ge=1),
+    limit: int = Query(default=0, ge=0, le=24),
 ) -> DramaPage:
-    """全局搜索：按可见站点顺序取第一个可用的短剧插件。"""
+    """全局搜索：依次尝试可见站点，跳过不可用的插件。"""
     require_session(request)
     rows = _visible_rows()
-    if not rows:
-        raise HTTPException(status_code=503, detail="暂无可用的短剧插件")
-    row = rows[0]
-    site_id, name = _site_meta(row)
-    payload = await _call(row, "shortdrama.search", {"q": q, "page": page})
-    return DramaPage(**_page(payload, page, site_id, name))
+    last_error: HTTPException | None = None
+    for row in rows:
+        site_id, name = _site_meta(row)
+        params: dict[str, object] = {"q": q, "page": page}
+        if limit:
+            params["limit"] = limit
+        try:
+            payload = await _call(row, "shortdrama.search", params)
+        except HTTPException as error:
+            if error.status_code in (404, 502, 503):
+                last_error = error
+                continue
+            raise
+        return DramaPage(**_page(payload, page, site_id, name))
+    if last_error:
+        raise last_error
+    raise HTTPException(status_code=503, detail="暂无可用的短剧插件")
 
 
 @router.get("/{site}/catalog", response_model=DramaPage)
@@ -365,6 +417,7 @@ async def catalog(
     request: Request,
     site: str,
     page: int = Query(default=1, ge=1),
+    limit: int = Query(default=0, ge=0, le=24),
 ) -> DramaPage:
     require_session(request)
     row = _row(site)
@@ -373,6 +426,8 @@ async def catalog(
     params: dict[str, object] = {"page": page}
     if sort:
         params["sort"] = sort
+    if limit:
+        params["limit"] = limit
     payload = await _call(row, "shortdrama.catalog", params)
     return DramaPage(**_page(payload, page, site_id, name))
 
@@ -383,11 +438,15 @@ async def search_site(
     site: str,
     q: str = Query(min_length=1, max_length=100),
     page: int = Query(default=1, ge=1),
+    limit: int = Query(default=0, ge=0, le=24),
 ) -> DramaPage:
     require_session(request)
     row = _row(site)
     site_id, name = _site_meta(row)
-    payload = await _call(row, "shortdrama.search", {"q": q, "page": page})
+    params: dict[str, object] = {"q": q, "page": page}
+    if limit:
+        params["limit"] = limit
+    payload = await _call(row, "shortdrama.search", params)
     return DramaPage(**_page(payload, page, site_id, name))
 
 
@@ -463,21 +522,26 @@ async def rank_list(
     rank: str = Query(min_length=1, max_length=60),
     page: int = Query(default=1, ge=1),
     filter_id: str = Query(default="", alias="filter", max_length=60),
+    limit: int = Query(default=0, ge=0, le=24),
 ) -> DramaPage:
     require_session(request)
     row = _row(site)
     site_id, name = _site_meta(row)
+    params: dict[str, object] = {
+        "group": group,
+        "rank": rank,
+        "filter": filter_id,
+        "page": page,
+    }
+    if limit:
+        params["limit"] = limit
     if _endpoint(row, "shortdrama.ranks"):
-        payload = await _call(
-            row,
-            "shortdrama.ranks",
-            {"group": group, "rank": rank, "filter": filter_id, "page": page},
-        )
+        payload = await _call(row, "shortdrama.ranks", params)
     else:
         payload = await _call(
             row,
             "shortdrama.catalog",
-            {"category": rank or "hot", "page": page},
+            {"category": rank or "hot", "page": page, **({"limit": limit} if limit else {})},
         )
     return DramaPage(**_page(payload, page, site_id, name))
 
@@ -492,21 +556,27 @@ async def series(
     row = _row(site)
     site_id, name = _site_meta(row)
     payload = await _call(row, "shortdrama.detail", {"id": series_id})
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=502, detail="短剧详情返回异常")
     card = _card(site_id, name, payload)
+    raw_episodes = payload.get("episodes") if isinstance(payload.get("episodes"), list) else []
     episodes = [
         Episode(
             id=str(item.get("id") or ""),
             title=str(item.get("title") or ""),
-            episode=int(item.get("episode") or index + 1),
-            duration=int(item.get("duration") or 0),
+            episode=_safe_int(item.get("episode"), index + 1) or index + 1,
+            duration=_safe_int(item.get("duration")),
             disabled=bool(item.get("disabled")),
         )
-        for index, item in enumerate(payload.get("episodes") or [])
+        for index, item in enumerate(raw_episodes)
+        if isinstance(item, dict)
     ]
+    raw_seasons = payload.get("seasons")
     seasons = [
         DramaCard(**_card(site_id, name, item))
-        for item in payload.get("seasons") or [card]
-    ]
+        for item in (raw_seasons if isinstance(raw_seasons, list) else [])
+        if isinstance(item, dict) and item.get("id")
+    ] or [DramaCard(**card)]
     return SeriesDetail(
         site=site_id,
         siteName=name,
@@ -517,7 +587,8 @@ async def series(
         season=card["season"],
         episodeCount=card["episodeCount"] or len(episodes),
         albumId="",
-        complete=bool(payload.get("complete", True)),
+        # 插件历史字段是 finished，统一按 complete 语义暴露
+        complete=bool(payload.get("complete", payload.get("finished", True))),
         episodes=episodes,
         seasons=seasons,
     )
@@ -536,7 +607,7 @@ async def stream(
     spec = _endpoint(row, "shortdrama.stream")
     if not spec:
         raise HTTPException(status_code=404, detail="插件未声明播放接口")
-    base = _base(row)
+    base = await _base_async(row)
     if spec["redirect"]:
         payload = await _call(
             row, "shortdrama.stream", {"id": episode_id, "json": "1"}
@@ -590,6 +661,19 @@ async def stream(
         for key in UPSTREAM_STREAM_HEADERS
         if upstream.headers.get(key)
     }
+
+    # 插件解码失败时可能把错误页当视频返回，直接拦掉避免播放器黑屏
+    content_type = (
+        str(upstream.headers.get("content-type") or "").split(";")[0].strip().lower()
+    )
+    if content_type in {"application/json", "text/html", "text/plain"}:
+        upstream.close()
+        raise HTTPException(status_code=502, detail="播放源返回异常内容，请切换剧集重试")
+    if (
+        content_type.startswith(("video/", "audio/"))
+        and "accept-ranges" not in response_headers
+    ):
+        response_headers["accept-ranges"] = "bytes"
 
     def chunks():
         try:

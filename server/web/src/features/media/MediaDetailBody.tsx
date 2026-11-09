@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { HardDrive, Search, Star } from 'lucide-react';
 import {
   type MediaCastPerson,
@@ -16,6 +16,29 @@ import { MediaPosterCard } from './MediaPosterCard';
 import { MediaStreamsButton } from './MediaStreamsButton';
 import { useMediaRelated } from './useMediaQueries';
 import { normalizeCast, pickAka, shortCountry } from './detailHelpers';
+
+/** 头像代理失败时退回首字占位，避免出现破图 */
+function CastAvatar({ src, name }: { src: string; name: string }) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <span className="media-detail__cast-avatar" aria-hidden>
+      {src && !failed ? (
+        <img
+          src={src}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          referrerPolicy="no-referrer"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <span className="media-detail__cast-ph">
+          {(name || '演').slice(0, 1)}
+        </span>
+      )}
+    </span>
+  );
+}
 
 export function MediaDetailBody({
   item,
@@ -36,18 +59,12 @@ export function MediaDetailBody({
   const [imgGone, setImgGone] = useState(false);
   /** 点击 PT 搜索后先弹窗选搜索方式 */
   const [ptPickOpen, setPtPickOpen] = useState(false);
-  /** 同一条目内锁定首张已展示海报，避免详情回填换 URL 导致闪没再载 */
-  const stickyPosterRef = useRef<{ id: string; url: string }>({
-    id: item.id,
-    url: proxiedCoverUrl(item.posterUrl),
-  });
-  const nextPoster = proxiedCoverUrl(item.posterUrl);
-  if (stickyPosterRef.current.id !== item.id) {
-    stickyPosterRef.current = { id: item.id, url: nextPoster };
-  } else if (nextPoster && !stickyPosterRef.current.url) {
-    stickyPosterRef.current.url = nextPoster;
-  }
-  const poster = stickyPosterRef.current.url;
+  /**
+   * 同一条目内锁定首张已展示海报（详情回填换 URL 时不再闪没）；
+   * 条目切换由调用方 key 重新挂载，因此这里只需保存首值。
+   */
+  const [firstPoster] = useState(() => proxiedCoverUrl(item.posterUrl));
+  const poster = firstPoster || proxiedCoverUrl(item.posterUrl);
   const cast = normalizeCast(item.cast);
   const showCastSkel = enriching && cast.length === 0;
   const imdbId = (item.imdbId || '').trim();
@@ -78,10 +95,6 @@ export function MediaDetailBody({
   const relatedLoading = Boolean(onOpenRelated) && relatedQuery.isPending;
   const showRelatedSkel = relatedLoading && related.length === 0;
 
-  useEffect(() => {
-    setImgGone(false);
-  }, [item.id]);
-
   const akaLine = pickAka(item);
   const rating =
     item.rating != null && Number(item.rating) > 0
@@ -111,7 +124,7 @@ export function MediaDetailBody({
       <div className="media-detail__hero">
         <div className="media-detail__poster" aria-hidden>
           <span className="media-detail__poster-ph">
-            {item.title.slice(0, 1)}
+            {(item.title || item.originalTitle || '').slice(0, 1) || '影'}
           </span>
           {poster && !imgGone ? (
             <SoftImg
@@ -129,7 +142,9 @@ export function MediaDetailBody({
           ) : null}
         </div>
         <div className="media-detail__meta">
-          <h2 className="media-detail__title allow-select">{item.title}</h2>
+          <h2 className="media-detail__title allow-select">
+            {item.title || '未知条目'}
+          </h2>
           {akaLine.length > 0 ? (
             <p className="media-detail__aka allow-select">
               {akaLine.join(' · ')}
@@ -191,22 +206,7 @@ export function MediaDetailBody({
                 const avatar = proxiedCoverUrl(p.avatarUrl);
                 const body = (
                   <>
-                    <span className="media-detail__cast-avatar" aria-hidden>
-                      {avatar ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={avatar}
-                          alt=""
-                          loading="lazy"
-                          decoding="async"
-                          referrerPolicy="no-referrer"
-                        />
-                      ) : (
-                        <span className="media-detail__cast-ph">
-                          {p.name.slice(0, 1)}
-                        </span>
-                      )}
-                    </span>
+                    <CastAvatar src={avatar} name={p.name} />
                     <span className="media-detail__cast-name">{p.name}</span>
                   </>
                 );
@@ -265,7 +265,7 @@ export function MediaDetailBody({
             PT搜索
           </button>
         ) : null}
-        <MediaStreamsButton item={item} title={item.title} />
+        <MediaStreamsButton item={item} title={item.title || '未知条目'} />
       </div>
 
       <AppCenterModal

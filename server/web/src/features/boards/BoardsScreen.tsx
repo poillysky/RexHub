@@ -27,8 +27,6 @@ type ListView = {
   title: string;
   boardFid: string;
   boardName: string;
-  /** 从 board 页进列表时返回 board；从 hub 直进则回 hub */
-  returnTo: 'hub' | BoardView;
 };
 
 type View = { kind: 'hub' } | BoardView | ListView;
@@ -77,6 +75,15 @@ export function BoardsScreen({ onClose }: { onClose?: () => void } = {}) {
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const hubRef = useRef<HTMLDivElement | null>(null);
   const listCoverRef = useRef<HTMLDivElement | null>(null);
+  // 内部层级栈：与浏览器历史一一对应，popstate 时逐层回退
+  const stackRef = useRef<View[]>([]);
+  const viewRef = useRef<View>(view);
+  const detailRef = useRef<string | null>(detailHash);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useLayoutEffect(() => {
     if (view.kind === 'hub') return;
@@ -88,50 +95,106 @@ export function BoardsScreen({ onClose }: { onClose?: () => void } = {}) {
     blurFocusedDescendant(listCoverRef.current);
   }, [detailHash]);
 
-  function resetToHub() {
-    setView({ kind: 'hub' });
-    setDetailHash(null);
+  const clearSearch = useCallback(() => {
     setBoardDraft('');
     setBoardQuery('');
     setListHint('');
-  }
-
-  const openBoard = useCallback((category: ShtForumCategory, board: ShtForumBoard) => {
-    setBoardDraft('');
-    setBoardQuery('');
-    setListHint('');
-    if (board.types.length) {
-      setView({ kind: 'board', category, board });
-      return;
-    }
-    setView({
-      kind: 'list',
-      title: board.name,
-      boardFid: board.fid,
-      boardName: board.name,
-      returnTo: 'hub',
-    });
   }, []);
 
+  const pushEntry = useCallback(() => {
+    if (!embedded) return;
+    try {
+      window.history.pushState({ boardsLayer: true }, '', '#boards');
+    } catch {
+      /* ignore */
+    }
+  }, [embedded]);
+
+  /** 进入下一层：压栈 + 压历史（嵌入首页时） */
+  const go = useCallback(
+    (next: View) => {
+      stackRef.current.push(viewRef.current);
+      viewRef.current = next;
+      setView(next);
+      pushEntry();
+    },
+    [pushEntry],
+  );
+
+  const openDetail = useCallback(
+    (hash: string) => {
+      detailRef.current = hash;
+      setDetailHash(hash);
+      pushEntry();
+    },
+    [pushEntry],
+  );
+
+  /** 本地回退一层；false 表示已到板块根，交由调用方关闭 */
+  const backLocally = useCallback(() => {
+    if (detailRef.current != null) {
+      detailRef.current = null;
+      setDetailHash(null);
+      return true;
+    }
+    const prev = stackRef.current.pop();
+    if (!prev) return false;
+    viewRef.current = prev;
+    setView(prev);
+    clearSearch();
+    return true;
+  }, [clearSearch]);
+
+  /** 页内返回：嵌入首页时走浏览器历史，保证与系统返回一致 */
+  const onLayerBack = useCallback(() => {
+    if (embedded) {
+      try {
+        window.history.back();
+        return;
+      } catch {
+        /* ignore */
+      }
+    }
+    if (!backLocally()) onCloseRef.current?.();
+  }, [embedded, backLocally]);
+
+  useEffect(() => {
+    if (!embedded) return;
+    const onPop = () => {
+      if (!backLocally()) onCloseRef.current?.();
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [embedded, backLocally]);
+
+  const openBoard = useCallback(
+    (category: ShtForumCategory, board: ShtForumBoard) => {
+      clearSearch();
+      if (board.types.length) {
+        go({ kind: 'board', category, board });
+        return;
+      }
+      go({
+        kind: 'list',
+        title: board.name,
+        boardFid: board.fid,
+        boardName: board.name,
+      });
+    },
+    [clearSearch, go],
+  );
+
   const openList = useCallback(
-    (opts: {
-      title: string;
-      boardFid: string;
-      boardName: string;
-      returnTo: ListView['returnTo'];
-    }) => {
-      setBoardDraft('');
-      setBoardQuery('');
-      setListHint('');
-      setView({
+    (opts: { title: string; boardFid: string; boardName: string }) => {
+      clearSearch();
+      go({
         kind: 'list',
         title: opts.title,
         boardFid: opts.boardFid,
         boardName: opts.boardName,
-        returnTo: opts.returnTo,
       });
     },
-    [],
+    [clearSearch, go],
   );
 
   const submitBoardSearch = useCallback(() => {
@@ -180,11 +243,12 @@ export function BoardsScreen({ onClose }: { onClose?: () => void } = {}) {
       : '加载失败'
     : '';
 
-  const { hasNextPage, isFetchingNextPage, fetchNextPage } = listQuery;
+  const { hasNextPage, isFetchingNextPage, isError, fetchNextPage } = listQuery;
   const loadMore = useCallback(() => {
-    if (!hasNextPage || isFetchingNextPage) return;
+    // 出错后停止自动续拉，否则 sentinel 持续可见会无限重试
+    if (isError || !hasNextPage || isFetchingNextPage) return;
     void fetchNextPage();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  }, [isError, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   useEffect(() => {
     if (view.kind !== 'list' || detailHash) return;
@@ -201,7 +265,10 @@ export function BoardsScreen({ onClose }: { onClose?: () => void } = {}) {
   }, [view, detailHash, loadMore, items.length]);
 
   const hubBody = (
-    <div className={embedded ? 'sht-hub sht-hub--push' : 'app-hub__scroll sht-hub'}>
+    <div
+      ref={embedded ? hubRef : undefined}
+      className={embedded ? 'sht-hub sht-hub--push' : 'app-hub__scroll sht-hub'}
+    >
       {!embedded ? <h1 className="app-hub__title">色花堂</h1> : null}
 
       {SEHUATANG_FORUM.map((cat, catIdx) => (
@@ -232,7 +299,7 @@ export function BoardsScreen({ onClose }: { onClose?: () => void } = {}) {
         <AppPush
           title={view.board.name}
           scrollKey={`boards-board-${view.board.fid}`}
-          onBack={() => setView({ kind: 'hub' })}
+          onBack={onLayerBack}
           skipEnterAnimation={embedded}
         >
           <div className="sht-board-grid sht-board-grid--push">
@@ -244,7 +311,6 @@ export function BoardsScreen({ onClose }: { onClose?: () => void } = {}) {
                   title: view.board.name,
                   boardFid: view.board.fid,
                   boardName: view.board.name,
-                  returnTo: view,
                 })
               }
             />
@@ -258,7 +324,6 @@ export function BoardsScreen({ onClose }: { onClose?: () => void } = {}) {
                     title: t.name,
                     boardFid: t.key,
                     boardName: t.board_name,
-                    returnTo: view,
                   })
                 }
               />
@@ -271,13 +336,7 @@ export function BoardsScreen({ onClose }: { onClose?: () => void } = {}) {
         <AppPush
           title={view.title}
           scrollKey={`boards-list-${view.boardFid}`}
-          onBack={() => {
-            setBoardDraft('');
-            setBoardQuery('');
-            setListHint('');
-            if (view.returnTo === 'hub') setView({ kind: 'hub' });
-            else setView(view.returnTo);
-          }}
+          onBack={onLayerBack}
           skipEnterAnimation={embedded}
         >
           <div ref={listCoverRef} aria-hidden={detailHash != null || undefined}>
@@ -357,7 +416,7 @@ export function BoardsScreen({ onClose }: { onClose?: () => void } = {}) {
                     key={item.hash}
                     item={item}
                     keywords={boardQuery ? [boardQuery] : []}
-                    onOpen={(hash) => setDetailHash(hash)}
+                    onOpen={(hash) => openDetail(hash)}
                   />
                 ))}
                 <div className="home-infinite">
@@ -384,7 +443,7 @@ export function BoardsScreen({ onClose }: { onClose?: () => void } = {}) {
           title="详情"
           scrollKey={`boards-detail-${detailHash}`}
           scrollMode="top"
-          onBack={() => setDetailHash(null)}
+          onBack={onLayerBack}
           skipEnterAnimation={embedded}
         >
           <ResourceDetailBody hash={detailHash} />
@@ -400,10 +459,7 @@ export function BoardsScreen({ onClose }: { onClose?: () => void } = {}) {
         <AppPush
           title="板块"
           scrollKey="home-boards-hub"
-          onBack={() => {
-            resetToHub();
-            onClose?.();
-          }}
+          onBack={onLayerBack}
           skipEnterAnimation
         >
           {hubBody}

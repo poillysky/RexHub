@@ -132,8 +132,11 @@ def dispatch(
     *,
     method: str = "POST",
     timeout: int = TIMEOUT,
+    only: str = "",
 ) -> dict[str, Any]:
     rows = _plugins_with(capability)
+    if only:
+        rows = [row for row in rows if row.get("id") == only]
     if not rows:
         raise DispatchError(f"没有可用的插件处理 {capability}")
     errors: list[str] = []
@@ -167,6 +170,127 @@ def dispatch(
             "fetched_at": int(time.time()),
         }
     raise DispatchError(f"{capability} 调用失败：{'；'.join(errors)}")
+
+
+_STREAM_URL_KEYS = (
+    "m3u8",
+    "play_url",
+    "playUrl",
+    "stream_url",
+    "streamUrl",
+    "src",
+    "url",
+    "link",
+)
+
+
+def _http_url(value: Any) -> str:
+    return value if isinstance(value, str) and value.startswith(("http://", "https://")) else ""
+
+
+def play_url(data: Any) -> str:
+    """从任意播放响应里递归找出第一个播放地址。"""
+    if isinstance(data, str):
+        return _http_url(data)
+    if isinstance(data, dict):
+        for key in _STREAM_URL_KEYS:
+            found = _http_url(data.get(key))
+            if found:
+                return found
+        for value in data.values():
+            found = play_url(value)
+            if found:
+                return found
+        return ""
+    if isinstance(data, list):
+        for item in data:
+            found = play_url(item)
+            if found:
+                return found
+    return ""
+
+
+def _collect_play_items(data: Any, depth: int = 0) -> list[dict[str, str]]:
+    """递归收集带播放地址的条目（标题 + 地址）。"""
+    items: list[dict[str, str]] = []
+    if depth > 6:
+        return items
+    if isinstance(data, list):
+        for child in data:
+            items.extend(_collect_play_items(child, depth + 1))
+        return items
+    if not isinstance(data, dict):
+        return items
+    url = ""
+    for key in _STREAM_URL_KEYS:
+        url = _http_url(data.get(key))
+        if url:
+            break
+    if url:
+        title = str(
+            data.get("title") or data.get("name") or data.get("filename") or data.get("file_name") or ""
+        ).strip()
+        items.append({"url": url, "title": title})
+    for value in data.values():
+        items.extend(_collect_play_items(value, depth + 1))
+    return items
+
+
+def playable_streams(
+    categories: tuple[str, ...] | set[str] | list[str],
+    keyword: str,
+    *,
+    timeout: int = TIMEOUT,
+) -> dict[str, Any]:
+    """按分类聚合 ``resource.search`` 插件的可播放片源。
+
+    仅调用指定分类（如 ``studio`` / ``video``）的插件，互不串源；
+    返回 ``{"streams": [...], "providers": [...], "reason": "..."}``。
+    """
+    wanted = {str(item).lower() for item in categories}
+    rows = [
+        row
+        for row in providers("resource.search")
+        if str(row.get("category") or "").lower() in wanted
+    ]
+    if not rows:
+        return {"streams": [], "providers": [], "reason": ""}
+    streams: list[dict[str, Any]] = []
+    used: list[str] = []
+    errors: list[str] = []
+    for row in rows:
+        try:
+            result = dispatch(
+                "resource.search",
+                {"keyword": keyword, "page": 1},
+                only=row["id"],
+                timeout=timeout,
+            )
+        except DispatchError as exc:
+            errors.append(f"{row['name']}: {exc}")
+            continue
+        items = _collect_play_items(result.get("data"))
+        if items:
+            used.append(row["id"])
+        for item in items:
+            title = item.get("title") or keyword
+            streams.append(
+                {
+                    "addon": row.get("name") or row["id"],
+                    "addonSlug": row["id"],
+                    "name": title,
+                    "title": title,
+                    "url": item["url"],
+                    "externalUrl": "",
+                    "infoHash": "",
+                    "fileIdx": None,
+                    "filename": "",
+                    "size": None,
+                    "kind": "direct",
+                    "playable": True,
+                }
+            )
+    return {"streams": streams, "providers": used, "reason": "；".join(errors)}
 
 
 def health(row: dict[str, Any]) -> dict[str, Any]:

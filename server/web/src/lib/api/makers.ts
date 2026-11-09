@@ -2,6 +2,7 @@
  * 片商（AVDB）：榜单 / 片商搜索 / 影片 / 磁力代理。
  */
 import { apiFetch, parseError } from './client';
+import type { MediaStream } from './media';
 
 /** AVDB 榜单类别：0 有码 / 1 无码 / 2 欧美 / 3 FC2 / 4 动漫 */
 export type MakerCategoryId = '0' | '1' | '2' | '3' | '4';
@@ -270,13 +271,6 @@ export type MakerListDetail = MakerList & {
   hasCollected: boolean;
 };
 
-/** AVDB 账号状态 */
-export type MakerAccount = {
-  loggedIn: boolean;
-  username: string | null;
-  isVip: boolean;
-};
-
 /** AVDB 自有种子库资源 */
 export type MakerTorrent = {
   id: string;
@@ -422,7 +416,7 @@ export async function fetchMakerReviews(opts: {
   page?: number;
   limit?: number;
   signal?: AbortSignal;
-}): Promise<MakerReview[]> {
+}): Promise<{ items: MakerReview[]; hasMore: boolean }> {
   const params = new URLSearchParams({
     movie_id: opts.movieId,
     page: String(opts.page ?? 1),
@@ -432,8 +426,8 @@ export async function fetchMakerReviews(opts: {
     signal: opts.signal,
   });
   if (!res.ok) throw new Error(await parseError(res));
-  const data = (await res.json()) as { items?: MakerReview[] };
-  return data.items || [];
+  const data = (await res.json()) as { items?: MakerReview[]; hasMore?: boolean };
+  return { items: data.items || [], hasMore: !!data.hasMore };
 }
 
 export async function fetchMakerActors(opts: {
@@ -441,7 +435,7 @@ export async function fetchMakerActors(opts: {
   page?: number;
   limit?: number;
   signal?: AbortSignal;
-}): Promise<MakerActor[]> {
+}): Promise<{ items: MakerActor[]; hasMore: boolean }> {
   const params = new URLSearchParams({
     category: opts.category,
     page: String(opts.page ?? 1),
@@ -451,8 +445,8 @@ export async function fetchMakerActors(opts: {
     signal: opts.signal,
   });
   if (!res.ok) throw new Error(await parseError(res));
-  const data = (await res.json()) as { items?: MakerActor[] };
-  return data.items || [];
+  const data = (await res.json()) as { items?: MakerActor[]; hasMore?: boolean };
+  return { items: data.items || [], hasMore: !!data.hasMore };
 }
 
 export async function fetchMakerTags(
@@ -651,14 +645,6 @@ export async function fetchMakerRecentViewed(
   return data.items || [];
 }
 
-export async function fetchMakerAccount(
-  signal?: AbortSignal,
-): Promise<MakerAccount> {
-  const res = await apiFetch('/makers/account', { signal });
-  if (!res.ok) throw new Error(await parseError(res));
-  return (await res.json()) as MakerAccount;
-}
-
 export async function fetchMakerTorrents(opts: {
   keyword: string;
   page?: number;
@@ -678,4 +664,36 @@ export async function fetchMakerTorrents(opts: {
   });
   if (!res.ok) throw new Error(await parseError(res));
   return (await res.json()) as MakerTorrentPage;
+}
+
+/** 在线播放源：片商类插件 / Stremio 插件 / AVDB 播放源聚合 */
+export type MakerPlaySource = MediaStream & {
+  /** plugin 片商类插件 / stremio 社区插件 / avdb AVDB 播放源 */
+  source: 'plugin' | 'stremio' | 'avdb' | string;
+};
+
+export type MakerPlaySources = {
+  streams: MakerPlaySource[];
+  total: number;
+  reason: string;
+};
+
+export async function fetchMakerPlaySources(opts: {
+  movieId: string;
+  number?: string;
+  title?: string;
+  signal?: AbortSignal;
+}): Promise<MakerPlaySources> {
+  const params = new URLSearchParams();
+  if (opts.number) params.set('number', opts.number);
+  if (opts.title) params.set('title', opts.title);
+  const query = params.toString();
+  const res = await apiFetch(
+    `/makers/movie/${encodeURIComponent(opts.movieId)}/play-sources${
+      query ? `?${query}` : ''
+    }`,
+    { signal: opts.signal },
+  );
+  if (!res.ok) throw new Error(await parseError(res));
+  return (await res.json()) as MakerPlaySources;
 }

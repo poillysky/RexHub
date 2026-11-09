@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { MediaItem } from '@/lib/api';
 import {
   chartItemCategory,
@@ -14,14 +14,27 @@ import { useMpList } from './useMediaQueries';
 export function MediaChartBody({
   tab,
   initialChart,
+  initialPage = 1,
   onOpen,
+  onPageChange,
 }: {
   tab: MediaHubTab;
   initialChart?: string;
+  /** 从详情返回时恢复页码 */
+  initialPage?: number;
   onOpen: (item: MediaItem) => void;
+  onPageChange?: (page: number) => void;
 }) {
   const charts = chartsForTab(tab);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(() => Math.max(1, initialPage));
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  function goPage(next: number) {
+    setPage(next);
+    onPageChange?.(next);
+    // 翻页后回到列表顶部，否则新一页从视口下方开始
+    rootRef.current?.closest('.app-push__body')?.scrollTo({ top: 0 });
+  }
 
   // 榜单由入口带入（货架「查看全部」/详情返回），不再在页内切换
   const active = charts.find((c) => c.id === initialChart) || charts[0];
@@ -42,7 +55,7 @@ export function MediaChartBody({
     : '';
 
   return (
-    <div className="media-chart">
+    <div className="media-chart" ref={rootRef}>
       {loading ? (
         <div className="media-wall media-wall--skel" aria-hidden>
           {Array.from({ length: 9 }).map((_, i) => (
@@ -72,13 +85,13 @@ export function MediaChartBody({
         </div>
       ) : null}
 
-      {!loading && !err && (page > 1 || hasNext) ? (
+      {!loading && (page > 1 || (!err && hasNext)) ? (
         <div className="media-chart__pager">
           <button
             type="button"
             className="media-chart__page-btn"
             disabled={page <= 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            onClick={() => goPage(Math.max(1, page - 1))}
           >
             上一页
           </button>
@@ -86,8 +99,8 @@ export function MediaChartBody({
           <button
             type="button"
             className="media-chart__page-btn"
-            disabled={!hasNext}
-            onClick={() => setPage((p) => p + 1)}
+            disabled={!hasNext || Boolean(err)}
+            onClick={() => goPage(page + 1)}
           >
             下一页
           </button>

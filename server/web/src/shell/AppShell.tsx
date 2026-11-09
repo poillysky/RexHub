@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useRef, useEffect, type MouseEvent } from 'react';
+import { useRef, useEffect, useState, type MouseEvent } from 'react';
 import {
   Search,
   Clapperboard,
@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils';
 import { startViewTransition } from '@/lib/pwa';
 import { HapticsProvider, useHaptics } from './HapticsProvider';
 import { useTabNavigation, type TabRoute } from './TabContext';
+import { TabPaneSizeContext } from './TabPane';
 
 const NAV_ITEMS: { tab: TabRoute; label: string; icon: typeof Search }[] = [
   { tab: '/', label: '搜索', icon: Search },
@@ -28,6 +29,20 @@ const NAV_ITEMS: { tab: TabRoute; label: string; icon: typeof Search }[] = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const tabCtx = useTabNavigation();
   const router = useRouter();
+  const viewportRef = useRef<HTMLDivElement>(null);
+  /** 视口尺寸：Tab 页与轨道位移都以此为准（预览框内 ≠ 100vw） */
+  const [paneSize, setPaneSize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      setPaneSize({ width, height });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Tabbed mode: inside TabProvider (main app)
   // Standalone mode: export/settings pages (no tab context)
@@ -65,19 +80,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     >
       {isTabbed ? (
         <div
-          ref={tabCtx.containerRef}
+          ref={viewportRef}
           className="app-tab-viewport flex-1 min-h-0 w-full"
         >
           <div
             className="app-tab-track"
             style={{
               transform:
-                tabCtx.paneWidth > 0
-                  ? `translate3d(-${tabCtx.scrollProgress * tabCtx.paneWidth}px, 0, 0)`
+                paneSize.width > 0
+                  ? `translate3d(-${tabCtx.scrollProgress * paneSize.width}px, 0, 0)`
                   : `translate3d(-${(tabCtx.scrollProgress / NAV_ITEMS.length) * 100}%, 0, 0)`,
             }}
           >
-            {children}
+            <TabPaneSizeContext.Provider value={paneSize}>
+              {children}
+            </TabPaneSizeContext.Provider>
           </div>
         </div>
       ) : (

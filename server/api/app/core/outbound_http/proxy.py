@@ -12,8 +12,6 @@ import httpx
 
 import app.core.settings_store as settings_store
 
-from .shared import log
-
 
 def normalize_proxy_url(raw: str | None) -> str:
     """裸 host:port → http://；非法则空串。"""
@@ -50,7 +48,7 @@ def _library_raw() -> dict[str, Any]:
     return raw if isinstance(raw, dict) else {}
 
 
-# `resolve_scrape_proxy_url()` / `resolve_flaresolverr_url()` 在**每次 HTTP 请求**
+# `resolve_proxy_url()` / `resolve_flaresolverr_url()` 在**每次 HTTP 请求**
 # 前都会被调用，而它们每次都要 `json.loads` 整个 library 配置（~1ms）。
 # 返回值是纯字符串，故加 2s TTL 缓存；配置写入经 `settings_store` 变更钩子
 # 立即失效（所以保存后无需等 TTL）。
@@ -69,19 +67,19 @@ def invalidate_outbound_config_cache(key: str | None = None) -> None:
 settings_store.register_change_hook(invalidate_outbound_config_cache)
 
 
-def resolve_scrape_proxy_url() -> str:
+def resolve_proxy_url() -> str:
     """仅在面板启用且填写代理时使用；否则直连。"""
     global _proxy_cache
     now = time.monotonic()
     hit = _proxy_cache
     if hit is not None and hit[0] > now:
         return hit[1]
-    val = _scrape_proxy_url_uncached()
+    val = _proxy_url_uncached()
     _proxy_cache = (now + _CFG_TTL_SEC, val)
     return val
 
 
-def _scrape_proxy_url_uncached() -> str:
+def _proxy_url_uncached() -> str:
     raw = _library_raw()
     enabled = raw.get("proxyEnabled")
     if enabled is None:
@@ -93,16 +91,6 @@ def _scrape_proxy_url_uncached() -> str:
         if enabled is False or enabled == 0 or enabled == "0" or enabled == "false":
             return ""
         return hit
-    legacy = settings_store.get_setting("scrape") or {}
-    if isinstance(legacy, dict):
-        leg_enabled = legacy.get("proxyEnabled")
-        if leg_enabled is None:
-            leg_enabled = legacy.get("proxy_enabled")
-        if leg_enabled is False or leg_enabled == 0 or leg_enabled == "0" or leg_enabled == "false":
-            return ""
-        return normalize_proxy_url(
-            str(legacy.get("proxyUrl") or legacy.get("proxy_url") or "")
-        )
     return ""
 
 
@@ -140,7 +128,7 @@ def _flaresolverr_url_uncached() -> str:
 
 def httpx_client(**kwargs: Any) -> httpx.Client:
     """创建出站客户端；面板启用代理才走代理，否则直连。"""
-    proxy = resolve_scrape_proxy_url()
+    proxy = resolve_proxy_url()
     opts: dict[str, Any] = {"trust_env": False, "follow_redirects": True}
     opts.update(kwargs)
     if proxy:

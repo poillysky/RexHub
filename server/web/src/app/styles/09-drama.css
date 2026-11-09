@@ -629,6 +629,39 @@ html.theme-dark .drama-site-card__arrow {
   color: rgba(255, 255, 255, 0.88);
 }
 
+.drama-player__error {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  text-align: center;
+  color: #fff;
+  background: rgba(28, 28, 30, 0.78);
+  backdrop-filter: blur(8px);
+}
+
+.drama-next {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--foreground);
+  background: var(--fill-secondary, rgba(120, 120, 128, 0.16));
+  cursor: pointer;
+}
+
+.drama-next:active {
+  opacity: 0.72;
+}
+
 .drama-detail__head {
   padding: 14px 2px 4px;
 }

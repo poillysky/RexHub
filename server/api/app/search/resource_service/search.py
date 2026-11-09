@@ -176,13 +176,12 @@ def search_resources(
     prefer_chinese: bool = False,
     prefer_crack: bool = False,
     japan_censored: bool = False,
-    exclude_uncensored: bool | None = None,
     region: str | None = None,
     include_optional_boards: bool = True,
 ) -> dict[str, Any]:
     kw = (keyword or "").strip()
     if len(kw) < 2:
-        raise ValueError("????? 2 ???")
+        raise ValueError("关键词至少 2 个字符")
 
     page, page_size, offset, beyond_cap = _page_params(p, ps)
     mode = normalize_match_mode(match_mode)
@@ -215,7 +214,6 @@ def search_resources(
             "cn": prefer_chinese,
             "ck": prefer_crack,
             "yc": japan_censored,
-            "xu": exclude_uncensored,
             "region": region or "",
             "optb": include_optional_boards,
         },
@@ -246,7 +244,7 @@ def search_resources(
         )
 
     crack = prefer_crack and not is_uncensored_maker_code(kw)
-    # ?????????????? AV/Bitmagnet ?????? count ? SQL
+    # 先解析地区，再拼 AV/Bitmagnet 共用的 count SQL
     resolved_region = normalize_region(region) or (
         "japan_censored" if japan_censored else None
     )
@@ -261,8 +259,7 @@ def search_resources(
         if resolved_region
         else ""
     )
-    # ??????region ??? prefer_sql
-    del exclude_uncensored
+    # 地区白名单与 prefer_sql 叠加
 
     kw_items = extract_keywords(kw, mode)
     # 统一检索口径：一律以 search_string（文件名+标题+正文）为命中范围，

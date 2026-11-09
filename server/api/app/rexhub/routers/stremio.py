@@ -7,7 +7,6 @@ transport 地址。Stremio 客户端要求 CORS，所有响应都带
 
 
 import asyncio
-from urllib.parse import parse_qs
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -26,11 +25,6 @@ def _json(payload: object, status: int = 200) -> JSONResponse:
 
 def _error(status: int, message: str) -> JSONResponse:
     return _json({"error": message}, status)
-
-
-def _extra_dict(raw: str) -> dict[str, str]:
-    values = parse_qs(raw or "", keep_blank_values=True)
-    return {key: items[0] for key, items in values.items() if items}
 
 
 async def _proxy(slug: str, path: str, query: str = "") -> JSONResponse:

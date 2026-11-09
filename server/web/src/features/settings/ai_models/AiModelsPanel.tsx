@@ -1,15 +1,12 @@
 'use client';
 
-import { getAiLlm } from '@/lib/api';
 import { AppPush } from '@/components/ui/AppPush';
 import { AppMsg } from '@/components/ui/AppMsg';
 import { cn } from '@/lib/utils';
-import { ChatPresetsSection } from '../ChatPresetsSection';
 import { TABS } from './helpers';
 import { useAiModelsPanel } from './useAiModelsPanel';
-import { AiLlmTab } from './AiLlmTab';
-import { AiEmbedTab } from './AiEmbedTab';
-import { AiXiaohuaTab } from './AiXiaohuaTab';
+import { AiModelTab } from './AiModelTab';
+import { AiAgentTab } from './AiAgentTab';
 
 export function AiModelsPanel({ onBack }: { onBack: () => void }) {
   const p = useAiModelsPanel({ onBack });
@@ -31,26 +28,7 @@ export function AiModelsPanel({ onBack }: { onBack: () => void }) {
         ))}
       </div>
 
-      {p.tab === 'llm' ? (
-        <AiLlmTab p={p} />
-      ) : p.tab === 'preset' ? (
-        <ChatPresetsSection
-          onSamplingApplied={() => {
-            void (async () => {
-              try {
-                const llm = await getAiLlm();
-                p.applyLlm(llm);
-              } catch {
-                /* ignore */
-              }
-            })();
-          }}
-        />
-      ) : p.tab === 'embed' ? (
-        <AiEmbedTab p={p} />
-      ) : (
-        <AiXiaohuaTab p={p} />
-      )}
+      {p.tab === 'model' ? <AiModelTab p={p} /> : <AiAgentTab p={p} />}
 
       <AppMsg allowSelect onDismiss={() => p.setMsg('')}>
         {p.msg}

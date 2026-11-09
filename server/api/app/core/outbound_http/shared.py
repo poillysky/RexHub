@@ -24,9 +24,6 @@ _soft_cookie_lock = threading.Lock()
 _soft_cookies_by_host: dict[str, str] = {}
 
 _host_gates: dict[str, threading.Semaphore] = {}
-_host_gates_mu = threading.Lock()
-# 兼容旧调用；实际详情出站已改走 OutboundScheduler
-_HOST_CONCURRENCY = 3
 
 
 def _host_key(url: str) -> str:

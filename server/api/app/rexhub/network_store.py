@@ -9,6 +9,7 @@ github.com / raw.githubusercontent.com 资源地址改写到镜像前缀；GitHu
 
 import json
 import os
+import threading
 import time
 from typing import Any
 from urllib.parse import urlparse
@@ -17,6 +18,9 @@ from urllib.request import ProxyHandler, Request, build_opener, urlopen
 from app.rexhub import config
 
 NETWORK_PATH = config.DATA_DIR / "network.json"
+
+# 同一份 network.json 有多个写点（代理开关、GitHub 配置），读-改-写必须串行
+_WRITE_LOCK = threading.RLock()
 
 # GitHub 加速镜像预设：管理台以下拉框选择，不在这里的地址不接受
 GITHUB_MIRROR_PRESETS = [
@@ -31,15 +35,13 @@ GITHUB_MIRROR_URLS = {url for url, _ in GITHUB_MIRROR_PRESETS}
 
 DEFAULT_GITHUB_API = "https://api.github.com"
 
-# 可按服务开关代理的出站任务
+# 可按服务开关代理的出站任务（面板目前是全局代理，默认全部生效）
 PROXY_TARGETS = {
     "plugins": "插件订阅",
     "search": "资源搜索",
     "115": "115 网盘",
     "shortdrama": "短剧聚合上游",
 }
-
-DEFAULT_PROXY_TARGETS = {"plugins"}
 
 GITHUB_HOSTS = {
     "github.com",
@@ -48,11 +50,7 @@ GITHUB_HOSTS = {
     "objects.githubusercontent.com",
 }
 
-# 管理台「测试连接」使用的探测地址
-TEST_PROXY_URL = "https://www.gstatic.com/generate_204"
-TEST_GITHUB_URL = "https://raw.githubusercontent.com/octocat/Hello-World/master/README"
 TEST_TIMEOUT = 8
-TEST_USER_AGENT = "RexHub-NetworkTest/1.0"
 
 
 def _read() -> dict[str, Any]:
@@ -94,15 +92,33 @@ def _http_url(value: str) -> str:
 
 
 def proxy_settings() -> dict[str, Any]:
-    data = _read()["proxy"]
-    saved = data.get("targets") if isinstance(data.get("targets"), dict) else {}
-    targets = {
-        key: bool(saved.get(key, key in DEFAULT_PROXY_TARGETS))
-        for key in PROXY_TARGETS
-    }
+    """面板配置（settings_store library）是唯一代理来源。
+
+    此前这里读 network.json["proxy"]，但面板从不写该字段，导致 urllib 出站
+    （115、资源搜索、短剧、插件订阅）永远直连，而 httpx 出站却走代理。
+    """
+    from app.core.outbound_http import normalize_proxy_url
+    from app.core import settings_store
+
+    raw = settings_store.get_setting(settings_store.LIBRARY_KEY) or {}
+    if not isinstance(raw, dict):
+        raw = {}
+    enabled_raw = raw.get("proxyEnabled")
+    if enabled_raw is None:
+        enabled_raw = raw.get("proxy_enabled")
+    url = normalize_proxy_url(
+        str(raw.get("proxyUrl") or raw.get("proxy_url") or "")
+    )
+    if isinstance(enabled_raw, str):
+        enabled = enabled_raw.strip().lower() not in ("", "0", "false", "off")
+    else:
+        enabled = enabled_raw is not False and enabled_raw != 0
+    enabled = bool(url) and enabled
+    saved = raw.get("proxyTargets") if isinstance(raw.get("proxyTargets"), dict) else {}
+    targets = {key: bool(saved.get(key, True)) for key in PROXY_TARGETS}
     return {
-        "enabled": bool(data.get("enabled")),
-        "url": str(data.get("url") or "").strip()[:300],
+        "enabled": enabled,
+        "url": url if enabled else "",
         "targets": targets,
     }
 
@@ -127,16 +143,11 @@ def github_headers() -> dict[str, str]:
 
 
 def github_settings() -> dict[str, Any]:
-    """管理台展示用：Token 只返回是否已配置与脱敏提示。"""
+    """管理台展示用：Token 只返回是否已配置，不返回任何片段。"""
     data = _read()
-    token = data["github_token"]
-    hint = ""
-    if token:
-        hint = f"{token[:4]}…{token[-4:]}" if len(token) > 10 else "****"
     return {
         "api_url": data["github_api"],
-        "token_set": bool(token),
-        "token_hint": hint,
+        "token_set": bool(data["github_token"]),
         "mirror": data["github_mirror"],
         "mirror_presets": [
             {"url": url, "label": label} for url, label in GITHUB_MIRROR_PRESETS
@@ -151,18 +162,19 @@ def save_github(
     mirror: str | None = None,
 ) -> dict[str, Any]:
     """保存 GitHub 配置；None 表示不修改，空 Token 保留原值。"""
-    data = _read()
-    if api_url is not None:
-        raw = api_url.strip()
-        data["github_api"] = _http_url(raw) if raw else ""
-    if token is not None and token.strip():
-        data["github_token"] = token.strip()[:500]
-    if mirror is not None:
-        next_mirror = mirror.strip().rstrip("/")
-        if next_mirror not in GITHUB_MIRROR_URLS:
-            raise ValueError("请选择列表中的 GitHub 加速镜像")
-        data["github_mirror"] = next_mirror
-    _write(data)
+    with _WRITE_LOCK:
+        data = _read()
+        if api_url is not None:
+            raw = api_url.strip()
+            data["github_api"] = _http_url(raw) if raw else ""
+        if token is not None and token.strip():
+            data["github_token"] = token.strip()[:500]
+        if mirror is not None:
+            next_mirror = mirror.strip().rstrip("/")
+            if next_mirror not in GITHUB_MIRROR_URLS:
+                raise ValueError("请选择列表中的 GitHub 加速镜像")
+            data["github_mirror"] = next_mirror
+        _write(data)
     return github_settings()
 
 
@@ -186,22 +198,11 @@ def proxy_in_use(target: str) -> bool:
 def _app_proxy_url() -> str:
     """面板「网络代理」里保存的全局代理（与抓取模块共用同一份配置）。"""
     try:
-        from app.core.outbound_http import resolve_scrape_proxy_url
+        from app.core.outbound_http import resolve_proxy_url
 
-        return resolve_scrape_proxy_url()
+        return resolve_proxy_url()
     except (ImportError, RuntimeError, ValueError, AttributeError):
         return ""
-
-
-def proxy_url_for(target: str) -> str:
-    """该服务应使用的代理地址（供插件运行时等非 urllib 通道使用）。"""
-
-    if target == "plugins":
-        return _app_proxy_url()
-    if not proxy_in_use(target):
-        return ""
-    url = proxy_settings()["url"]
-    return url if url.startswith(("http://", "https://")) else ""
 
 
 def proxy_url() -> str:

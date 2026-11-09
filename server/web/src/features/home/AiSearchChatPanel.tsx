@@ -1,13 +1,14 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { ArrowUp, Sparkles } from 'lucide-react';
+import { ArrowUp, Sparkles, Square } from 'lucide-react';
 import { AppPush } from '@/components/ui/AppPush';
 import { ResourceDetailBody } from './ResourceDetailBody';
 import { BitmagnetDetailBody } from '@/features/magnet/BitmagnetDetailBody';
 import { MediaDetailBody } from '@/features/media/MediaDetailBody';
 import {
   assistantChatStream,
+  getAiAssistantMeta,
   proxiedCoverUrl,
   type AssistantCard,
   type AssistantStep,
@@ -34,6 +35,9 @@ const SOURCE_LABEL: Record<string, string> = {
   sehua: '色花',
   magnet: 'bitmagnet',
   media: '影视',
+  av: 'AV',
+  stream: '在线',
+  cloud: '网盘',
   web: '网络',
 };
 
@@ -41,6 +45,9 @@ const SOURCE_MARK: Record<string, string> = {
   sehua: '色',
   magnet: '磁',
   media: '影',
+  av: 'A',
+  stream: '播',
+  cloud: '盘',
   web: '网',
 };
 
@@ -49,15 +56,13 @@ const PREFER_CHIPS: { id: string; label: string; sources: string[] }[] = [
   { id: 'media', label: '影视', sources: ['media'] },
   { id: 'sehua', label: '色花', sources: ['sehua'] },
   { id: 'magnet', label: 'bitmagnet', sources: ['magnet'] },
+  { id: 'av', label: 'AV', sources: ['av'] },
+  { id: 'cloud', label: '网盘', sources: ['cloud'] },
 ];
 
 function coverForCard(card: AssistantCard): string {
   const raw = String(card.cover || '').trim();
-  if (!raw) return '';
-  if (raw.startsWith('http') || raw.startsWith('/')) {
-    return proxiedCoverUrl(raw);
-  }
-  return proxiedCoverUrl(raw);
+  return raw ? proxiedCoverUrl(raw) : '';
 }
 
 function hostFromUrl(url?: string): string {
@@ -129,11 +134,17 @@ export function AiSearchChatPanel({ onBack }: { onBack: () => void }) {
   const [liveSteps, setLiveSteps] = useState<AssistantStep[]>([]);
   const [partialCards, setPartialCards] = useState<AssistantCard[]>([]);
   const [preferId, setPreferId] = useState('all');
+  const [suggestChips, setSuggestChips] = useState<string[]>([]);
   const [detail, setDetail] = useState<DetailState>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const liveStepsRef = useRef<AssistantStep[]>([]);
+  const msgsRef = useRef<ChatMsg[]>([]);
+
+  useEffect(() => {
+    msgsRef.current = msgs;
+  }, [msgs]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -141,6 +152,22 @@ export function AiSearchChatPanel({ onBack }: { onBack: () => void }) {
     return () => {
       delete root.dataset.aiChat;
       abortRef.current?.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    void getAiAssistantMeta()
+      .then((meta) => {
+        if (!alive) return;
+        const chips = (meta?.suggestChips || [])
+          .map((x) => String(x).trim())
+          .filter(Boolean);
+        setSuggestChips(chips.slice(0, 6));
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
     };
   }, []);
 
@@ -196,7 +223,7 @@ export function AiSearchChatPanel({ onBack }: { onBack: () => void }) {
     abortRef.current = ac;
 
     const prefer = PREFER_CHIPS.find((p) => p.id === preferId)?.sources || [];
-    const history = [...msgs, userMsg].slice(-6).map((m) => ({
+    const history = [...msgsRef.current, userMsg].slice(-6).map((m) => ({
       role: m.role,
       content: m.text,
       summary: m.toolSummary,
@@ -205,6 +232,7 @@ export function AiSearchChatPanel({ onBack }: { onBack: () => void }) {
       setMsgs((prev) => [...prev, msg].slice(-80));
     };
 
+    let failure = '';
     try {
       const r = await assistantChatStream(
         { message: text, history, preferSources: prefer },
@@ -215,8 +243,9 @@ export function AiSearchChatPanel({ onBack }: { onBack: () => void }) {
             setLiveSteps(liveStepsRef.current);
           },
           onCardsPartial: (cards) => setPartialCards(cards),
+          // 错误事件统一在 catch 里落一条消息，避免与最终回复重复
           onError: (message) => {
-            appendMsg({ id: `e-${Date.now()}`, role: 'assistant', text: message });
+            failure = message;
           },
         },
         ac.signal,
@@ -242,7 +271,7 @@ export function AiSearchChatPanel({ onBack }: { onBack: () => void }) {
       appendMsg({
         id: `e-${Date.now()}`,
         role: 'assistant',
-        text: e instanceof Error ? e.message : '搜索失败',
+        text: failure || (e instanceof Error ? e.message : '搜索失败'),
       });
     } finally {
       setBusy(false);
@@ -252,6 +281,11 @@ export function AiSearchChatPanel({ onBack }: { onBack: () => void }) {
       setStatusText('正在搜');
       inputRef.current?.focus();
     }
+  }
+
+  function stop() {
+    abortRef.current?.abort();
+    abortRef.current = null;
   }
 
   return (
@@ -265,7 +299,21 @@ export function AiSearchChatPanel({ onBack }: { onBack: () => void }) {
                   <Sparkles size={22} strokeWidth={1.8} />
                 </span>
                 <p className="ai-chat__empty-title">智能搜片助手</p>
-                <p className="ai-chat__empty-sub">影视 · 色花 · bitmagnet · 网络</p>
+                <p className="ai-chat__empty-sub">影视 · 色花 · bitmagnet · AV · 网盘 · 网络</p>
+                {suggestChips.length > 0 ? (
+                  <div className="ai-chat__empty-chips">
+                    {suggestChips.map((chip) => (
+                      <button
+                        key={chip}
+                        type="button"
+                        className="ai-chat__empty-chip"
+                        onClick={() => void send(chip)}
+                      >
+                        {chip}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             ) : null}
 
@@ -346,22 +394,32 @@ export function AiSearchChatPanel({ onBack }: { onBack: () => void }) {
                 className="allow-select ai-chat__input"
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
-                placeholder="想找什么"
-                disabled={busy}
+                placeholder={busy ? '搜索中，可点右侧停止' : '想找什么'}
                 autoComplete="off"
                 autoCorrect="off"
                 autoCapitalize="off"
                 spellCheck={false}
                 enterKeyHint="send"
               />
-              <button
-                type="submit"
-                className="ai-chat__send"
-                disabled={busy || !draft.trim()}
-                aria-label="发送"
-              >
-                <ArrowUp size={18} strokeWidth={2.6} />
-              </button>
+              {busy ? (
+                <button
+                  type="button"
+                  className="ai-chat__send ai-chat__send--stop"
+                  onClick={stop}
+                  aria-label="停止"
+                >
+                  <Square size={13} strokeWidth={3} fill="currentColor" />
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  className="ai-chat__send"
+                  disabled={!draft.trim()}
+                  aria-label="发送"
+                >
+                  <ArrowUp size={18} strokeWidth={2.6} />
+                </button>
+              )}
             </div>
           </form>
           <div className="ai-chat__kbd-spacer" aria-hidden />
@@ -380,7 +438,7 @@ export function AiSearchChatPanel({ onBack }: { onBack: () => void }) {
       ) : null}
       {detail?.kind === 'media' ? (
         <AppPush title="影视" scrollMode="top" onBack={() => setDetail(null)}>
-          <MediaDetailBody item={detail.item} />
+          <MediaDetailBody key={`${detail.item.source}-${detail.item.id}`} item={detail.item} />
         </AppPush>
       ) : null}
     </>
@@ -425,9 +483,8 @@ function ThinkingTrace({
   statusText?: string;
 }) {
   const [open, setOpen] = useState(live);
-  useEffect(() => {
-    if (live) setOpen(true);
-  }, [live, steps.length]);
+  // 思考进行中强制展开，结束后保留用户最后一次的展开状态
+  const expanded = live || open;
 
   if (!steps.length) return null;
   return (
@@ -435,16 +492,16 @@ function ThinkingTrace({
       <button
         type="button"
         className="ai-chat__think-toggle"
-        aria-expanded={open}
+        aria-expanded={expanded}
         onClick={() => setOpen((v) => !v)}
       >
         <span>{live ? statusText || '思考中…' : '思考过程'}</span>
         <span className="ai-chat__think-count">{steps.length}</span>
-        <span className={cn('ai-chat__think-chev', open && 'ai-chat__think-chev--open')} aria-hidden>
+        <span className={cn('ai-chat__think-chev', expanded && 'ai-chat__think-chev--open')} aria-hidden>
           ▾
         </span>
       </button>
-      {open ? (
+      {expanded ? (
         <ol className="ai-chat__think-list">
           {steps.map((s, i) => {
             const label = s.label || TOOL_STEP_LABEL[String(s.tool || '')] || s.tool || '检索';
@@ -466,9 +523,18 @@ function ThinkingTrace({
 
 const TOOL_STEP_LABEL: Record<string, string> = {
   sehua_keyword: '仓库搜索',
+  sehua_detail: '仓库详情',
   magnet_search: '磁力搜索',
+  magnet_detail: '种子详情',
   media_search: '影视搜索',
+  media_detail: '影视详情',
   media_person_works: '影人作品',
+  av_search: 'AV 搜索',
+  av_movie: 'AV 详情',
+  av_actor_works: '女优作品',
+  media_streams: '在线片源',
+  cloudsaver_search: '网盘搜索',
+  p115_save: '115 转存',
   web_search: '网络搜索',
 };
 
@@ -502,7 +568,6 @@ function CardPack({
                 onClick={() => onOpen(hit)}
               >
                 {cover ? (
-                  // eslint-disable-next-line @next/next/no-img-element
                   <img className="ai-chat__hit-cover" src={cover} alt="" />
                 ) : (
                   <span

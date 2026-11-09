@@ -11,16 +11,18 @@ function SourceRow({
   label,
   name,
   cid,
+  disabled,
   onChange,
 }: {
   label: string;
   name: string;
   cid: string;
+  disabled: boolean;
   onChange: () => void;
 }) {
   return (
     <li>
-      <button type="button" className="settings-nav" onClick={onChange}>
+      <button type="button" className="settings-nav" onClick={onChange} disabled={disabled}>
         <span className="settings-nav__icon settings-nav__icon--orange" aria-hidden>
           <FolderOpen size={14} strokeWidth={2.25} />
         </span>
@@ -40,6 +42,7 @@ export function P115Overview({ p }: { p: P115PanelState }) {
   const {
     quotaLoading,
     locked,
+    settingsLocked,
     refreshStatus,
     quotaUsed,
     quotaUsedRatio,
@@ -80,7 +83,6 @@ export function P115Overview({ p }: { p: P115PanelState }) {
         >
           {account?.avatar ? (
             // 115 CDN 头像
-            // eslint-disable-next-line @next/next/no-img-element
             <img src={account.avatar} alt="" referrerPolicy="no-referrer" />
           ) : (
             (account?.username || '1').slice(0, 1).toUpperCase()
@@ -226,6 +228,7 @@ export function P115Overview({ p }: { p: P115PanelState }) {
             label={src.label}
             name={folderDisplayName(targets[src.key])}
             cid={targets[src.key].folderCid}
+            disabled={settingsLocked}
             onChange={() => void browseFolders(src.key, targets[src.key].folderCid || '0')}
           />
         ))}

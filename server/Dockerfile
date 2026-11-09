@@ -25,7 +25,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     NEXT_TELEMETRY_DISABLED=1 \
     NEXT_PUBLIC_API_BASE=/api \
     API_INTERNAL_BASE=http://127.0.0.1:8020 \
-    SNS_COOKIE_SECURE=0 \
     WEB_PORT=3020
 
 RUN apt-get update && apt-get install -y --no-install-recommends \

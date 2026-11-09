@@ -27,9 +27,27 @@ def _browse_page_params(p: int, ps: int) -> tuple[int, int, int]:
 
 _browse_indexes_ready = False
 
+# 浏览查询兜底超时：深翻页/大表 COUNT 超时后不再无限挂起
+_BROWSE_TIMEOUT_MS = 8000
+
+
+def _empty_page(page: int, page_size: int, *, offset: int) -> dict[str, Any]:
+    return {
+        "resources": [],
+        "total_count": offset,
+        "page": page,
+        "page_size": page_size,
+        "has_more": False,
+    }
+
+
+def _is_timeout(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return "timeout" in msg or "canceling statement" in msg
+
 
 def _ensure_browse_indexes() -> None:
-    """?????? board_fid ??????????"""
+    """确保 browse 所需的 board_fid 索引已创建。"""
     global _browse_indexes_ready
     if _browse_indexes_ready:
         return
@@ -54,12 +72,15 @@ def browse_resources(
     keyword: str | None = None,
     with_total_count: bool = False,
 ) -> dict[str, Any]:
-    """???? / ?????
+    """分页浏览 / 条件筛选。
 
-    ? board_fid ?? resource_sources ???``fid`` ? ``fid:%``??
-    ???? COUNT?``ps+1`` ? has_more???? 5?10s ?????
+    以 board_fid 精确匹配 resource_sources 的 ``fid`` 或 ``fid:%`` 前缀，
+    避免全表 COUNT；用 ``ps+1`` 判断 has_more；超时按 5～10s 兜底。
     """
     page, page_size, offset = _browse_page_params(p, ps)
+    if (page - 1) * page_size != offset:
+        # 超过深翻页上限：直接返回空页，避免 offset 被夹住后反复返回同一页
+        return _empty_page(page, page_size, offset=offset)
     kind = (link_kind or "").strip()
     link_sql = ""
     if kind == "magnet":
@@ -83,10 +104,10 @@ def browse_resources(
     parent = (board_parent or "").strip()
     fetch_limit = page_size if with_total_count else page_size + 1
 
-    # ?? ????? board_fid???? fid:%???
+    # 有 board_fid：按 fid 精确匹配，或 fid:% 前缀匹配
     if fid:
         _ensure_browse_indexes()
-        # ?? 141 ? 141 + 141:%??? 141:689 ? ?? + ?????
+        # 同时命中 141、141 子树与 141:% 前缀；141:689 这类「主 fid + 子 fid」也覆盖
         fid_params: list[Any] = [fid, f"{fid}:%%", *kw_params]
         list_sql = f"""
 WITH filtered AS (
@@ -102,7 +123,11 @@ WITH filtered AS (
 )
 {_list_enrich_sql("filtered")}
 """
-        rows = pg.query(list_sql, [*fid_params, fetch_limit, offset])
+        rows = pg.query(
+            list_sql,
+            [*fid_params, fetch_limit, offset],
+            statement_timeout_ms=_BROWSE_TIMEOUT_MS,
+        )
         if with_total_count:
             count_sql = f"""
 SELECT COUNT(*)::int AS total_count
@@ -113,14 +138,26 @@ WHERE (rs.board_fid = %s OR rs.board_fid LIKE %s)
 {link_sql}
 {kw_sql}
 """
-            total = int(
-                (pg.query(count_sql, fid_params) or [{}])[0].get(
-                    "total_count", 0
+            try:
+                total = int(
+                    (
+                        pg.query(
+                            count_sql,
+                            fid_params,
+                            statement_timeout_ms=_BROWSE_TIMEOUT_MS,
+                        )
+                        or [{}]
+                    )[0].get("total_count", 0)
+                    or 0
                 )
-                or 0
-            )
+                has_more = offset + len(rows) < total
+            except Exception as exc:
+                if not _is_timeout(exc):
+                    raise
+                # 计数超时不影响本页：给下界并允许继续翻页
+                total = offset + len(rows)
+                has_more = True
             rows = rows[:page_size]
-            has_more = offset + len(rows) < total
         else:
             has_more = len(rows) > page_size
             rows = rows[:page_size]
@@ -133,7 +170,7 @@ WHERE (rs.board_fid = %s OR rs.board_fid LIKE %s)
             "has_more": has_more,
         }
 
-    # ?? ???????????????????? COUNT???
+    # 无筛选条件时也走统一 WHERE，避免 COUNT 全表
     where = ["TRUE", PUBLIC_RESOURCE_FILTER.strip()]
     params: list[Any] = []
     if link_sql:
@@ -179,7 +216,11 @@ WITH filtered AS (
 {_list_enrich_sql("filtered")}
 """
 
-    rows = pg.query(list_sql, [*params, fetch_limit, offset])
+    rows = pg.query(
+        list_sql,
+        [*params, fetch_limit, offset],
+        statement_timeout_ms=_BROWSE_TIMEOUT_MS,
+    )
     if with_total_count:
         if need_meta:
             count_sql = f"""
@@ -194,11 +235,25 @@ SELECT COUNT(*)::int AS total_count
 FROM ed2k_resources r
 WHERE {where_sql}
 """
-        total = int(
-            (pg.query(count_sql, params) or [{}])[0].get("total_count", 0) or 0
-        )
+        try:
+            total = int(
+                (
+                    pg.query(
+                        count_sql,
+                        params,
+                        statement_timeout_ms=_BROWSE_TIMEOUT_MS,
+                    )
+                    or [{}]
+                )[0].get("total_count", 0)
+                or 0
+            )
+            has_more = offset + len(rows) < total
+        except Exception as exc:
+            if not _is_timeout(exc):
+                raise
+            total = offset + len(rows)
+            has_more = True
         rows = rows[:page_size]
-        has_more = offset + len(rows) < total
     else:
         has_more = len(rows) > page_size
         rows = rows[:page_size]

@@ -5,6 +5,7 @@ list_prefix_resources / covers_for_codes / clear_prefix_cache。
 """
 
 import logging
+import threading
 import time
 from typing import Any
 
@@ -18,6 +19,8 @@ from .scan import _scan_prefix_code_index
 log = logging.getLogger(__name__)
 
 _cache: dict[str, tuple[float, dict[str, Any]]] = {}
+# 多线程同时读写同一 dict 会偶发 KeyError（enforce_max 淘汰与写入竞争），统一加锁
+_CACHE_LOCK = threading.RLock()
 
 
 def _cache_key(prefix: str, region: str | None = None) -> str:
@@ -30,13 +33,15 @@ def clear_prefix_cache(
     prefix: str | None = None, *, region: str | None = None
 ) -> None:
     if prefix is None:
-        _cache.clear()
+        with _CACHE_LOCK:
+            _cache.clear()
         return
     key = _cache_key(prefix, region)
-    _cache.pop(key, None)
-    # 兼容旧无 region 缓存键
-    if region:
-        _cache.pop(str(prefix or "").strip().upper(), None)
+    with _CACHE_LOCK:
+        _cache.pop(key, None)
+        # 兼容旧无 region 缓存键
+        if region:
+            _cache.pop(str(prefix or "").strip().upper(), None)
 
 
 def _build_by_code(items: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -60,17 +65,19 @@ def _load_cached(
 ) -> dict[str, Any]:
     key = _cache_key(prefix, region)
     now = time.time()
-    prune_by_age(_cache, PREFIX_CACHE_TTL_S, now=now)
-    if bust:
-        _cache.pop(key, None)
-    hit = _cache.get(key)
-    if hit and now - hit[0] < PREFIX_CACHE_TTL_S:
-        return hit[1]
+    with _CACHE_LOCK:
+        prune_by_age(_cache, PREFIX_CACHE_TTL_S, now=now)
+        if bust:
+            _cache.pop(key, None)
+        hit = _cache.get(key)
+        if hit and now - hit[0] < PREFIX_CACHE_TTL_S:
+            return hit[1]
     data = _scan_prefix_code_index(prefix, region=region)
     # 随缓存一并构建覆盖索引，避免每次回填封面都全量遍历 items
     data["byCode"] = _build_by_code(data.get("items") or [])
-    _cache[key] = (now, data)
-    enforce_max(_cache, PREFIX_CACHE_MAX)
+    with _CACHE_LOCK:
+        _cache[key] = (now, data)
+        enforce_max(_cache, PREFIX_CACHE_MAX)
     return data
 
 

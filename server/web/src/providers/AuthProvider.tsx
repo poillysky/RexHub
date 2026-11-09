@@ -48,8 +48,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    let alive = true;
+    const apply = (me: AuthUser | null) => {
+      if (!alive) return;
+      setUser(me);
+      setStatus(me ? 'authenticated' : 'anonymous');
+    };
+    // 挂载后异步拉一次会话；setState 在回调里，避免同步渲染级联
+    authMe().then(apply, () => apply(null));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // 任意请求返回 401（会话过期 / 被踢）时立刻回到未登录态
+  useEffect(() => {
+    const onUnauthorized = () => {
+      setUser(null);
+      setStatus('anonymous');
+    };
+    window.addEventListener('rexhub:unauthorized', onUnauthorized);
+    return () => {
+      window.removeEventListener('rexhub:unauthorized', onUnauthorized);
+    };
+  }, []);
 
   const isAdmin = Boolean(user?.is_admin);
 
@@ -65,7 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setStatus('authenticated');
       },
       async register(u, p, inviteCode) {
-        // 注册码决定角色：160223 管理员，1024 普通用户
+        // 邀请码存元库，由后端决定注册角色（管理员 / 普通用户）
         const me = await authRegister(u, p, inviteCode);
         setUser(me);
         setStatus('authenticated');

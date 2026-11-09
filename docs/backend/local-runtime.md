@@ -9,11 +9,8 @@
 | 子路径 | 用途 |
 |--------|------|
 | `meta/` | cf-clearance 等 |
-| `mirrors/` | site-mirrors / iqqtv-mirror |
 | `prefix/catalog/` | 七区前缀→番号目录 |
 | `prefix/code-ranges.json` | 前缀流水号上限缓存 |
-| `cache/cover/` | 封面缩略缓存 |
-| `cache/facets/` | 刮削库分面磁盘快照 |
 | `presets/` | 本机预设 |
 | `debug/` | 脚本报告 / 探针输出 |
 

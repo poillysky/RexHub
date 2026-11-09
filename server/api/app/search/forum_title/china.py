@@ -4,7 +4,6 @@
 import re
 
 from app.search.forum_title.codes import _strip_code_tokens
-from app.search.forum_title.patterns import _WS_RE
 
 _CHINA_91_FANS_RE = re.compile(r"(?i)\s*x?\s*91\s*fans?\b")
 _CHINA_PRODUCE_RE = re.compile(r"^(?:最新)?(?:出品|上映)[\s　\-–—_]*")

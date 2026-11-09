@@ -77,6 +77,7 @@ export type PluginEntry = {
   permissions?: string[];
   enabled: boolean;
   running: boolean;
+  installed?: boolean;
   proxy?: boolean;
   proxy_available?: boolean;
   show_in_drama?: boolean;
@@ -91,9 +92,7 @@ export type PluginEntry = {
   source_repo?: string;
   source_repo_url?: string;
   source_manifest?: string;
-  install_path?: string;
   config?: Record<string, string>;
-  manifest_config?: PluginConfigField[];
   healthcheck?: string;
   widget_meta?: WidgetMeta | null;
 };
@@ -160,10 +159,8 @@ function send(path: string, method: string, body?: unknown): Promise<Response> {
 export const getPluginOverview = () =>
   json<PluginOverview>(apiFetch('/admin/plugin-framework'));
 
-export const getPluginRepositories = () =>
-  json<{ items: PluginFrameworkRepository[] }>(
-    apiFetch('/admin/plugin-framework/repositories'),
-  );
+export const getInstalledPlugins = () =>
+  json<{ items: PluginEntry[] }>(apiFetch('/admin/plugin-framework/installed'));
 
 export const addPluginRepository = (body: {
   id?: string;
@@ -196,9 +193,6 @@ export const getPluginMarket = (repository = '') => {
   return json<PluginMarket>(apiFetch(`/admin/plugin-framework/market${query}`));
 };
 
-export const getInstalledPlugins = () =>
-  json<{ items: PluginEntry[] }>(apiFetch('/admin/plugin-framework/installed'));
-
 export const getPluginUpdates = () =>
   json<{ items: PluginUpdate[] }>(apiFetch('/admin/plugin-framework/updates'));
 
@@ -210,11 +204,6 @@ export const installPlugin = (repository: string, id: string) =>
 export const updatePlugin = (id: string) =>
   json<{ plugin: PluginEntry; error: string }>(
     send(`/admin/plugin-framework/${encodeURIComponent(id)}/update`, 'POST'),
-  );
-
-export const updateAllPlugins = () =>
-  json<{ updated: { id: string; version: string }[]; failed: { id: string; error: string }[] }>(
-    send('/admin/plugin-framework/update-all', 'POST'),
   );
 
 export const rollbackPlugin = (id: string) =>
@@ -238,7 +227,7 @@ export const restartPlugin = (id: string) =>
   );
 
 export const getPluginConfig = (id: string) =>
-  json<{ config: Record<string, string>; fields: PluginConfigField[] }>(
+  json<{ config: Record<string, string>; fields: PluginConfigField[]; saved?: string[] }>(
     apiFetch(`/admin/plugin-framework/${encodeURIComponent(id)}/config`),
   );
 
@@ -285,19 +274,3 @@ export const uninstallPlugin = (id: string, purgeData = false) =>
     ),
   );
 
-export const addHttpProvider = (body: {
-  id: string;
-  name?: string;
-  version?: string;
-  description?: string;
-  author?: string;
-  category?: string;
-  base_url: string;
-  capabilities: string[];
-  endpoints?: Record<string, PluginEndpoint>;
-  config?: PluginConfigField[];
-  healthcheck?: string;
-}) =>
-  json<{ plugin: PluginEntry; health: { ok: boolean; status: number; error?: string } }>(
-    send('/admin/plugin-framework/providers', 'POST', body),
-  );

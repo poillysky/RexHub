@@ -168,7 +168,6 @@ function ResourceCardInner({
   keywords = [],
   onOpen,
   badge,
-  cropRegion: _cropRegion,
 }: {
   item: ResourceItem;
   keywords?: string[];

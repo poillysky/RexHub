@@ -1,18 +1,19 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Cloud } from 'lucide-react';
 import {
   getCloudSaverSettings,
   putCloudSaverSettings,
   testCloudSaver,
 } from '@/lib/api';
 import { Switch } from '@/components/ui/switch';
+import { useAuth } from '@/providers/AuthProvider';
 import { cn } from '@/lib/utils';
-import { testResultText, usePanelAction } from '@/hooks/usePanelAction';
+import { usePanelAction } from '@/hooks/usePanelAction';
 import { ConnectionPanelShell } from './connection/ConnectionPanelShell';
 
 export function CloudSaverPanel({ onBack }: { onBack: () => void }) {
+  const { isAdmin } = useAuth();
   const [enabled, setEnabled] = useState(true);
   const [baseUrl, setBaseUrl] = useState('');
   const [username, setUsername] = useState('');
@@ -21,6 +22,8 @@ export function CloudSaverPanel({ onBack }: { onBack: () => void }) {
   const [timeoutSec, setTimeoutSec] = useState('60');
   const [loading, setLoading] = useState(true);
   const { msg, setMsg, busy, run } = usePanelAction();
+  // 后端只允许管理员改配置；普通用户只能看状态
+  const locked = loading || busy || !isAdmin;
 
   useEffect(() => {
     void (async () => {
@@ -46,20 +49,14 @@ export function CloudSaverPanel({ onBack }: { onBack: () => void }) {
       return;
     }
     await run('测试失败', async () => {
-      await putCloudSaverSettings({
-        enabled,
+      // 只验证登录，不落库；密码留空时后端沿用已存密码
+      const r = await testCloudSaver({
         baseUrl: baseUrl.trim(),
         username: username.trim(),
-        password: password,
+        password: password.trim() ? password : undefined,
         timeoutSec: Number(timeoutSec) || 60,
-        note: '',
       });
-      if (password.trim()) {
-        setHasPassword(true);
-        setPassword('');
-      }
-      const r = await testCloudSaver();
-      setMsg(testResultText(r, '登录成功', '登录失败'));
+      setMsg(r.ok ? '登录成功' : r.message || '登录失败');
     });
   }
 
@@ -108,6 +105,8 @@ export function CloudSaverPanel({ onBack }: { onBack: () => void }) {
       onTest={() => void onTest()}
       onSave={() => void onSave()}
       testLabel="测试登录"
+      testDisabled={!isAdmin}
+      saveDisabled={!isAdmin}
     >
       <div className="svc-panel">
       <ul className="settings-group">
@@ -128,8 +127,8 @@ export function CloudSaverPanel({ onBack }: { onBack: () => void }) {
         </li>
         <li>
           <div className="settings-nav">
-            <span className="settings-nav__icon settings-nav__icon--green" aria-hidden>
-              <Cloud size={14} strokeWidth={2.25} />
+            <span className="settings-nav__icon settings-nav__icon--brand" aria-hidden>
+              <img src="/brand/cloudsaver.png" alt="" width={26} height={26} decoding="async" />
             </span>
             <span className="settings-nav__main">
               <span className="settings-nav__title">启用 CloudSaver</span>
@@ -137,7 +136,7 @@ export function CloudSaverPanel({ onBack }: { onBack: () => void }) {
             </span>
             <Switch
               checked={enabled}
-              disabled={busy || loading}
+              disabled={locked}
               onCheckedChange={setEnabled}
             />
           </div>
@@ -158,7 +157,7 @@ export function CloudSaverPanel({ onBack }: { onBack: () => void }) {
               autoCorrect="off"
               autoComplete="off"
               spellCheck={false}
-              disabled={busy || loading}
+              disabled={locked}
             />
           </label>
           <label className="app-field">
@@ -169,7 +168,7 @@ export function CloudSaverPanel({ onBack }: { onBack: () => void }) {
               placeholder="60"
               value={timeoutSec}
               onChange={(e) => setTimeoutSec(e.target.value)}
-              disabled={busy || loading}
+              disabled={locked}
             />
           </label>
         </div>
@@ -189,7 +188,7 @@ export function CloudSaverPanel({ onBack }: { onBack: () => void }) {
               autoCorrect="off"
               autoComplete="username"
               spellCheck={false}
-              disabled={busy || loading}
+              disabled={locked}
             />
           </label>
           <label className="app-field">
@@ -201,7 +200,7 @@ export function CloudSaverPanel({ onBack }: { onBack: () => void }) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="current-password"
-              disabled={busy || loading}
+              disabled={locked}
             />
           </label>
         </div>

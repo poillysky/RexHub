@@ -17,7 +17,6 @@ export function HomeResultsChrome({ h }: Props) {
         onClick={h.goLanding}
         aria-label="回 RexHub 首页"
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           className="home-results-brand__logo"
           src="/brand/logo.png"

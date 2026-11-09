@@ -19,12 +19,12 @@ from .links import _link_identity
 from .metadata import _bitmagnet_items, _ed2k_items
 from .relevance import _anchor
 
-_candidates: dict[tuple[str, str], tuple[float, list[dict]]] = {}
 # 数据库候选池：(时间, 原始候选行, 已请求条数, 是否已取全)
 # complete 为 None 表示查询超时降级，只拿到了部分结果，再扩容也没有意义
 _db_pools: dict[tuple[str, str], tuple[float, list[dict], int, bool | None]] = {}
-# asyncpg 连接池：按 DSN 复用，进程退出不主动关闭
-_pools: dict[str, asyncpg.Pool] = {}
+# asyncpg 连接池：DSN -> (池, 最近使用时间)；长时间不用的库回收，避免换服务后连接常驻
+_POOL_IDLE_S = 600.0
+_pools: dict[str, tuple[asyncpg.Pool, float]] = {}
 _pool_lock = asyncio.Lock()
 
 
@@ -55,25 +55,42 @@ def _db_pool_put(
 def _dsn(item: dict) -> str:
     user = urllib.parse.quote(str(item.get("username") or ""), safe="")
     password = urllib.parse.quote(str(item.get("password") or ""), safe="")
+    database = urllib.parse.quote(str(item.get("database") or ""), safe="")
     return (
         f"postgresql://{user}:{password}"
-        f"@{item.get('host')}:{item.get('port')}/{item.get('database')}"
+        f"@{item.get('host')}:{item.get('port')}/{database}"
     )
+
+
+def cache_key(item: dict, keyword: str) -> tuple[str, str]:
+    """候选池缓存键：DSN + 关键词。
+
+    只用服务 id/库名会把「换主机/换账号」后的新库结果误当成旧库缓存。
+    """
+    return (_dsn(item), keyword.lower().strip())
 
 
 async def _get_pool(item: dict) -> asyncpg.Pool:
     """按 DSN 懒加载连接池：一次搜索要查 5-8 次，避免每次重建连接。"""
     dsn = _dsn(item)
-    pool = _pools.get(dsn)
-    if pool is not None:
-        return pool
+    now = monotonic()
     async with _pool_lock:
-        pool = _pools.get(dsn)
-        if pool is None:
+        # 顺手回收长时间不用的池；关闭放到锁外执行，避免阻塞其它请求
+        stale = [
+            name for name, (_, used) in _pools.items() if now - used > _POOL_IDLE_S
+        ]
+        stale_pools = [_pools.pop(name)[0] for name in stale]
+        entry = _pools.get(dsn)
+        if entry is None:
             pool = await asyncpg.create_pool(
                 dsn=dsn, min_size=1, max_size=5, timeout=CONNECT_TIMEOUT
             )
-            _pools[dsn] = pool
+            _pools[dsn] = (pool, now)
+        else:
+            pool = entry[0]
+            _pools[dsn] = (pool, now)
+    for old in stale_pools:
+        await old.close()
     return pool
 
 

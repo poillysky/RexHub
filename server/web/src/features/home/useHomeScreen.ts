@@ -1,6 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  startTransition,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import {
   DEFAULT_MATCH_MODE,
@@ -40,8 +48,16 @@ import { syncDetailUrl, syncSearchUrl, type HomeMode } from './urlSync';
 
 export type HomeScreenState = ReturnType<typeof useHomeScreen>;
 
-export function useHomeScreen() {
+/** DOM 引用由渲染方持有，避免 ref 混进状态对象后被跨组件传递 */
+export type HomeScreenRefs = {
+  scrollBodyRef: RefObject<HTMLDivElement | null>;
+  sentinelRef: RefObject<HTMLDivElement | null>;
+};
+
+export function useHomeScreen({ scrollBodyRef, sentinelRef }: HomeScreenRefs) {
   const tabCtx = useTabNavigation();
+  const activeTab = tabCtx?.activeTab;
+  const tabReselect = tabCtx?.tabReselect ?? 0;
   const [mode, setMode] = useState<HomeMode>('landing');
   const [draft, setDraft] = useState('');
   const [keyword, setKeyword] = useState('');
@@ -64,7 +80,6 @@ export function useHomeScreen() {
     'all',
   );
   const [scopePage, setScopePage] = useState(1);
-  const sentinelRef = useRef<HTMLDivElement | null>(null);
   const overlayOpen = Boolean(
     detailHash || scopeItem || pasteOpen || chatOpen || boardsOpen,
   );
@@ -73,7 +88,6 @@ export function useHomeScreen() {
     'home-main',
     'home-stack-main',
   );
-  const scrollBodyRef = useRef<HTMLDivElement | null>(null);
   const hydrated = useRef(false);
   const skipUrlWrite = useRef(false);
 
@@ -104,7 +118,7 @@ export function useHomeScreen() {
     setSearchSource('all');
     setScopePage(1);
     scrollBodyRef.current?.scrollTo({ top: 0 });
-  }, []);
+  }, [scrollBodyRef]);
 
   const onSearchSourceChange = useCallback(
     (next: ScopeSearchSource | 'all') => {
@@ -112,7 +126,7 @@ export function useHomeScreen() {
       setScopePage(1);
       scrollBodyRef.current?.scrollTo({ top: 0 });
     },
-    [],
+    [scrollBodyRef],
   );
 
   const openScopeDetail = useCallback((item: ScopeSearchItem) => {
@@ -130,27 +144,39 @@ export function useHomeScreen() {
 
   const closeScopeDetail = useCallback(() => setScopeItem(null), []);
 
+  /** 打开板块：压一层历史，浏览器返回 / 页内返回都走 history.back() */
+  const openBoards = useCallback(() => {
+    try {
+      window.history.pushState({ boardsHub: true }, '', '#boards');
+    } catch {
+      /* ignore */
+    }
+    setBoardsOpen(true);
+  }, []);
+
   const retrySearch = useCallback(() => {
     setScopePage(1);
     setReloadToken((n) => n + 1);
   }, []);
 
-  function goLanding() {
-    setMode('landing');
-    setDraft('');
-    setKeyword('');
-    setBrowsing(false);
-    setSearchRegion(null);
-    setSearchScope('movie');
-    setSearchSource('all');
-    setScopePage(1);
+  const goLanding = useCallback(() => {
+    startTransition(() => {
+      setMode('landing');
+      setDraft('');
+      setKeyword('');
+      setBrowsing(false);
+      setSearchRegion(null);
+      setSearchScope('movie');
+      setSearchSource('all');
+      setScopePage(1);
+    });
     closeDetail();
     try {
       clearSaveSource();
     } catch {
       /* ignore */
     }
-  }
+  }, [closeDetail]);
 
   useEffect(() => {
     if (hydrated.current) return;
@@ -197,6 +223,16 @@ export function useHomeScreen() {
           setBrowsing(true);
         }
       }
+      if (window.location.hash === '#boards') {
+        // 深链 /#boards：先垫一个无 hash 的历史层，返回时可自然关闭板块
+        window.history.replaceState(
+          null,
+          '',
+          `${window.location.pathname}${window.location.search}`,
+        );
+        window.history.pushState({ boardsEntry: true }, '', '#boards');
+        setBoardsOpen(true);
+      }
       queueMicrotask(() => {
         skipUrlWrite.current = false;
       });
@@ -206,8 +242,16 @@ export function useHomeScreen() {
   }, []);
 
   useEffect(() => {
+    if (activeTab !== '/') return;
+    // 板块与地址栏 hash 同步：前进/返回时 #boards 与浮层保持一致
+    const onPop = () => setBoardsOpen(window.location.hash === '#boards');
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [activeTab]);
+
+  useEffect(() => {
     if (!hydrated.current || skipUrlWrite.current) return;
-    if (tabCtx && tabCtx.activeTab !== '/') return;
+    if (activeTab !== '/') return;
     syncSearchUrl({
       mode,
       keyword,
@@ -220,7 +264,7 @@ export function useHomeScreen() {
       searchScope,
     });
   }, [
-    tabCtx?.activeTab,
+    activeTab,
     mode,
     keyword,
     browsing,
@@ -233,11 +277,10 @@ export function useHomeScreen() {
   ]);
 
   useEffect(() => {
-    if (!tabCtx || tabCtx.activeTab !== '/') return;
+    if (activeTab !== '/' || tabReselect === 0) return;
     // 再次点中 Tab 回到落地页（产品行为）
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (tabCtx.tabReselect > 0) goLanding();
-  }, [tabCtx?.tabReselect]);
+    startTransition(() => goLanding());
+  }, [activeTab, tabReselect, goLanding]);
 
   useEffect(() => {
     const onSearchEvent = () => {
@@ -290,21 +333,6 @@ export function useHomeScreen() {
     setDraft(next);
     setKeyword(next);
     setBrowsing(false);
-    setSearchRegion(null);
-    setScopePage(1);
-    setMode('results');
-    setReloadToken((n) => n + 1);
-  }
-
-  function browseLatest() {
-    try {
-      clearSaveSource();
-    } catch {
-      /* ignore */
-    }
-    setDraft('');
-    setKeyword('');
-    setBrowsing(true);
     setSearchRegion(null);
     setScopePage(1);
     setMode('results');
@@ -436,7 +464,7 @@ export function useHomeScreen() {
     if (browsing ? !sehuaLoading : !scopeLoading) {
       finishPullToRefresh(scrollBodyRef);
     }
-  }, [browsing, sehuaLoading, scopeLoading, mode]);
+  }, [browsing, sehuaLoading, scopeLoading, mode, scrollBodyRef]);
 
   useEffect(() => {
     if (mode !== 'results' || detailHash || !browsing) return;
@@ -461,6 +489,8 @@ export function useHomeScreen() {
     sehuaLoadingMore,
     sehuaQuery,
     items.length,
+    scrollBodyRef,
+    sentinelRef,
   ]);
 
   const scopeLabel = searchScope === 'movie' ? '影视' : '片商';
@@ -505,6 +535,7 @@ export function useHomeScreen() {
     setChatOpen,
     boardsOpen,
     setBoardsOpen,
+    openBoards,
     detailHash,
     detailSource,
     scopeItem,
@@ -513,16 +544,13 @@ export function useHomeScreen() {
     searchScope,
     searchSource,
     onSearchSourceChange,
-    sentinelRef,
     mainCover,
-    scrollBodyRef,
     openSehualDetail,
     closeDetail,
     onSearchScopeChange,
     openScopeDetail,
     goLanding,
     submitSearch,
-    browseLatest,
     isKeywordSearch,
     resultKeywords,
     scopeItems,

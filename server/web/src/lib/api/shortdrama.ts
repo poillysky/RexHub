@@ -97,18 +97,6 @@ export async function fetchDramaSites(signal?: AbortSignal): Promise<DramaSite[]
   return data.items ?? [];
 }
 
-export async function fetchDramaCatalog(
-  site: string,
-  page = 1,
-  signal?: AbortSignal,
-): Promise<DramaPage> {
-  const params = new URLSearchParams({ page: String(page) });
-  return getJson<DramaPage>(
-    `/shortdrama/${encodeURIComponent(site)}/catalog?${params}`,
-    signal,
-  );
-}
-
 export async function fetchDramaSearch(
   site: string,
   q: string,
@@ -140,9 +128,11 @@ export async function fetchDramaRank(
   page = 1,
   signal?: AbortSignal,
   filter = '',
+  limit = 0,
 ): Promise<DramaPage> {
   const params = new URLSearchParams({ group, rank, page: String(page) });
   if (filter) params.set('filter', filter);
+  if (limit > 0) params.set('limit', String(limit));
   return getJson<DramaPage>(
     `/shortdrama/${encodeURIComponent(site)}/rank?${params}`,
     signal,

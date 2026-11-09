@@ -221,7 +221,10 @@ def plugin_dir(plugin_id: str) -> Path:
 
 def version_dir(plugin_id: str, version: str) -> Path:
     text = _text(version, 40)
-    if not text or ".." in text or not _PATH_RE.match(text):
+    if not text or "\\" in text or text.startswith("/") or not _PATH_RE.match(text):
+        raise ValueError(f"版本号不合法：{version}")
+    parts = text.split("/")
+    if any(not part or part in (".", "..") or part.startswith(".") for part in parts):
         raise ValueError(f"版本号不合法：{version}")
     return plugin_dir(plugin_id) / text
 

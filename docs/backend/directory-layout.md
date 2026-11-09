@@ -7,12 +7,12 @@ RexHub/
 ├── server/                  # NAS 部署单元 = Docker 构建上下文
 │   ├── maps/                # 映射种子（唯一进 git 的 JSON 表）
 │   ├── web/                 # Next.js PWA :3020
-│   ├── api/                 # FastAPI :8787（容器内 8020）
+│   ├── api/                 # FastAPI :8020
 │   │   ├── app/             # 业务（按域分包）
 │   │   │   ├── main.py
 │   │   │   ├── core/ auth/ ai/ p115/ prefix/
 │   │   │   └── rexhub/ search/ translate/
-│   │   ├── scripts/         # 运维脚本（进 git；legacy/ 归档旧脚本）
+│   │   ├── scripts/         # 运维脚本（进 git）
 │   │   └── _local_refs/     # 本机参考（不进 git）· mdcx/
 │   ├── config/              # app.json · app.local* · sql/ 参考 DDL
 │   ├── data/                # 运行时缓存 / 映射覆盖（见 data/README）
@@ -56,7 +56,7 @@ RexHub/
 
 **进 git**：`server/**`（含 `server/maps/` 演员/繁简折叠/番号形状表）、脚本、`docs/**`、`server/config/app.json`、根 README / Docker。
 
-**不进 git**：`server/data/prefix/`、`server/data/cache/`、`server/data/mirrors/`、`server/data/meta/`、`server/data/debug/`、`server/api/_local_refs/`、`server/api/_gap_reports/`、`server/data/`（禁止再出现根级 `data/`）、`server/backups/` 等。  
+**不进 git**：`server/data/prefix/`、`server/data/cache/`、`server/data/meta/`、`server/data/debug/`、`server/api/_local_refs/`、`server/api/_gap_reports/`、`server/data/`（禁止再出现根级 `data/`）、`server/backups/` 等。  
 （已废弃：`data/scrape_maps/` 演员·标签·标题双份；旧扁平名 `prefix_catalog` / `cover-cache` / `scrap_facets_snap` / `_debug`。）
 
 ## 禁止
@@ -81,5 +81,5 @@ src/app · features/ · components/ · shell/ · lib/
 
 ## `server/api` 临时文件
 
-- 运维/一次性脚本：常用留在 `server/api/scripts/`，历史脚本在 `server/api/scripts/legacy/`
+- 运维/一次性脚本：`server/api/scripts/`（仅保留当前可用脚本，历史脚本见 git 历史）
 - 探针与临时烟测（`_tmp_*.py`、`_gap_reports/`）勿放在 `server/api/` 包根；本机用完即删，或放 gitignore 的 `_local_refs/`

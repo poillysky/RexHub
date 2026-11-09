@@ -19,17 +19,6 @@ _LEADING_KANA_LATIN_RE = re.compile(
 _SPACE_SPLIT_RE = re.compile(r"[\s　]+")
 _FORUM_EM_DASH_SPLIT_RE = re.compile(r"\s*[–—]\s*|\s+-\s+")
 
-# 论坛 titleZh 可复用门槛：壳题 / 截断壳不合格 → 仍走网络
-_TITLE_ZH_TRUNC_TAIL_RE = re.compile(r"[、，,…]+$")
-_TITLE_ZH_BROKEN_LEAD_RE = re.compile(r"^.{1,4}[、，,]")
-_TITLE_ZH_WESTERN_NAME_RE = re.compile(
-    r"^[\u4e00-\u9fff]{2,8}[-·・‧][\u4e00-\u9fff]{2,12}$"
-)
-_TITLE_ZH_AV_SHELL_RE = re.compile(
-    r"^(?:AV)?(?:隐退作|引退作|出道作|解禁作|引退|隐退)$|"
-    r"^AV初[体體][験驗].{0,6}$",
-    re.I,
-)
 
 
 def _prefer_chinese_segment(t: str) -> str:

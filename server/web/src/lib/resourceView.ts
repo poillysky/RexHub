@@ -813,7 +813,7 @@ export function normalizeResourceView(item: ResourceItem): ResourceItem {
     preview_images: previews,
     ed2k_links: links,
     ed2k_link: primary,
-    link_kind: linkKindOf(primary) || item.link_kind,
+    link_kind: item.link_kind || linkKindOf(primary),
     size: size || item.size,
     single_file: files.length <= 1,
     files_count: filesCount,

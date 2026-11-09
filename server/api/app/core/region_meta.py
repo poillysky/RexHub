@@ -1,8 +1,6 @@
 """六区元数据与番号前缀规范化（供 prefix 扫库 / 搜索共用）。"""
 
 
-import re
-
 from app.core.maps_paths import regions_doc
 
 _REGION_DOC = regions_doc()
@@ -10,8 +8,6 @@ REGION_META: dict[str, dict[str, str]] = {
     str(k): {str(sk): str(sv) for sk, sv in dict(v).items()}
     for k, v in dict(_REGION_DOC.get("regions") or {}).items()
 }
-_ORDER = [str(x) for x in (_REGION_DOC.get("order") or [])]
-REGION_ORDER = [x for x in _ORDER if x in REGION_META] or list(REGION_META.keys())
 
 # 仅日本有码把女优名写入索引副文案；其它区只保留标题
 # （原 japan_gravure / 日本写真已并入 japan_censored）
@@ -24,15 +20,6 @@ _LEGACY_REGION_REDIRECT: dict[str, str] = {
     "写真": "japan_censored",
     "日本写真": "japan_censored",
 }
-
-
-def std_prefix(prefix: str) -> str:
-    """前缀键规范化；FC2-PPV / FC2PPV 一律归并为 FC2。"""
-    p = str(prefix or "").strip().upper().replace("_", "-")
-    compact = re.sub(r"[\s\-]", "", p)
-    if compact == "FC2PPV" or p in {"FC2-PPV", "FC2_PPV"}:
-        return "FC2"
-    return p
 
 
 def resolve_fs_region(region: str | None) -> str | None:
@@ -75,36 +62,5 @@ def indexes_forum_actors(region: str | None) -> bool:
     """是否索引女优（日本有码，含原写真前缀）。"""
     rid = resolve_fs_region(region)
     return bool(rid and rid in FORUM_ACTORS_INDEX_REGIONS)
-
-
-def fc2_prefix_from_code(code: str) -> str:
-    """番号 → catalog 前缀键：一律 FC2（旧 FC2PPV 写入也归并）。"""
-    _ = code
-    return "FC2"
-
-
-def fc2_fs_prefix(prefix: str = "", *, code: str = "") -> str:
-    """catalog 前缀 / 番号 → 磁盘前缀夹名：一律 FC2。
-
-    旧夹 ``FC2-PPV`` / ``FC2PPV`` 仅作读路径兼容，写入不再产出。
-    """
-    p = str(prefix or "").strip().upper().replace("_", "-")
-    if not p and code:
-        p = "FC2"
-    compact = re.sub(r"[\s\-]", "", p)
-    if compact.startswith("FC2") or (
-        code and re.search(r"FC2", str(code or ""), re.I)
-    ):
-        return "FC2"
-    return p or "FC2"
-
-
-def normalize_fc2_code(code: str) -> str:
-    """统一番号写法：一律 ``FC2-{num}``（含旧 FC2-PPV / FC2PPV）。"""
-    s = str(code or "").strip().upper().replace("_", "-")
-    m = re.search(r"FC2(?:-?PPV)?-?(\d+)", s, re.I)
-    if m:
-        return f"FC2-{m.group(1)}"
-    return s
 
 

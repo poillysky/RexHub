@@ -3,7 +3,6 @@
 
 import asyncio
 import logging
-import re
 import threading
 from typing import Any
 
@@ -12,10 +11,6 @@ import httpx
 from app.ai.config import resolve_embed_config
 
 log = logging.getLogger(__name__)
-
-# 仅 BGE 中文系列需要；E5 / Jina 多语种由 fastembed query_embed 处理前缀
-QUERY_INSTRUCTION = "为这个句子生成表示以用于检索相关文章："
-_WS_RE = re.compile(r"\s+")
 
 _local_model: Any = None
 _local_model_name: str | None = None
@@ -237,111 +232,6 @@ async def _encode_openai(
             raise RuntimeError("embedding 字段无效")
         out.append([float(x) for x in vec])
     return out
-
-
-def _encode_openai_sync(
-    texts: list[str],
-    *,
-    base_url: str,
-    model: str,
-    api_key: str,
-    dim: int | None = None,
-) -> list[list[float]]:
-    if not api_key:
-        raise RuntimeError("OpenAI 兼容向量需配置 API Key")
-    url = base_url.rstrip("/")
-    if not url.endswith("/embeddings"):
-        url = f"{url}/embeddings"
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    payload: dict[str, Any] = {"model": model, "input": texts}
-    if dim and dim > 0:
-        payload["dimensions"] = int(dim)
-    with httpx.Client(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
-        r = client.post(url, headers=headers, json=payload)
-    if r.status_code == 401:
-        raise RuntimeError("API Key 无效")
-    if not r.is_success:
-        raise RuntimeError(f"embeddings 返回 {r.status_code}: {r.text[:200]}")
-    data = r.json().get("data") or []
-    if len(data) != len(texts):
-        raise RuntimeError(f"向量条数不匹配: {len(data)} != {len(texts)}")
-    out: list[list[float]] = []
-    for item in sorted(data, key=lambda x: int(x.get("index") or 0)):
-        vec = item.get("embedding")
-        if not isinstance(vec, list):
-            raise RuntimeError("embedding 字段无效")
-        out.append([float(x) for x in vec])
-    return out
-
-
-def _needs_bge_zh_instruction(model: str | None) -> bool:
-    m = str(model or "").strip().lower()
-    if not m or "bge" not in m:
-        return False
-    return "zh" in m or "chinese" in m
-
-
-def format_query_text(query: str, *, model: str | None = None) -> str:
-    q = _WS_RE.sub(" ", str(query or "").strip())
-    if not q:
-        return ""
-    name = model
-    if name is None:
-        try:
-            name = str(resolve_embed_config().get("model") or "")
-        except Exception:  # noqa: BLE001
-            name = ""
-    if _needs_bge_zh_instruction(name):
-        return QUERY_INSTRUCTION + q
-    return q
-
-
-def encode_texts_sync(texts: list[str], *, query: bool = False) -> list[list[float]]:
-    cfg = resolve_embed_config(include_secret=True)
-    if not cfg.get("enabled"):
-        raise RuntimeError("向量模型未启用")
-    model = str(cfg["model"])
-    dim = int(cfg["dim"]) if cfg.get("dim") else None
-    device = str(cfg.get("device") or "") or None
-    if cfg["provider"] == "local":
-        payload = texts
-        if query and len(texts) == 1:
-            payload = [format_query_text(texts[0], model=model)]
-        return _encode_local(payload, model_name=model, query=query, device=device)
-    payload = texts
-    if query and len(texts) == 1:
-        payload = [format_query_text(texts[0], model=model)]
-    return _encode_openai_sync(
-        payload,
-        base_url=str(cfg["baseUrl"]),
-        model=model,
-        api_key=str(cfg.get("apiKey") or ""),
-        dim=dim,
-    )
-
-
-async def encode_texts_async(texts: list[str], *, query: bool = False) -> list[list[float]]:
-    cfg = resolve_embed_config(include_secret=True)
-    if not cfg.get("enabled"):
-        raise RuntimeError("向量模型未启用")
-    model = str(cfg["model"])
-    dim = int(cfg["dim"]) if cfg.get("dim") else None
-    device = str(cfg.get("device") or "") or None
-    if cfg["provider"] == "local":
-        payload = texts
-        if query and len(texts) == 1:
-            payload = [format_query_text(texts[0], model=model)]
-        # 本地推理是同步重活，放到线程池避免卡住事件循环；模型锁仍在 _encode_local 内
-        return await asyncio.to_thread(
-            _encode_local, payload, model_name=model, query=query, device=device
-        )
-    return await _encode_openai(
-        texts,
-        base_url=str(cfg["baseUrl"]),
-        model=model,
-        api_key=str(cfg.get("apiKey") or ""),
-        dim=dim,
-    )
 
 
 async def test_embed_connection(*, override: dict[str, Any] | None = None) -> dict[str, Any]:

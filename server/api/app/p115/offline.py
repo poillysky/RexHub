@@ -9,7 +9,6 @@ import httpx
 
 from app.p115.client import (
     SOFT_OK_ERRCODES,
-    _as_int,
     _read_json,
     encode_form,
     errcode_of,
@@ -369,26 +368,19 @@ def add_offline_tasks(
         if h not in hashes:
             hashes.append(h)
 
-    if added > 0 and not failed:
-        soft = any(
-            "已存在" in str(f.get("message") or "") for f in (failed or [])
-        )
-        return {
-            "ok": True,
-            "message": (
-                f"已转存 {added} 条到 115 云下载"
-                if not soft
-                else f"已提交 {added} 条（部分任务已存在）"
-            ),
-            "added": added,
-            "failed": failed,
-            "infoHashes": hashes,
-        }
     if added > 0:
-        example = f"（例：{failed[0]['message']}）" if failed else ""
+        # 「任务已存在」也算软成功：提示里单独说明，但仍保留其它失败明细
+        soft = any("已存在" in str(f.get("message") or "") for f in failed)
+        if not failed:
+            message = f"已转存 {added} 条到 115 云下载"
+        elif soft:
+            message = f"已提交 {added} 条（部分任务已存在）· 失败 {len(failed)}"
+        else:
+            example = f"（例：{failed[0]['message']}）"
+            message = f"转存完成：成功 {added} · 失败 {len(failed)}{example}"
         return {
             "ok": True,
-            "message": f"转存完成：成功 {added} · 失败 {len(failed)}{example}",
+            "message": message,
             "added": added,
             "failed": failed,
             "infoHashes": hashes,
@@ -536,7 +528,5 @@ def clear_offline_tasks(cookie: str, mode: str = "done") -> dict[str, Any]:
         }
 
 
-# 历史名保留：与 _is_clear_ok 共用同一判定
-_is_del_ok = _is_task_ok
 
 

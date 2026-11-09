@@ -445,7 +445,6 @@ def format_resource(
         "board_fid": row.get("board_fid") or None,
         "board_name": board,
         "forum_id": row.get("forum_id") or None,
-        "forum_name": row.get("forum_id") or None,
         "extract_password": extract_password,
         "preview_images": [str(x) for x in preview_images if x],
         "ed2k_links": ed2k_links,

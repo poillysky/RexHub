@@ -4,6 +4,7 @@ import { PostgresDbPanel, type PostgresDbSpec } from './PostgresDbPanel';
 import {
   exportBitmagnetDbBackup,
   getBitmagnetDb,
+  getBitmagnetDbBackupProgress,
   listBitmagnetDbBackups,
   putBitmagnetDb,
   testBitmagnetDb,
@@ -12,6 +13,7 @@ import {
 
 const BITMAGNET_DB_SPEC: PostgresDbSpec = {
   title: 'Bitmagnet',
+  logo: '/brand/bitmagnet.png',
   fallbackPort: '5432',
   fallbackDatabase: 'bitmagnet',
   dirHint: 'backups/bitmagnet-db/',
@@ -21,6 +23,7 @@ const BITMAGNET_DB_SPEC: PostgresDbSpec = {
   test: testBitmagnetDb,
   listBackups: listBitmagnetDbBackups,
   exportBackup: exportBitmagnetDbBackup,
+  getProgress: getBitmagnetDbBackupProgress,
   uploadImportBackup: uploadImportBitmagnetDbBackup,
 };
 

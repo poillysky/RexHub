@@ -5,15 +5,13 @@ Stremio 的 stream 响应里 `url` 是可直接播放的直链，`externalUrl` �
 「可直链播放 → 外部打开 → 种子」排序，前端据此决定渲染方式。
 """
 
-import asyncio
 import re
 import time
 from typing import Any
 
 import httpx
 
-from app.rexhub import network_store
-
+from .collect import addon_names, candidate, gather, text as _text
 from .storage import _read
 
 # 单次查询参数
@@ -25,54 +23,12 @@ MAX_STREAMS = 150
 CACHE_TTL = 90
 
 _CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
-_UA = "RexHub-Stremio/1.0"
-
-
-def _text(value: Any, limit: int = 400) -> str:
-    if value is None:
-        return ""
-    return str(value).strip()[:limit]
-
-
-def _resource_names(manifest: dict[str, Any]) -> set[str]:
-    names: set[str] = set()
-    for item in manifest.get("resources") or []:
-        if isinstance(item, dict):
-            name = _text(item.get("name"), 40)
-        elif isinstance(item, str):
-            name = _text(item, 40)
-        else:
-            name = ""
-        if name:
-            names.add(name)
-    return names
-
-
-def _candidate(row: dict[str, Any], media_type: str, imdb_id: str) -> bool:
-    manifest = row.get("manifest")
-    if not isinstance(manifest, dict) or "stream" not in _resource_names(manifest):
-        return False
-    types = [str(item) for item in manifest.get("types") or []]
-    if types and media_type not in types:
-        return False
-    prefixes = manifest.get("idPrefixes")
-    if isinstance(prefixes, list) and prefixes:
-        if not any(imdb_id.startswith(str(prefix)) for prefix in prefixes):
-            return False
-    return True
 
 
 def _stream_id(imdb_id: str, season: int, episode: int) -> str:
     if season > 0 and episode > 0:
         return f"{imdb_id}:{season}:{episode}"
     return imdb_id
-
-
-def _proxy_url() -> str:
-    settings = network_store.proxy_settings()
-    if settings.get("enabled") and settings.get("targets", {}).get("plugins"):
-        return str(settings.get("url") or "")
-    return ""
 
 
 def _normalize(row: dict[str, Any], addon_name: str, raw: Any) -> dict[str, Any] | None:
@@ -203,14 +159,19 @@ async def collect(
     imdb_id: str,
     season: int = 0,
     episode: int = 0,
+    any_id: bool = False,
 ) -> dict[str, Any]:
-    """汇总所有已启用 addon 的片源；按可播放性排序后返回。"""
+    """汇总所有已启用 addon 的片源；按可播放性排序后返回。
+
+    ``any_id`` 为真时放宽 ``tt`` 前缀校验，允许用番号（如 ``SSIS-001``）
+    直接查询支持关键词检索的 addon。
+    """
 
     media_type = "series" if media_type == "series" else "movie"
     imdb_id = _text(imdb_id, 40)
-    if not imdb_id.startswith("tt"):
+    if not imdb_id or (not any_id and not imdb_id.startswith("tt")):
         return {"streams": [], "total": 0, "addons": 0, "reason": "缺少 IMDb ID"}
-    key = f"{media_type}:{imdb_id}:{season}:{episode}"
+    key = f"{media_type}:{imdb_id}:{season}:{episode}:{int(any_id)}"
     now = time.monotonic()
     cached = _CACHE.get(key)
     if cached and cached[0] > now:
@@ -221,47 +182,22 @@ async def collect(
     rows = [
         row
         for row in data["addons"]
-        if row.get("enabled", True) and _candidate(row, media_type, imdb_id)
+        if row.get("enabled", True) and candidate(row, media_type, imdb_id, "stream")
     ][:MAX_CANDIDATES]
     if not rows:
         return {"streams": [], "total": 0, "addons": 0, "reason": "没有可用的片源插件"}
 
     stream_id = _stream_id(imdb_id, season, episode)
-    client_kwargs: dict[str, Any] = {
-        "headers": {"User-Agent": _UA, "Accept": "application/json, */*"},
-        "follow_redirects": True,
-        "limits": httpx.Limits(max_connections=CONCURRENCY),
-    }
-    proxy = _proxy_url()
-    if proxy:
-        client_kwargs["proxy"] = proxy
-
-    names = {
-        row.get("slug"): (
-            _text((row.get("manifest") or {}).get("name"), 80)
-            or _text(row.get("slug"), 80)
-        )
-        for row in rows
-    }
-
-    async with httpx.AsyncClient(**client_kwargs) as client:
-        tasks = [
-            asyncio.create_task(
-                _fetch_streams(client, row, media_type, stream_id, names[row.get("slug")])
-            )
-            for row in rows
-        ]
-        done, pending = await asyncio.wait(tasks, timeout=TOTAL_TIMEOUT)
-        for task in pending:
-            task.cancel()
-        gathered: list[dict[str, Any]] = []
-        for task in done:
-            if task.cancelled():
-                continue
-            try:
-                gathered.extend(task.result())
-            except (httpx.HTTPError, ValueError, OSError):
-                continue
+    names = addon_names(rows)
+    gathered = await gather(
+        rows,
+        names,
+        lambda client, row, name: _fetch_streams(
+            client, row, media_type, stream_id, name
+        ),
+        timeout=TOTAL_TIMEOUT,
+        concurrency=CONCURRENCY,
+    )
 
     order = {"direct": 0, "external": 1, "torrent": 2}
     streams = _dedupe(gathered)

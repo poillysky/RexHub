@@ -3,13 +3,18 @@
  * Falls back to immediate navigation when the API isn't available.
  */
 
+type ViewTransitionDocument = Document & {
+  startViewTransition?: (callback: () => void | Promise<void>) => unknown;
+};
+
 export function startViewTransition(callback: () => void | Promise<void>): void {
-  if (
-    typeof document !== 'undefined' &&
-    'startViewTransition' in document &&
-    typeof (document as any).startViewTransition === 'function'
-  ) {
-    (document as any).startViewTransition(callback);
+  if (typeof document === 'undefined') {
+    callback();
+    return;
+  }
+  const doc = document as ViewTransitionDocument;
+  if (typeof doc.startViewTransition === 'function') {
+    doc.startViewTransition(callback);
   } else {
     callback();
   }

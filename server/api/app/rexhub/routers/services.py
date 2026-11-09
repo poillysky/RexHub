@@ -6,7 +6,7 @@
 
 import asyncio
 
-from fastapi import Request, APIRouter, HTTPException
+from fastapi import Request, APIRouter
 from pydantic import BaseModel
 
 from app.rexhub import services_store

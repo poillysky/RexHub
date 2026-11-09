@@ -7,6 +7,12 @@ import {
 } from 'react';
 import { useTabNavigation, TAB_ROUTES, type TabRoute } from './TabContext';
 
+/** 视口尺寸由 AppShell 测量后下发（布局测量与导航状态分开） */
+export const TabPaneSizeContext = createContext<{
+  width: number;
+  height: number;
+}>({ width: 0, height: 0 });
+
 const TabPaneVisibleContext = createContext(true);
 
 /** 当前组件是否落在「可见/邻近」的主 Tab 里（远离时停封面请求）。 */
@@ -22,8 +28,9 @@ export function TabPane({
   children: ReactNode;
 }) {
   const tabCtx = useTabNavigation();
-  const h = tabCtx?.paneHeight;
-  const w = tabCtx?.paneWidth;
+  const size = useContext(TabPaneSizeContext);
+  const h = size.height;
+  const w = size.width;
   const index = TAB_ROUTES.indexOf(tab);
   // 滑动动画需要邻页仍渲染；远离超过约一屏则停媒体请求
   const progress = tabCtx?.scrollProgress ?? index;

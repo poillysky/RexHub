@@ -94,7 +94,15 @@ export async function runP115Save(opts: {
   }
 
   const shareUrls = urls.filter((u) => linkKindOf(u) === "115share");
-  const offlineUrls = urls.filter((u) => linkKindOf(u) !== "115share");
+  // 离线只收磁力 / ED2K；普通网页链接与 stub 不应进入云下载队列
+  const offlineUrls = urls.filter((u) => {
+    const kind = linkKindOf(u);
+    return kind === "magnet" || kind === "ed2k";
+  });
+
+  if (!shareUrls.length && !offlineUrls.length) {
+    return { ok: false, message: "仅支持磁力 / ED2K / 115 分享链接" };
+  }
 
   try {
     if (shareUrls.length) {

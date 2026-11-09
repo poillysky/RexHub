@@ -79,6 +79,52 @@ def _text(value: object, limit: int = 300) -> str:
     return str(value or "").strip()[:limit]
 
 
+# 站点 icon 会被前端以 innerHTML 渲染，必须是白名单内的安全 SVG。
+_SVG_TAGS = {
+    "svg", "g", "path", "circle", "rect", "line", "polyline", "polygon",
+    "ellipse", "defs", "lineargradient", "radialgradient", "stop", "clippath",
+    "mask", "symbol", "title",
+}
+_SVG_ATTRS = {
+    "xmlns", "width", "height", "viewbox", "fill", "fill-rule", "fill-opacity",
+    "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin",
+    "stroke-opacity", "stroke-dasharray", "stroke-dashoffset", "opacity",
+    "d", "cx", "cy", "r", "rx", "ry", "x", "y", "x1", "y1", "x2", "y2",
+    "points", "transform", "offset", "stop-color", "stop-opacity",
+    "gradientunits", "gradienttransform", "clip-rule", "clip-path",
+    "aria-hidden", "role", "focusable", "id",
+}
+
+
+def clean_icon(value: object, limit: int = 4000) -> str:
+    text = str(value or "").strip()
+    if not text or len(text) > limit:
+        return ""
+    lowered = text.lower()
+    if not lowered.startswith("<svg") or not lowered.endswith("</svg>"):
+        return ""
+    for token in (
+        "<script", "<foreignobject", "<iframe", "<style", "<use", "<image",
+        "<animate", "<set", "javascript:", "data:text/html", "url(",
+    ):
+        if token in lowered:
+            return ""
+    if any(
+        tag not in _SVG_TAGS
+        for tag in re.findall(r"<\s*/?\s*([a-z][a-z0-9:_.-]*)", lowered)
+    ):
+        return ""
+    if any(
+        name not in _SVG_ATTRS
+        for name in re.findall(r"\s([a-z_:][a-z0-9_:.-]*)\s*=", lowered)
+    ):
+        return ""
+    # 属性值必须加引号，避免裸值拼出事件处理器
+    if re.search(r"=\s*[^\"']", text):
+        return ""
+    return text
+
+
 def _rel_path(value: object, label: str) -> str:
     text = _text(value, 240).lstrip("/")
     if not text or ".." in text.split("/") or not _PATH_RE.match(text):
@@ -194,7 +240,7 @@ def _clean_ui(value: object) -> dict[str, Any]:
         "title": _text(block.get("title"), 40),
         "subtitle": _text(block.get("subtitle"), 120),
         "accent": accent,
-        "icon": _text(block.get("icon"), 4000),
+        "icon": clean_icon(block.get("icon")),
         "logo": logo,
         "badge": _text(block.get("badge"), 20),
     }

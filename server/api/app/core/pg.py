@@ -76,3 +76,7 @@ def iter_batches(
 
 def close_pool() -> None:
     _IMPL.close_pool()
+    # 换库后 pg_trgm / cjk_bigrams 是否存在要重新探测，旧库的搜索结果也不能复用
+    from app.search.resource_service.cache import reset_cache_state
+
+    reset_cache_state()

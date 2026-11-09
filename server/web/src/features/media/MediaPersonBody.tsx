@@ -76,11 +76,14 @@ export function MediaPersonBody({
   }, [works.data]);
 
   const loading = works.isPending;
-  const err = works.isError
+  const errMsg = works.isError
     ? works.error instanceof Error
       ? works.error.message
       : '加载失败'
     : '';
+  // 只有首次加载失败才整页报错；「加载更多」失败时保留已加载作品，按钮可重试
+  const err = items.length === 0 ? errMsg : '';
+  const moreErr = items.length > 0 ? errMsg : '';
 
   const groups = useMemo(() => groupByYear(items), [items]);
   const yearSpan = useMemo(() => {
@@ -118,7 +121,7 @@ export function MediaPersonBody({
       <header className="media-person__hero">
         <span className="media-person__avatar" aria-hidden>
           <span className="media-person__avatar-ph">
-            {displayName.slice(0, 1)}
+            {displayName.slice(0, 1) || '演'}
           </span>
           {avatar && !avatarGone ? (
             <SoftImg
@@ -238,6 +241,10 @@ export function MediaPersonBody({
             </section>
           ))
         : null}
+
+      {!loading && items.length > 0 && moreErr ? (
+        <p className="media-empty allow-select">{moreErr}</p>
+      ) : null}
 
       {!loading && !err && works.hasNextPage ? (
         <button

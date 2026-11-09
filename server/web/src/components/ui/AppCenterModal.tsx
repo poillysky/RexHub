@@ -29,11 +29,8 @@ export function AppCenterModal({
   footer?: ReactNode;
   cardClassName?: string;
 }) {
-  const [root, setRoot] = useState<HTMLElement | null>(null);
-
-  useEffect(() => {
-    setRoot(resolveModalRoot());
-  }, [open]);
+  // 客户端首帧即解析挂载点；SSR 下为 null，且此时 open 必为 false，不会产生水合差异
+  const [root] = useState<HTMLElement | null>(resolveModalRoot);
 
   useEffect(() => {
     if (!open) return;

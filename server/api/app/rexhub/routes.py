@@ -45,3 +45,6 @@ REXHUB_ROUTERS = (
 def include_rexhub(app: FastAPI) -> None:
     for router in REXHUB_ROUTERS:
         app.include_router(router)
+    # P1-3：`/stremio` 是 Stremio 客户端订阅地址，保持兼容；
+    # `/api/stremio` 作为统一在 `/api` 下的规范入口，两者指向同一实现。
+    app.include_router(stremio.router, prefix="/api")

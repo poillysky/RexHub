@@ -5,6 +5,7 @@ import { PostgresDbPanel, type PostgresDbSpec } from './PostgresDbPanel';
 import {
   exportResourceDbBackup,
   getResourceDb,
+  getResourceDbBackupProgress,
   listResourceDbBackups,
   putResourceDb,
   testResourceDb,
@@ -13,6 +14,8 @@ import {
 
 const RESOURCE_DB_SPEC: PostgresDbSpec = {
   title: '色花资源库',
+  // 与 Bitmagnet 面板保持一致：服务面板用品牌图，而不是通用数据库图标
+  logo: '/brand/sehuatang.png',
   fallbackPort: '5435',
   fallbackDatabase: 'ed2k',
   dirHint: 'backups/resource-db/',
@@ -22,6 +25,7 @@ const RESOURCE_DB_SPEC: PostgresDbSpec = {
   test: testResourceDb,
   listBackups: listResourceDbBackups,
   exportBackup: exportResourceDbBackup,
+  getProgress: getResourceDbBackupProgress,
   uploadImportBackup: uploadImportResourceDbBackup,
 };
 

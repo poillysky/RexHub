@@ -11,7 +11,6 @@ from typing import Any
 from app.core.maps_paths import load_str_map
 
 MAPPING_LANGS = frozenset({"zh-CN", "zh-TW", "ja", "en"})
-_MULTI_NL_RE = re.compile(r"\n{2,}")
 # 色花堂字段偶发装饰：首尾 +/-/~ / 全角～
 _ACTOR_DIRTY_RE = re.compile(r"^[\+\-\~\～\s　]+|[\+\-\~\～\s　]+$")
 
@@ -36,32 +35,8 @@ def _iter_fold(s: str) -> str:
     return "".join(out)
 
 
-# 促销 / 活动 / 临时性标签：源站常把「セール」「%オフ」当 genre，统一当噪声丢弃。
-_TAG_PROMO_RE = re.compile(
-    r"(セール|％オフ|%オフ|オフセール|クーポン|キャンペーン|アウトレット|バーゲン|"
-    r"\bsale\b|\boff\b|セット商品|第[0-9０-９]+弾|期間限定|特別価格|奉仕価格|"
-    r"ポイント還元|早割|感謝祭|感谢祭)",
-    re.IGNORECASE,
-)
 
-# 年代 / 厂牌分类等元标签（如 `2010年代前半（DOD）`）：不是题材，统一丢弃。
-_TAG_META_RE = re.compile(
-    r"(?:19|20)\d{2}年代(?:前半|後半|中盤|初期|末期)?|"
-    r"[（(](?:DOD|MGS|SOD)[）)]|"
-    r"ディスク[・･]?オン[・･]?デマンド|disk\s*on\s*demand|\bDOD\b|"
-    r"エマニエル|艾曼纽|妄想族|"
-    r"\b4K\b|\b8K\b|ハイビジョン|高清画质|HD高画质|"
-    r"\bPornstar\b|\bpornstar\b|"
-    r"4小时\+|4小时以上|4時間以上|4時間以上作品|"
-    # MGS/店家附赠片头：非题材
-    r"MGSだけのおまけ|おまけ映像|特典映像|特典動画|ボーナス映像",
-    re.IGNORECASE,
-)
 
-# 前缀恰好等于这些「有意义缩写」时不做前缀噪声处理（避免误伤题材标签）。
-_TAG_PREFIX_KEEP = frozenset(
-    {"SM", "VR", "OL", "POV", "JK", "AV", "NTR", "BD", "DVD", "HD", "FHD", "UHD"}
-)
 
 # 繁 / 日 → 简 常用变体对（空格分隔，每对 2 字）。仅作**映射兜底**：精确命中仍优先，
 # 故不会改变既有正确结果；但能根治「繁简分裂」——映射表只写了 `義母` 时，源站的
@@ -69,12 +44,6 @@ _TAG_PREFIX_KEEP = frozenset(
 
 _TAG_VARIANT_FOLD: dict[str, str] = load_str_map("tags.variant-fold.zh-CN.json")
 _TAG_VARIANT_TRANS = str.maketrans(_TAG_VARIANT_FOLD) if _TAG_VARIANT_FOLD else {}
-
-
-def code_prefix(code: str) -> str:
-    """番号 → 前缀（`NDRA-117` → `NDRA`）。用于清理被当 genre 的系列前缀。"""
-    m = re.match(r"^\s*([A-Za-z]+)", str(code or ""))
-    return m.group(1).upper() if m else ""
 
 
 DEFAULT_METADATA_OPTIMIZE: dict[str, Any] = {
@@ -115,7 +84,7 @@ def mapping_language_from_settings() -> str:
     try:
         import app.core.settings_store as settings_store
 
-        raw = settings_store.get_setting(settings_store.LIBRARY_KEY) or settings_store.get_setting("scrape") or {}
+        raw = settings_store.get_setting(settings_store.LIBRARY_KEY) or {}
         if not isinstance(raw, dict):
             lang = str(DEFAULT_METADATA_OPTIMIZE["mappingLanguage"])
         else:
@@ -148,7 +117,7 @@ def normalize_actor_names(
         try:
             import app.core.settings_store as settings_store
 
-            raw = settings_store.get_setting(settings_store.LIBRARY_KEY) or settings_store.get_setting("scrape") or {}
+            raw = settings_store.get_setting(settings_store.LIBRARY_KEY) or {}
             if isinstance(raw, dict):
                 opt = normalize_metadata_optimize(
                     raw.get("metadataOptimize") or raw.get("metadata_optimize")
@@ -244,21 +213,9 @@ def _load_json_map(path_str: str) -> dict[str, Any]:
 # 其 `id` 可能被**另一个表**复用，查到的就是过期索引 → 静默错误映射。
 # 同时用 `hit[0] is table` 做身份校验作双保险。
 _CASEFOLD_INDEX: dict[int, tuple[dict[str, Any], dict[str, Any]]] = {}
-# canon name forms → alias keys（避免 polish_tag 每次全表扫描）
-_ACTOR_CANON_ALIASES: dict[int, tuple[dict[str, Any], dict[str, set[str]]]] = {}
 
 
 _SETTING_MAP_ENABLED: bool | None = None
-
-
-def clear_map_cache() -> None:
-    global _SETTING_MAP_ENABLED, _CACHED_MAPPING_LANG
-    _load_json_map.cache_clear()
-    _CASEFOLD_INDEX.clear()
-    _VARIANT_INDEX.clear()
-    _ACTOR_CANON_ALIASES.clear()
-    _SETTING_MAP_ENABLED = None
-    _CACHED_MAPPING_LANG = None
 
 
 def _actor_mapping_enabled() -> bool:
@@ -269,11 +226,7 @@ def _actor_mapping_enabled() -> bool:
     try:
         import app.core.settings_store as settings_store
 
-        raw = (
-            settings_store.get_setting(settings_store.LIBRARY_KEY)
-            or settings_store.get_setting("scrape")
-            or {}
-        )
+        raw = settings_store.get_setting(settings_store.LIBRARY_KEY) or {}
         if isinstance(raw, dict):
             opt = normalize_metadata_optimize(
                 raw.get("metadataOptimize") or raw.get("metadata_optimize")
@@ -295,12 +248,6 @@ def _actor_maps(lang: str) -> dict[str, Any]:
         if m:
             return m
     return {}
-
-
-def actor_maps_loaded(lang: str | None = None) -> dict[str, Any]:
-    """供任务状态展示：映射表条目数。"""
-    table = _actor_maps(lang or mapping_language_from_settings())
-    return {"count": len(table), "lang": lang or mapping_language_from_settings()}
 
 
 def _casefold_index(table: dict[str, Any]) -> dict[str, Any]:
@@ -588,6 +535,5 @@ def polish_actress_names(
     return out
 
 
-_PAREN_SUFFIX_RE = re.compile(r"[（(][^）)]{0,40}[）)]\s*$")
 
 

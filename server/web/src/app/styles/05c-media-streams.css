@@ -1,0 +1,1617 @@
+/* 影视：社区片源与网页播放器。 */
+
+/* —— 社区片源 / 网页播放器 —— */
+
+.media-detail__cta--stream {
+  background: #e8e5fb;
+  color: #3d358f;
+  box-shadow:
+    0 0 0 0.5px color-mix(in srgb, #6a5bd8 24%, transparent),
+    0 8px 22px rgba(88, 74, 190, 0.14);
+}
+
+.dark .media-detail__cta--stream,
+html.theme-dark .media-detail__cta--stream {
+  background: #2f2b48;
+  color: #cfc7ff;
+}
+
+.stream-modal {
+  width: min(600px, calc(100vw - 32px));
+}
+
+.stream-modal--player {
+  width: min(860px, calc(100vw - 32px));
+}
+
+.stream-modal .app-modal-card__body {
+  padding: 10px 12px 12px;
+}
+
+.stream-modal__state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 22px 8px 18px;
+  font-size: 13.5px;
+  color: var(--text-secondary, #6b6b70);
+  text-align: center;
+}
+
+.stream-modal__hint {
+  margin: 8px 2px 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-secondary, #6b6b70);
+}
+
+.stream-modal__searching {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.stream-modal__error {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #c0392b;
+}
+
+.stream-modal__plain,
+.stream-modal__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  padding: 3px 6px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--login-blue, #007aff);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.stream-modal__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.stream-player__video {
+  display: block;
+  width: 100%;
+  max-height: min(62vh, 520px);
+  aspect-ratio: 16 / 9;
+  border-radius: 10px;
+  background: #000;
+  object-fit: contain;
+}
+
+.stream-player__meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 8px;
+  min-width: 0;
+}
+
+.stream-player__title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--ink);
+}
+
+.stream-player__sub {
+  flex-shrink: 0;
+  max-width: 52%;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--text-secondary, #6b6b70);
+}
+
+.stream-list {
+  list-style: none;
+  margin: 0;
+  padding: 3px 0;
+  max-height: min(58vh, 500px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: 11px;
+  background: color-mix(in srgb, #ffffff 86%, #ece9fb 14%);
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, #6a5bd8 14%, transparent);
+}
+
+.dark .stream-list,
+html.theme-dark .stream-list {
+  background: color-mix(in srgb, #1c1c1e 82%, #6a5bd8 18%);
+}
+
+.stream-item {
+  padding: 6px 11px;
+  transition: background 0.14s ease;
+}
+
+.stream-item:hover {
+  background: color-mix(in srgb, var(--login-blue, #007aff) 5%, transparent);
+}
+
+.dark .stream-item:hover,
+html.theme-dark .stream-item:hover {
+  background: color-mix(in srgb, #ffffff 6%, transparent);
+}
+
+.stream-item + .stream-item {
+  border-top: 0.5px solid color-mix(in srgb, var(--hairline, #d8d8dc) 70%, transparent);
+}
+
+/* 片源条：左列标题 + 元信息，右列操作按钮跨两行垂直居中 */
+.stream-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 8px;
+}
+
+.stream-item__main {
+  display: contents;
+}
+
+.stream-item__title {
+  grid-column: 1;
+  grid-row: 1;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--ink);
+}
+
+.stream-item__meta-row {
+  grid-column: 1;
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-top: 2px;
+}
+
+.stream-item__addon {
+  flex-shrink: 0;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  font-weight: 650;
+  color: #5b51c9;
+}
+
+.dark .stream-item__addon,
+html.theme-dark .stream-item__addon {
+  color: #b9b0ff;
+}
+
+.stream-item__kind {
+  flex-shrink: 0;
+  padding: 0 5px;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  color: #4a4a52;
+  background: color-mix(in srgb, #8e8e93 14%, transparent);
+}
+
+.stream-item__kind--direct {
+  color: #1f6b4a;
+  background: color-mix(in srgb, #34c759 22%, transparent);
+}
+
+.stream-item__kind--external {
+  color: #8a5a10;
+  background: color-mix(in srgb, #ff9f0a 22%, transparent);
+}
+
+.stream-item__kind--moreplay {
+  color: #1d5fbf;
+  background: color-mix(in srgb, #3b82f6 20%, transparent);
+}
+
+.stream-item__meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  color: var(--text-secondary, #6b6b70);
+}
+
+.stream-item__actions {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.stream-item__play,
+.stream-item__open {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 23px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 650;
+  line-height: 1;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.stream-item__play svg,
+.stream-item__open svg {
+  flex: none;
+  display: block;
+}
+
+.stream-item__play {
+  color: #fff;
+  background: var(--login-blue, #007aff);
+}
+
+.stream-item__open {
+  color: var(--login-blue, #007aff);
+  background: color-mix(in srgb, var(--login-blue, #007aff) 12%, transparent);
+}
+
+/* ── 片商（AVDB） ──────────────────────────────── */
+
+/* 片商搜索结果：AVDB 片商列表 */
+.maker-hits {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 顶栏双按钮（分类 + 搜索）：整体推到右侧 */
+.media-hub__top-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* 横版影片卡：完整横图（预览 sample 图） */
+.media-poster--wide {
+  width: 188px;
+}
+
+.media-poster__frame--wide {
+  aspect-ratio: 16 / 10;
+}
+
+/* 分类 chips */
+.maker-tags__cat {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 2px 3px;
+  align-items: start;
+  margin: 0 0 7px;
+}
+
+.maker-tags__label {
+  margin: 0;
+  padding-top: 5px;
+  font-size: 12.5px;
+  font-weight: 650;
+  letter-spacing: 0;
+  color: color-mix(in srgb, var(--ink) 58%, transparent);
+  white-space: nowrap;
+}
+
+/* 分组行：分组名 + 单行 chips（超出折叠，点「更多」展开） */
+.maker-tags__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.maker-tags__row > .maker-chip-row {
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 6px;
+  flex-wrap: nowrap;
+  overflow: hidden;
+  max-height: 26px;
+}
+
+.maker-tags__row > .maker-chip-row > .maker-chip {
+  flex: 0 0 auto;
+}
+
+/* 分类区 chip 更紧凑 */
+.maker-tags__cat .maker-chip {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.maker-tags__row[data-expanded] > .maker-chip-row {
+  flex-wrap: wrap;
+  overflow: visible;
+  max-height: none;
+}
+
+.maker-tags__more {
+  flex: 0 0 auto;
+  height: 26px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--ink) 52%, transparent);
+  cursor: pointer;
+}
+
+.dark .maker-tags__more {
+  color: rgba(245, 245, 247, 0.55);
+}
+
+/* 分类下方内联影片墙 */
+.maker-tags__results {
+  margin: 2px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.dark .maker-tags__results {
+  border-top-color: rgba(255, 255, 255, 0.08);
+}
+
+.maker-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 演员页：顶部分类 + 推荐子分类的间距 */
+.maker-actors-page > .media-source-switch {
+  margin: 0 0 10px;
+}
+
+.maker-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  cursor: pointer;
+  color: var(--ink);
+  background: color-mix(in srgb, #ffffff 78%, rgba(90, 110, 130, 0.1) 22%);
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.maker-chip:active {
+  opacity: 0.7;
+}
+
+.maker-chip--skel {
+  width: 64px;
+}
+
+.dark .maker-chip {
+  color: rgba(245, 245, 247, 0.92);
+  background: rgba(120, 120, 128, 0.18);
+  box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.06);
+}
+
+.dark .maker-tags__label {
+  color: rgba(245, 245, 247, 0.5);
+}
+
+/* 详情横版预览画廊：完整显示不裁切 */
+.maker-previews {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.maker-preview {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 10px;
+}
+
+.maker-hit {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 13px 14px;
+  border: none;
+  border-radius: 14px;
+  text-align: left;
+  cursor: pointer;
+  background: color-mix(in srgb, #ffffff 78%, rgba(90, 110, 130, 0.1) 22%);
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.maker-hit:active {
+  opacity: 0.7;
+}
+
+.maker-hit__name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.maker-hit__count {
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary, #6b6b70);
+}
+
+.maker-hit svg {
+  flex: none;
+  color: var(--text-tertiary, #a0a0a6);
+}
+
+.maker-hit--skel {
+  height: 44px;
+  border-radius: 14px;
+}
+
+.dark .maker-hit {
+  background: rgba(120, 120, 128, 0.18);
+  box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.06);
+}
+
+.dark .maker-hit__name {
+  color: rgba(245, 245, 247, 0.92);
+}
+
+.dark .maker-hit__count {
+  color: rgba(235, 235, 245, 0.62);
+}
+
+.maker-movies {
+  padding: 2px 0 24px;
+}
+
+.maker-desc {
+  margin: 0 0 14px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
+  color: var(--text-secondary, #6b6b70);
+}
+
+.maker-magnets {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.maker-magnet {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 14px;
+  background: color-mix(in srgb, #ffffff 78%, rgba(90, 110, 130, 0.1) 22%);
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.maker-magnet__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.maker-magnet__name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.maker-magnet__btn {
+  flex: none;
+  height: 30px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  color: #fff;
+  background: var(--login-blue, #007aff);
+}
+
+.maker-magnet__btn:active {
+  opacity: 0.75;
+}
+
+.maker-magnet__meta {
+  font-size: 11.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary, #6b6b70);
+}
+
+/* AVDB 自有种子库资源行 */
+.maker-torrent {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.maker-torrent__cover {
+  flex: none;
+  width: 64px;
+  height: 64px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: color-mix(in srgb, #ffffff 78%, rgba(90, 110, 130, 0.1) 22%);
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.maker-torrent__cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.maker-torrent__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.maker-torrent__title {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-secondary, #6b6b70);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.maker-torrent__flags {
+  margin-top: 2px;
+}
+
+.maker-torrent__flags .maker-chip {
+  height: 20px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: default;
+  color: var(--text-secondary, #6b6b70);
+  background: color-mix(in srgb, #ffffff 78%, rgba(90, 110, 130, 0.12) 22%);
+  box-shadow: none;
+}
+
+.dark .maker-torrent__cover {
+  background: rgba(120, 120, 128, 0.18);
+  box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.06);
+}
+
+.dark .maker-torrent__title {
+  color: rgba(235, 235, 245, 0.62);
+}
+
+.maker-link {
+  display: inline-flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 999px;
+  font-size: 13.5px;
+  font-weight: 650;
+  text-decoration: none;
+  color: var(--login-blue, #007aff);
+  background: color-mix(in srgb, var(--login-blue, #007aff) 12%, transparent);
+}
+
+.dark .maker-desc,
+.dark .maker-magnet__meta {
+  color: rgba(235, 235, 245, 0.62);
+}
+
+.dark .maker-magnet {
+  background: rgba(120, 120, 128, 0.18);
+  box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.06);
+}
+
+.dark .maker-magnet__name {
+  color: rgba(245, 245, 247, 0.92);
+}
+
+.dark .media-poster__frame--maker {
+  background:
+    radial-gradient(
+      120% 90% at 20% 0%,
+      color-mix(in srgb, var(--login-blue, #007aff) 28%, #1b1f27) 0%,
+      transparent 62%
+    ),
+    linear-gradient(160deg, #262b35 0%, #101216 100%);
+}
+
+/* 已选中的分类 chip */
+.maker-chip.is-active {
+  color: #fff;
+  background: var(--login-blue, #007aff);
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--login-blue, #007aff) 40%, transparent);
+}
+
+.dark .maker-chip.is-active {
+  color: #fff;
+  background: var(--login-blue, #007aff);
+}
+
+/* ── 评论 / 热评 ─────────────────────────────────── */
+.maker-reviews {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.maker-review {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  background: color-mix(in srgb, #ffffff 78%, rgba(90, 110, 130, 0.1) 22%);
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.maker-review__movie {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  background: none;
+}
+
+.maker-review__movie:active {
+  opacity: 0.75;
+}
+
+.maker-review__thumb {
+  flex: none;
+  width: 92px;
+  aspect-ratio: 3 / 2;
+  border-radius: 10px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.maker-review__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.maker-review__moviemeta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.maker-review__number {
+  font-size: 12px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  color: var(--login-blue, #007aff);
+}
+
+.maker-review__title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.maker-review__body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.maker-review__body--flat {
+  padding: 12px;
+  border-radius: 14px;
+  background: color-mix(in srgb, #ffffff 78%, rgba(90, 110, 130, 0.1) 22%);
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.maker-review__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.maker-review__user {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text-secondary, #6b6b70);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.maker-review__score {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  color: #f5a524;
+}
+
+.maker-review__likes {
+  flex: none;
+  font-size: 11.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary, #a0a0a6);
+}
+
+.maker-review__content {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  word-break: break-word;
+}
+
+.maker-review--compact {
+  gap: 6px;
+  padding: 12px;
+}
+
+.maker-review--compact .maker-review__number {
+  align-self: flex-start;
+}
+
+.maker-review--skel {
+  height: 128px;
+  border-radius: 16px;
+}
+
+.dark .maker-review,
+.dark .maker-review__body--flat {
+  background: rgba(120, 120, 128, 0.18);
+  box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.06);
+}
+
+.dark .maker-review__title,
+.dark .maker-review__content {
+  color: rgba(245, 245, 247, 0.92);
+}
+
+.dark .maker-review__user {
+  color: rgba(235, 235, 245, 0.62);
+}
+
+/* ── 演员 ───────────────────────────────────────── */
+.maker-actors {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 10px;
+}
+
+.maker-actor {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 12px 6px 10px;
+  border: none;
+  border-radius: 16px;
+  cursor: pointer;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, #ffffff 92%, transparent),
+    color-mix(in srgb, #ffffff 62%, rgba(90, 110, 130, 0.16) 38%)
+  );
+  box-shadow:
+    0 0 0 0.5px color-mix(in srgb, var(--ink) 8%, transparent),
+    0 1px 2px rgba(var(--shadow-color), 0.04);
+  transition:
+    transform 220ms var(--media-ease),
+    box-shadow 220ms var(--media-ease);
+}
+
+.maker-actor:active {
+  transform: scale(0.97);
+  opacity: 0.9;
+}
+
+@media (hover: hover) {
+  .maker-actor:hover {
+    transform: translateY(-2px);
+    box-shadow:
+      0 0 0 0.5px color-mix(in srgb, var(--ink) 10%, transparent),
+      0 8px 20px rgba(var(--shadow-color), 0.14);
+  }
+
+  .maker-actor:hover .maker-actor__avatar img {
+    transform: scale(1.06);
+  }
+}
+
+.maker-actor__avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, #ffffff 55%, transparent),
+    0 4px 10px rgba(var(--shadow-color), 0.1);
+}
+
+.maker-actor__avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 320ms var(--media-ease);
+}
+
+.maker-actor__ph {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-tertiary, #a0a0a6);
+}
+
+.maker-actor__name {
+  max-width: 100%;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.maker-actor__count {
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary, #a0a0a6);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+
+.maker-actor--skel {
+  height: 118px;
+  border-radius: 16px;
+}
+
+.dark .maker-actor {
+  background: linear-gradient(
+    180deg,
+    rgba(120, 120, 128, 0.2),
+    rgba(120, 120, 128, 0.12)
+  );
+  box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.06);
+}
+
+.dark .maker-actor__name {
+  color: rgba(245, 245, 247, 0.92);
+}
+
+.dark .maker-actor__count {
+  color: rgba(245, 245, 247, 0.5);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* 演员页：分类切换 + 推荐分组标题 */
+.maker-actors-page .media-source-switch {
+  margin: 0 0 12px;
+  padding: 3px;
+  border-radius: 13px;
+}
+
+.maker-actors-page .media-detail__section {
+  margin-top: 20px;
+  padding: 0;
+}
+
+.maker-actors-page .media-detail__section:first-of-type {
+  margin-top: 2px;
+}
+
+.maker-actors-page .media-detail__h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.maker-actors-page .media-detail__h::after {
+  content: '';
+  flex: 1 1 auto;
+  height: 1px;
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.maker-actors__badge {
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary, #a0a0a6);
+  letter-spacing: 0;
+}
+
+/* ── 实体 / 演员 / 片单详情 ──────────────────────── */
+.maker-entity {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 16px;
+  background: color-mix(in srgb, #ffffff 78%, rgba(90, 110, 130, 0.1) 22%);
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.dark .maker-entity {
+  background: rgba(120, 120, 128, 0.18);
+  box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.06);
+}
+
+.maker-entity__avatar {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  overflow: hidden;
+  object-fit: cover;
+}
+
+.maker-entity__kind {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary, #a0a0a6);
+}
+
+.maker-entity__name {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.dark .maker-entity__name {
+  color: rgba(245, 245, 247, 0.95);
+}
+
+.maker-entity__meta {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-tertiary, #a0a0a6);
+}
+
+.maker-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 6px 14px;
+  margin: 4px 0 0;
+  width: 100%;
+}
+
+.maker-facts__row {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.maker-facts__k {
+  margin: 0;
+  color: var(--text-tertiary, #a0a0a6);
+  min-width: 3.5em;
+}
+
+.maker-facts__v {
+  margin: 0;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.dark .maker-facts__v {
+  color: rgba(245, 245, 247, 0.92);
+}
+
+/* ── 相关片单 ──────────────────────────────────── */
+.maker-lists {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.maker-list {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 12px;
+  text-align: left;
+  cursor: pointer;
+  background: color-mix(in srgb, #ffffff 78%, rgba(90, 110, 130, 0.1) 22%);
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.maker-list:active {
+  opacity: 0.7;
+}
+
+.dark .maker-list {
+  background: rgba(120, 120, 128, 0.18);
+  box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.06);
+}
+
+.maker-list__name {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.dark .maker-list__name {
+  color: rgba(245, 245, 247, 0.92);
+}
+
+.maker-list__meta {
+  font-size: 11px;
+  color: var(--text-tertiary, #a0a0a6);
+}
+
+/* ── 在线播放 ──────────────────────────────────── */
+.maker-video {
+  width: 100%;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #000;
+}
+
+/* 点击后弹窗聚合展示在线播放源 */
+.maker-video__trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 64px;
+  border: none;
+  background: #000;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.maker-video__trigger:active {
+  opacity: 0.86;
+}
+
+.maker-video__play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+
+/* ── 片商详情：整体排版优化（仅此页生效） ───────────────── */
+
+.media-detail--hero-right .media-detail__section {
+  margin-top: 6px;
+  padding: 0 4px;
+}
+
+/* 首个分区与上方英雄区之间的间距 */
+.media-detail--hero-right .media-detail__section:first-of-type {
+  margin-top: 18px;
+}
+
+.media-detail--hero-right .media-detail__section + .media-detail__section {
+  padding-top: 8px;
+  border-top: 0.5px solid color-mix(in srgb, var(--ink) 6%, transparent);
+}
+
+.dark .media-detail--hero-right .media-detail__section + .media-detail__section {
+  border-top-color: rgba(255, 255, 255, 0.06);
+}
+
+/* 标题美化：前置一条渐变竖条点缀（片商详情 + 影视详情各分区通用） */
+.media-detail--hero-right .media-detail__h,
+.media-detail__section > .media-detail__h {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.media-detail--hero-right .media-detail__h {
+  margin-bottom: 8px;
+}
+
+.media-detail--hero-right .media-detail__h::before,
+.media-detail__section > .media-detail__h::before {
+  content: "";
+  flex: none;
+  width: 3px;
+  height: 15px;
+  border-radius: 2px;
+  background: linear-gradient(
+    180deg,
+    #5ac8fa 0%,
+    var(--login-blue, #007aff) 100%
+  );
+}
+
+.media-detail--hero-right .media-detail__overview {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: color-mix(in srgb, var(--ink) 76%, #5b6c80 24%);
+}
+
+/* 片商详情：预览标题下「播放预览 + 片商搜索」并排一行 */
+.media-detail--hero-right .maker-preview-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.media-detail--hero-right .maker-preview-row .maker-video {
+  flex: 1 1 0;
+  min-width: 0;
+  border-radius: 14px;
+  box-shadow: none;
+}
+
+.media-detail--hero-right .maker-preview-row .maker-video__trigger {
+  min-height: 52px;
+  height: 100%;
+  font-size: 13px;
+}
+
+.media-detail--hero-right .maker-preview-row .maker-video__play {
+  width: 30px;
+  height: 30px;
+}
+
+.media-detail--hero-right .maker-preview-row .media-detail__cta {
+  flex: 1 1 0;
+  width: 0;
+  height: auto;
+  min-height: 52px;
+  margin: 0;
+  padding: 0 10px;
+  gap: 5px;
+  border-radius: 14px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+/* 预览图上方小标题：与分区标题同款，只补一点上方间距 */
+.media-detail--hero-right .media-detail__subh {
+  margin-top: 16px;
+}
+
+.media-detail--hero-right .maker-magnets {
+  gap: 6px;
+}
+
+.media-detail--hero-right .maker-magnet {
+  position: relative;
+  gap: 6px;
+  padding: 9px;
+  padding-right: 96px;
+  border-radius: 14px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, #ffffff 86%, transparent) 0%,
+    color-mix(in srgb, #ffffff 68%, transparent) 100%
+  );
+  box-shadow:
+    0 0 0 0.5px color-mix(in srgb, var(--ink) 8%, transparent),
+    0 1px 2px rgba(15, 20, 30, 0.04);
+  transition:
+    transform 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.media-detail--hero-right .maker-magnet:active {
+  transform: scale(0.994);
+}
+
+.media-detail--hero-right .maker-magnet__head {
+  align-items: center;
+}
+
+.media-detail--hero-right .maker-magnet .maker-magnet__btn {
+  position: absolute;
+  top: 50%;
+  right: 9px;
+  margin: 0;
+  transform: translateY(-50%);
+}
+
+.media-detail--hero-right .maker-magnet__name {
+  font-size: 13.5px;
+  font-weight: 650;
+}
+
+.media-detail--hero-right .maker-magnet__btn {
+  height: 25px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 650;
+  color: var(--login-blue, #007aff);
+  background: color-mix(in srgb, var(--login-blue, #007aff) 10%, transparent);
+}
+
+/* 磁力 / 资源行右侧：复制 + 转存固定上下排列 */
+.media-detail--hero-right .maker-magnet__actions {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
+}
+
+.media-detail--hero-right .maker-magnet .maker-magnet__actions .maker-magnet__btn {
+  position: static;
+  top: auto;
+  right: auto;
+  margin: 0;
+  transform: none;
+  height: 25px;
+  padding: 0 10px;
+  font-size: 11.5px;
+}
+
+.media-detail--hero-right .maker-magnet__actions .maker-magnet__btn--p115 {
+  color: #fff;
+  background: var(--login-blue, #007aff);
+  box-shadow: 0 1px 3px rgba(10, 132, 255, 0.28);
+}
+
+.media-detail--hero-right .maker-magnet__meta {
+  font-size: 11.5px;
+  letter-spacing: 0.01em;
+  color: color-mix(in srgb, var(--ink) 46%, #7d8b9c 54%);
+}
+
+.dark .media-detail--hero-right .maker-magnet {
+  background: linear-gradient(
+    180deg,
+    rgba(120, 120, 128, 0.2) 0%,
+    rgba(120, 120, 128, 0.13) 100%
+  );
+}
+
+.dark .media-detail--hero-right .maker-magnet__btn {
+  color: #7ab6ff;
+  background: rgba(10, 132, 255, 0.18);
+}
+
+/* 暗色下「转存 115」仍保持实心蓝，和亮色一致 */
+.dark .media-detail--hero-right .maker-magnet__actions .maker-magnet__btn--p115,
+.dark .media-detail--hero-right .maker-torrent__actions .maker-magnet__btn--p115 {
+  color: #fff;
+  background: var(--login-blue, #007aff);
+}
+
+.dark .media-detail--hero-right .maker-magnet__meta {
+  color: rgba(235, 235, 245, 0.5);
+}
+
+/* 磁力种子卡片：竖图封面在左，内容在右 */
+.media-detail--hero-right .maker-torrent {
+  position: relative;
+  gap: 10px;
+  padding: 9px;
+  padding-right: 96px;
+  border-radius: 14px;
+  box-shadow:
+    0 0 0 0.5px color-mix(in srgb, var(--ink) 8%, transparent),
+    0 1px 2px rgba(15, 20, 30, 0.04);
+}
+
+.media-detail--hero-right .maker-torrent__cover {
+  order: 1;
+  width: 56px;
+  height: 78px;
+  border-radius: 9px;
+  background: rgba(120, 120, 128, 0.16);
+  box-shadow:
+    0 4px 12px rgba(15, 20, 30, 0.18),
+    0 0 0 0.5px rgba(255, 255, 255, 0.18) inset;
+}
+
+.media-detail--hero-right .maker-torrent__body {
+  order: 2;
+  gap: 4px;
+}
+
+.media-detail--hero-right .maker-torrent__cover img {
+  /* 横版来源图：裁切显示右侧部分 */
+  object-position: 100% 50%;
+}
+
+.media-detail--hero-right .maker-torrent .maker-magnet__head {
+  align-items: center;
+  gap: 8px;
+}
+
+.media-detail--hero-right .maker-torrent .maker-magnet__name {
+  flex: none;
+  max-width: 56%;
+  height: 21px;
+  padding: 0 7px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--login-blue, #007aff);
+  background: color-mix(in srgb, var(--login-blue, #007aff) 10%, transparent);
+}
+
+.media-detail--hero-right .maker-torrent .maker-magnet__btn {
+  position: static;
+  top: auto;
+  right: auto;
+  margin: 0;
+  transform: none;
+  height: 25px;
+  padding: 0 10px;
+  font-size: 11.5px;
+}
+
+/* 卡片右侧操作区：复制磁力 + 转存 115 竖排 */
+.media-detail--hero-right .maker-torrent__actions {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
+}
+
+.media-detail--hero-right .maker-torrent__actions .maker-magnet__btn {
+  position: static;
+  top: auto;
+  right: auto;
+  margin: 0;
+  transform: none;
+  height: 25px;
+  padding: 0 10px;
+  font-size: 11.5px;
+}
+
+.media-detail--hero-right .maker-torrent__actions .maker-magnet__btn--p115 {
+  color: #fff;
+  background: var(--login-blue, #007aff);
+  box-shadow: 0 1px 3px rgba(10, 132, 255, 0.28);
+}
+
+.media-detail--hero-right .maker-torrent__title {
+  font-size: 12.5px;
+  line-height: 1.45;
+  letter-spacing: -0.005em;
+  color: color-mix(in srgb, var(--ink) 76%, #5b6c80 24%);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.media-detail--hero-right .maker-torrent .maker-magnet__meta {
+  font-size: 11px;
+  line-height: 1.45;
+  color: color-mix(in srgb, var(--ink) 44%, #8190a1 56%);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.media-detail--hero-right .maker-torrent__flags {
+  flex: none;
+  gap: 4px;
+  margin: 0;
+  flex-wrap: nowrap;
+}
+
+.media-detail--hero-right .maker-torrent__flags .maker-chip {
+  height: 19px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  color: color-mix(in srgb, var(--login-blue, #007aff) 86%, #1c1c1e 14%);
+  background: color-mix(in srgb, var(--login-blue, #007aff) 9%, transparent);
+  box-shadow: inset 0 0 0 0.5px
+    color-mix(in srgb, var(--login-blue, #007aff) 24%, transparent);
+}
+
+.dark .media-detail--hero-right .maker-torrent__flags .maker-chip {
+  color: #7ab6ff;
+  background: rgba(10, 132, 255, 0.18);
+  box-shadow: inset 0 0 0 0.5px rgba(10, 132, 255, 0.32);
+}
+
+.dark .media-detail--hero-right .maker-torrent .maker-magnet__name {
+  color: #7ab6ff;
+  background: rgba(10, 132, 255, 0.16);
+}
+
+.dark .media-detail--hero-right .maker-torrent__title {
+  color: rgba(235, 235, 245, 0.74);
+}
+
+.dark .media-detail--hero-right .maker-torrent .maker-magnet__meta {
+  color: rgba(235, 235, 245, 0.46);
+}
+
+/* 评论：详情页最多 10 条，其余进评论页 */
+.media-detail--hero-right .maker-reviews__more {
+  width: 100%;
+  height: 36px;
+  margin-top: 10px;
+  border: 0;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  color: var(--login-blue, #007aff);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+
+.media-detail--hero-right .maker-reviews__more:active {
+  background: color-mix(in srgb, var(--ink) 9%, transparent);
+}
+
+.dark .media-detail--hero-right .maker-reviews__more {
+  background: rgba(255, 255, 255, 0.07);
+  color: #7ab6ff;
+}
+
+.media-detail--hero-right .maker-preview {
+  border-radius: 10px;
+  background: rgba(120, 120, 128, 0.12);
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.media-detail--hero-right .maker-video {
+  border-radius: 16px;
+  box-shadow: 0 10px 26px rgba(15, 20, 30, 0.16);
+}
+
+.media-detail--hero-right .maker-video__trigger {
+  min-height: 84px;
+  letter-spacing: -0.01em;
+  background:
+    radial-gradient(
+      120% 150% at 82% 0%,
+      rgba(0, 122, 255, 0.3),
+      transparent 62%
+    ),
+    linear-gradient(150deg, #1b1f27 0%, #0a0c10 100%);
+}
+
+.media-detail--hero-right .maker-video__play {
+  width: 40px;
+  height: 40px;
+  color: #0a0c10;
+  background: rgba(255, 255, 255, 0.94);
+}

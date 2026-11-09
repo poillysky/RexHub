@@ -38,3 +38,14 @@ def require_session(request: Request, token_query: str | None = None) -> dict:
             detail="登录已过期，请重新登录",
         )
     return user
+
+
+def require_admin(request: Request, token_query: str | None = None) -> dict:
+    """在校验会话的基础上要求管理员身份；普通用户抛 403。"""
+    user = require_session(request, token_query)
+    if not user.get("is_admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="需要管理员权限",
+        )
+    return user

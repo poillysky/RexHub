@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import type { MediaCategoryId, MediaItem } from '@/lib/api';
 import { proxiedCoverUrl } from '@/lib/api';
-import { SoftImg } from '@/components/SoftImg';
+import { LazyImg } from '@/components/SoftImg';
 import { MEDIA_CATEGORY_MARK } from './mediaUi';
 
 function typeMark(
@@ -29,6 +29,7 @@ export function MediaPosterCard({
 }) {
   const [gone, setGone] = useState(false);
   const poster = proxiedCoverUrl(item.posterUrl);
+  const title = (item.title || '').trim();
   const rating =
     item.rating != null && Number(item.rating) > 0
       ? Number(item.rating).toFixed(1)
@@ -43,10 +44,10 @@ export function MediaPosterCard({
     >
       <span className="media-poster__frame">
         <span className="media-poster__ph" aria-hidden>
-          {item.title.slice(0, 1)}
+          {title.slice(0, 1) || '影'}
         </span>
         {poster && !gone ? (
-          <SoftImg
+          <LazyImg
             src={poster}
             loading="lazy"
             onError={() => setGone(true)}
@@ -62,7 +63,7 @@ export function MediaPosterCard({
         ) : null}
       </span>
       <span className="media-poster__caption">
-        <span className="media-poster__title">{item.title}</span>
+        <span className="media-poster__title">{title || '未知条目'}</span>
       </span>
     </button>
   );

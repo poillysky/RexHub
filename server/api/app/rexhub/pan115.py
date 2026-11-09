@@ -43,30 +43,9 @@ def _redirect_client_cache() -> None:
 _redirect_client_cache()
 
 REQ_TIMEOUT = 20
-LONG_POLL_TIMEOUT = 45
 CACHE_TTL = 30
-QR_TIMEOUT = 300
 DEFAULT_APP = "alipaymini"
 
-# 支持手机扫码登录的客户端类型（对应 p115client 的 app 参数）
-# 电视端（tv/apple_tv）、桌面端（os_*）、平板端（ipad/115ipad/qipad）的 token
-# 接口不返回 qrcode 字段，115 对这些端走设备码授权，手机扫码会被判为已过期，
-# 因此不在此列出。
-QR_APPS: dict[str, str] = {
-    "alipaymini": "115生活 · 支付宝小程序",
-    "wechatmini": "115生活 · 微信小程序",
-    "web": "网页版（Cookie）",
-    "ios": "115生活 · 苹果端",
-    "115ios": "115 · 苹果端",
-    "android": "115生活 · 安卓端",
-    "115android": "115 · 安卓端",
-    "qandroid": "115管理 · 安卓端",
-    "qios": "115管理 · 苹果端",
-    "harmony": "115 · 鸿蒙端",
-}
-
-_sessions: dict[str, dict[str, Any]] = {}
-_tasks: set[asyncio.Task] = set()
 _cache: dict[str, Any] = {"at": 0.0, "data": None}
 _ua_cache: dict[str, Any] = {"at": 0.0, "value": ""}
 
@@ -80,7 +59,7 @@ class Pan115Error(RuntimeError):
 # ---------------------------------------------------------------------------
 
 def _read_cache() -> dict:
-    """读取账号状态缓存；兼容旧结构（含 cookies 字段），但只取状态字段。"""
+    """读取账号状态缓存（用户名 / VIP / 容量）。"""
     try:
         data = json.loads(AUTH_PATH.read_text("utf-8"))
     except (OSError, ValueError):
@@ -115,25 +94,9 @@ def _parse_cookie(raw: str) -> dict[str, str]:
     return cookies
 
 
-_legacy_migrated = False
-
-
 def _cookies() -> dict[str, str] | None:
-    """当前会话 cookies；旧版 Cookie 文件会在首次调用时迁移进 settings_store。"""
-    global _legacy_migrated
+    """当前会话 cookies（唯一真源：settings_store）。"""
     raw = _settings_cookie()
-    if not raw and not _legacy_migrated:
-        _legacy_migrated = True
-        legacy = _read_cache().get("cookies")
-        if isinstance(legacy, dict) and legacy.get("UID"):
-            joined = "; ".join(f"{k}={v}" for k, v in legacy.items())
-            import app.core.settings_store as settings_store
-
-            prev = settings_store.get_setting(settings_store.P115_KEY) or {}
-            settings_store.put_setting(
-                settings_store.P115_KEY, {**prev, "cookie": joined, "enabled": True}
-            )
-            raw = _settings_cookie()
     if not raw:
         return None
     return _parse_cookie(raw)
@@ -148,7 +111,6 @@ def cookie_string() -> str:
 # Cookie 解析与账号探测
 # ---------------------------------------------------------------------------
 
-_CANON = {"uid": "UID", "cid": "CID", "seid": "SEID", "kid": "KID"}
 
 
 def _num(value: Any) -> int | None:
@@ -636,7 +598,7 @@ def _expires_in(url: str) -> int:
 # ---------------------------------------------------------------------------
 
 _CLOUD_TASK_TTL = 10
-_cloud_task_cache: dict[tuple[int, int, int], tuple[float, dict[str, Any]]] = {}
+_cloud_task_cache: dict[tuple[int, int, int, int], tuple[float, dict[str, Any]]] = {}
 
 
 def _invalidate_cloud_cache() -> None:
@@ -665,14 +627,16 @@ def cloud_tasks(stat: int = 0, page: int = 1, page_size: int = 30) -> dict[str, 
     任务列表与计数并发请求 115（各占一次往返），结果缓存 10 秒：
     切换 Tab、回到页面时直接命中缓存，不再重复等待。
     """
-    key = (stat, max(1, page), min(max(1, page_size), 200))
-    hit = _cloud_task_cache.get(key)
-    if hit and time.time() - hit[0] < _CLOUD_TASK_TTL:
-        return hit[1]
-
     cookies = _cookies()
     if not cookies:
         raise Pan115Error("尚未绑定 115 网盘，请先在设置页配置 Cookie")
+
+    # 缓存按「账号 + 分页」隔离：换了 Cookie 不会读到上一个账号的任务
+    account_key = hash(tuple(sorted(cookies.items())))
+    key = (stat, max(1, page), min(max(1, page_size), 200), account_key)
+    hit = _cloud_task_cache.get(key)
+    if hit and time.time() - hit[0] < _CLOUD_TASK_TTL:
+        return hit[1]
 
     payload = {"page": key[1], "page_size": key[2], "stat": key[0]}
     try:

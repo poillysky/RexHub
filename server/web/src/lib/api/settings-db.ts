@@ -3,19 +3,9 @@
  *
  * 由 lib/api.ts 拆分而来；对外统一从 `@/lib/api` 导入，请不要直接引用本文件。
  */
-import { API_BASE, apiFetch, parseError } from './client';
+import { apiFetch, parseError } from './client';
 import type { Envelope } from './client';
-import type {
-  AuthUser,
-  BrowseResult,
-  FilterSize,
-  FilterTime,
-  MatchMode,
-  ResourceDbConfig,
-  ResourceItem,
-  SearchResult,
-  SortType,
-} from '@/types/resource';
+import type { ResourceDbConfig } from '@/types/resource';
 
 export async function getResourceDb(): Promise<ResourceDbConfig> {
   const res = await apiFetch('/settings/resource-db');
@@ -62,6 +52,34 @@ export type ResourceDbBackupExportResult = {
   tables: Array<{ name: string; rows: number; bytes: number; elapsedMs: number }>;
 };
 
+/** 导出/导入的实时进度（后端按库类型维护单槽） */
+export type DbBackupProgress = {
+  action: 'export' | 'import' | null;
+  percent: number;
+  message: string;
+  running: boolean;
+};
+
+async function fetchBackupProgress(path: string): Promise<DbBackupProgress> {
+  const res = await apiFetch(path);
+  if (!res.ok) throw new Error(await parseError(res));
+  const data = ((await res.json()) as Envelope<DbBackupProgress>).data;
+  return {
+    action: data?.action || null,
+    percent: Math.max(0, Math.min(100, Math.round(Number(data?.percent) || 0))),
+    message: data?.message || '',
+    running: Boolean(data?.running),
+  };
+}
+
+export function getResourceDbBackupProgress(): Promise<DbBackupProgress> {
+  return fetchBackupProgress('/settings/resource-db/backups/progress');
+}
+
+export function getBitmagnetDbBackupProgress(): Promise<DbBackupProgress> {
+  return fetchBackupProgress('/settings/bitmagnet-db/backups/progress');
+}
+
 export async function listResourceDbBackups(): Promise<ResourceDbBackupItem[]> {
   const res = await apiFetch('/settings/resource-db/backups');
   if (!res.ok) throw new Error(await parseError(res));
@@ -73,23 +91,6 @@ export async function exportResourceDbBackup(): Promise<ResourceDbBackupExportRe
   const res = await apiFetch('/settings/resource-db/backups/export', { method: 'POST' });
   if (!res.ok) throw new Error(await parseError(res));
   return ((await res.json()) as Envelope<ResourceDbBackupExportResult>).data;
-}
-
-export async function importResourceDbBackup(
-  filename: string,
-): Promise<{ filename: string; elapsedMs: number; tables: Array<{ name: string; rows: number }> }> {
-  const res = await apiFetch('/settings/resource-db/backups/import', {
-    method: 'POST',
-    body: JSON.stringify({ filename }),
-  });
-  if (!res.ok) throw new Error(await parseError(res));
-  return (
-    (await res.json()) as Envelope<{
-      filename: string;
-      elapsedMs: number;
-      tables: Array<{ name: string; rows: number }>;
-    }>
-  ).data;
 }
 
 export async function uploadImportResourceDbBackup(
@@ -128,23 +129,6 @@ export async function exportBitmagnetDbBackup(): Promise<ResourceDbBackupExportR
   const res = await apiFetch('/settings/bitmagnet-db/backups/export', { method: 'POST' });
   if (!res.ok) throw new Error(await parseError(res));
   return ((await res.json()) as Envelope<ResourceDbBackupExportResult>).data;
-}
-
-export async function importBitmagnetDbBackup(
-  filename: string,
-): Promise<{ filename: string; elapsedMs: number; tables: Array<{ name: string; rows: number }> }> {
-  const res = await apiFetch('/settings/bitmagnet-db/backups/import', {
-    method: 'POST',
-    body: JSON.stringify({ filename }),
-  });
-  if (!res.ok) throw new Error(await parseError(res));
-  return (
-    (await res.json()) as Envelope<{
-      filename: string;
-      elapsedMs: number;
-      tables: Array<{ name: string; rows: number }>;
-    }>
-  ).data;
 }
 
 export async function uploadImportBitmagnetDbBackup(

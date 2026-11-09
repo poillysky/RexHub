@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Spec-driven connection panel shell (TMDB / PanSou / CloudSaver 等共用骨架)。
+ * Spec-driven connection panel shell (TMDB / CloudSaver / AVDB 等共用骨架)。
  * 具体字段与 get/put/test 仍由各面板传入，避免行为漂移。
  */
 
@@ -20,6 +20,7 @@ export function ConnectionPanelShell({
   onSave,
   testLabel = '测试连接',
   saveLabel = '保存',
+  testDisabled,
   saveDisabled,
   children,
 }: {
@@ -33,6 +34,7 @@ export function ConnectionPanelShell({
   onSave: () => void;
   testLabel?: string;
   saveLabel?: string;
+  testDisabled?: boolean;
   saveDisabled?: boolean;
   children: ReactNode;
 }) {
@@ -47,7 +49,7 @@ export function ConnectionPanelShell({
         <button
           type="button"
           className="app-btn-secondary"
-          disabled={busy || loading}
+          disabled={busy || loading || testDisabled}
           onClick={onTest}
         >
           {testLabel}

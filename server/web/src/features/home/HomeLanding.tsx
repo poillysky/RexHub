@@ -1,6 +1,6 @@
 'use client';
 
-import { ClipboardPaste, LayoutGrid, Sparkles } from 'lucide-react';
+import { ClipboardPaste, LayoutGrid } from 'lucide-react';
 import { AppMsg } from '@/components/ui/AppMsg';
 import { HomeSearchField } from './HomeSearchField';
 import type { HomeScreenState } from './useHomeScreen';
@@ -15,7 +15,6 @@ export function HomeLanding({ h }: Props) {
       <div className="home-landing__top">
         <div className="home-landing__top-row">
           <div className="home-landing__brand" aria-label="RexHub">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               className="home-landing__brand-mark"
               src="/brand/logo.png"
@@ -27,16 +26,10 @@ export function HomeLanding({ h }: Props) {
             <span className="home-landing__brand-name">RexHub</span>
           </div>
           <div className="home-landing__toolbar" role="toolbar" aria-label="快捷操作">
-            <button type="button" className="home-landing__chip" onClick={h.browseLatest}>
-              <span className="home-landing__chip-ico" aria-hidden>
-                <Sparkles size={13} strokeWidth={2.4} />
-              </span>
-              <span className="home-landing__chip-txt">最新</span>
-            </button>
             <button
               type="button"
               className="home-landing__chip"
-              onClick={() => h.setBoardsOpen(true)}
+              onClick={() => h.openBoards()}
             >
               <span className="home-landing__chip-ico" aria-hidden>
                 <LayoutGrid size={13} strokeWidth={2.4} />
@@ -58,7 +51,6 @@ export function HomeLanding({ h }: Props) {
       </div>
       <div className="home-landing__main">
         <div className="home-landing__hero">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             className="home-landing__rose"
             src="/brand/logo.png"
@@ -87,7 +79,6 @@ export function HomeLanding({ h }: Props) {
           aria-label="AI 对话搜索"
           onClick={() => h.setChatOpen(true)}
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             className="home-landing__bot-img"
             src="/brand/chat-bot.png"

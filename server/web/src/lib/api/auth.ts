@@ -5,17 +5,7 @@
  */
 import { apiFetch, parseError } from './client';
 import type { Envelope } from './client';
-import type {
-  AuthUser,
-  BrowseResult,
-  FilterSize,
-  FilterTime,
-  MatchMode,
-  ResourceDbConfig,
-  ResourceItem,
-  SearchResult,
-  SortType,
-} from '@/types/resource';
+import type { AuthUser } from '@/types/resource';
 
 export async function authMe(): Promise<AuthUser | null> {
   const res = await apiFetch('/auth/me');
@@ -73,14 +63,40 @@ export async function listUsers(): Promise<AuthUser[]> {
 export async function adminCreateUser(
   username: string,
   password: string,
-  inviteCode: string,
+  isAdmin: boolean,
 ): Promise<AuthUser> {
   const res = await apiFetch('/auth/users', {
     method: 'POST',
-    body: JSON.stringify({ username, password, invite_code: inviteCode }),
+    body: JSON.stringify({
+      username,
+      password,
+      is_admin: isAdmin,
+    }),
   });
   if (!res.ok) throw new Error(await parseError(res));
   return ((await res.json()) as Envelope<AuthUser>).data;
+}
+
+export async function adminSetUserRole(
+  userId: number,
+  isAdmin: boolean,
+): Promise<AuthUser> {
+  const res = await apiFetch(`/auth/users/${userId}/role`, {
+    method: 'PUT',
+    body: JSON.stringify({ is_admin: isAdmin }),
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  return ((await res.json()) as Envelope<AuthUser>).data;
+}
+
+/** 强制下线：返回被吊销的会话数 */
+export async function adminRevokeUserSessions(userId: number): Promise<number> {
+  const res = await apiFetch(`/auth/users/${userId}/sessions/revoke`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  const data = ((await res.json()) as Envelope<{ revoked: number }>).data;
+  return data?.revoked ?? 0;
 }
 
 export async function adminDeleteUser(userId: number): Promise<void> {
@@ -97,5 +113,22 @@ export async function adminResetUserPassword(
     body: JSON.stringify({ new_password: newPassword }),
   });
   if (!res.ok) throw new Error(await parseError(res));
+}
+
+export interface InviteCodes {
+  admin: string;
+  user: string;
+}
+
+export async function fetchInviteCodes(): Promise<InviteCodes> {
+  const res = await apiFetch('/auth/invites');
+  if (!res.ok) throw new Error(await parseError(res));
+  return ((await res.json()) as Envelope<InviteCodes>).data;
+}
+
+export async function rotateInviteCodes(): Promise<InviteCodes> {
+  const res = await apiFetch('/auth/invites/rotate', { method: 'POST' });
+  if (!res.ok) throw new Error(await parseError(res));
+  return ((await res.json()) as Envelope<InviteCodes>).data;
 }
 

@@ -7,8 +7,6 @@
 import { apiFetch, parseError } from './client';
 import type { MediaStream } from './media';
 
-export type AdminOption = { key?: string; label: string; minutes?: number };
-
 async function json<T>(res: Promise<Response> | Response): Promise<T> {
   const r = await res;
   if (!r.ok) throw new Error(await parseError(r));
@@ -194,59 +192,6 @@ export const getAddonMeta = (slug: string, opts: { mediaType: string; id: string
     apiFetch(`/admin/stremio/addons/${encodeURIComponent(slug)}/meta?${params}`),
   );
 };
-
-// ---------- NAS 服务 ----------
-
-export type ServiceItem = {
-  id: string;
-  name: string;
-  category: string;
-  categoryLabel?: string;
-  host: string;
-  port: number;
-  url: string;
-  notes: string;
-  online?: boolean | null;
-  latency?: number | null;
-};
-
-export type ServiceCatalog = {
-  items: ServiceItem[];
-  categories: { key: string; label: string }[];
-};
-
-export const getAdminServices = () =>
-  json<ServiceCatalog>(apiFetch('/admin/services'));
-
-export type ServiceProbe = {
-  items: (ServiceItem & { categoryLabel: string })[];
-  online: number;
-  total: number;
-};
-
-/** App 侧只读服务卡片（带端口探测在线状态），供「服务管理」展示。 */
-export async function getServiceProbes(): Promise<ServiceProbe> {
-  const res = await apiFetch('/services');
-  if (!res.ok) throw new Error(await parseError(res));
-  const data = (await res.json()) as { items?: ServiceItem[] };
-  const items = (data.items || []).map((item) => ({
-    ...item,
-    categoryLabel: item.categoryLabel || '',
-  }));
-  return {
-    items,
-    total: items.length,
-    online: items.filter((item) => item.online).length,
-  };
-}
-
-export const saveAdminService = (body: Partial<ServiceItem>) =>
-  json<{ ok: boolean; id: string; created: boolean }>(
-    send('/admin/services', 'POST', body),
-  );
-
-export const deleteAdminService = (id: string) =>
-  json<{ ok: boolean }>(send(`/admin/services/${encodeURIComponent(id)}`, 'DELETE'));
 
 // ---------- 115 网盘 ----------
 

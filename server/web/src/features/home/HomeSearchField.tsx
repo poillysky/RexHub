@@ -6,6 +6,13 @@ import { useOverlay } from '@/components/overlay/OverlayContext';
 import { fetchTranslate } from '@/lib/api';
 import { SourceSwitch, type SearchScope } from './SourceSwitch';
 
+/** 聚焦并全选输入内容，供快捷键与清空复用 */
+function focusAndSelect(input: HTMLInputElement | null) {
+  if (!input) return;
+  input.focus();
+  input.select();
+}
+
 /** 色花一体式搜索框：hero 居中 / compact 顶栏 + 译英 */
 export function HomeSearchField({
   draft,
@@ -46,11 +53,12 @@ export function HomeSearchField({
       const isShortcut =
         ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') || e.key === '/';
       if (!isShortcut) return;
+      // 弹窗打开时不抢焦点，避免焦点落到被遮挡的搜索框
+      if (document.querySelector('[aria-modal="true"], .app-modal-overlay')) return;
       const input = inputRef.current;
       if (!input || input.offsetParent === null) return;
       e.preventDefault();
-      input.focus();
-      input.select();
+      focusAndSelect(input);
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
@@ -84,8 +92,18 @@ export function HomeSearchField({
     }
   }
 
+  // 空输入点搜索时把焦点交还输入框，避免按钮点了没反应
+  function handleSubmit() {
+    if (!draft.trim()) {
+      focusAndSelect(inputRef.current);
+      return;
+    }
+    onSubmit();
+  }
+
   return (
     <div
+      role="search"
       className={
         size === 'hero'
           ? 'home-search__field home-search__field--hero'
@@ -121,11 +139,13 @@ export function HomeSearchField({
             value={draft}
             onChange={(e) => onDraftChange(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                (e.target as HTMLInputElement).blur();
-                onSubmit();
-              }
+              if (e.key !== 'Enter') return;
+              // 输入法确认候选词时按 Enter 不应当触发搜索
+              if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+              e.preventDefault();
+              if (!draft.trim()) return;
+              (e.target as HTMLInputElement).blur();
+              onSubmit();
             }}
           />
         </label>
@@ -140,7 +160,11 @@ export function HomeSearchField({
               type="button"
               className="home-search__clear"
               aria-label="清除"
-              onClick={onClear}
+              onClick={() => {
+                onClear();
+                // 清空后焦点留在输入框，方便直接重新输入
+                focusAndSelect(inputRef.current);
+              }}
             >
               <X size={16} strokeWidth={2.25} aria-hidden />
             </button>
@@ -151,6 +175,7 @@ export function HomeSearchField({
               className="home-search__translate"
               title="翻译为英文"
               aria-label="翻译为英文"
+              aria-busy={translating || undefined}
               disabled={translating}
               onClick={() => void handleTranslate()}
             >
@@ -167,7 +192,7 @@ export function HomeSearchField({
             aria-label="搜索"
             aria-busy={busy || undefined}
             disabled={busy}
-            onClick={onSubmit}
+            onClick={handleSubmit}
           >
             {busy ? (
               <span className="home-search__spinner" aria-hidden />

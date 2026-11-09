@@ -7,7 +7,7 @@ import type { P115PanelState } from './useP115Panel';
 /** 115 登录卡片：扫码 / Cookie 登录，未登录时展示在概览页顶部 */
 export function P115LoginCard({ p }: { p: P115PanelState }) {
   const {
-    locked,
+    settingsLocked,
     startQrLogin,
     qrBusy,
     qrOpen,
@@ -47,7 +47,7 @@ export function P115LoginCard({ p }: { p: P115PanelState }) {
           <button
             type="button"
             className="app-btn-primary app-btn-block"
-            disabled={locked}
+            disabled={settingsLocked}
             onClick={() => void startQrLogin()}
           >
             <QrCode size={15} strokeWidth={2.25} aria-hidden />
@@ -79,7 +79,6 @@ export function P115LoginCard({ p }: { p: P115PanelState }) {
           </div>
           <div className="p115-qr__frame">
             {qrSession?.qrImage ? (
-              // eslint-disable-next-line @next/next/no-img-element
               <img className="p115-qr__img" src={qrSession.qrImage} alt="115 登录二维码" />
             ) : (
               <p className="p115-qr__placeholder">{qrBusy ? '生成中…' : '暂无二维码'}</p>
@@ -115,7 +114,7 @@ export function P115LoginCard({ p }: { p: P115PanelState }) {
             <button
               type="button"
               className="p115-qr-trigger"
-              disabled={locked}
+              disabled={settingsLocked}
               onClick={() => setShowCookieEdit(true)}
             >
               更换
@@ -136,12 +135,12 @@ export function P115LoginCard({ p }: { p: P115PanelState }) {
                   skipBlurSave.current = false;
                   return;
                 }
-                if (!locked && cookie.trim()) void onSave();
+                if (!settingsLocked && cookie.trim()) void onSave();
               }}
               autoCapitalize="off"
               autoCorrect="off"
               spellCheck={false}
-              disabled={locked}
+              disabled={settingsLocked}
               aria-label="115 Cookie"
             />
           </div>
@@ -149,11 +148,12 @@ export function P115LoginCard({ p }: { p: P115PanelState }) {
             <button
               type="button"
               className="settings-text-link"
-              disabled={locked}
-              onMouseDown={() => {
+              disabled={settingsLocked}
+              onPointerDown={() => {
                 skipBlurSave.current = true;
               }}
               onClick={() => {
+                skipBlurSave.current = false;
                 setCookie('');
                 setShowCookieEdit(false);
                 cancelQrLogin();
@@ -170,7 +170,7 @@ export function P115LoginCard({ p }: { p: P115PanelState }) {
           <button
             type="button"
             className="app-btn-secondary"
-            disabled={locked}
+            disabled={settingsLocked}
             onClick={() => void onTest()}
           >
             测试

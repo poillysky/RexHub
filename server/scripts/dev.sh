@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# 本地一键启动：API（8787）+ PWA Web（3020）。Ctrl+C 同时退出。
+# 本地一键启动：API（8020）+ PWA Web（3020）。Ctrl+C 同时退出。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-API_PORT="${API_PORT:-8787}"
+API_PORT="${API_PORT:-8020}"
 WEB_PORT="${WEB_PORT:-3020}"
 
 # Node 装在 ~/.local/node（未进系统 PATH 时也能跑）

@@ -170,14 +170,31 @@ def addon_streams(
 # ---------- NAS 服务卡片 ----------
 
 
+# 对外展示的服务字段白名单：密码、API Key、数据库账号等凭据一律不出接口。
+_SERVICE_PUBLIC_FIELDS = (
+    "id",
+    "name",
+    "category",
+    "host",
+    "port",
+    "url",
+    "notes",
+    "updated_at",
+    "online",
+    "latency",
+)
+
+
+def _public_service(item: dict) -> dict:
+    view = {key: item[key] for key in _SERVICE_PUBLIC_FIELDS if key in item}
+    view["categoryLabel"] = services_store.category_label(str(item.get("category") or ""))
+    return view
+
+
 @router.get("/services")
-def list_services(_user: dict = Depends(require_user)) -> dict:
-    items = services_store.list_services()
+def list_services(_admin: dict = Depends(require_admin)) -> dict:
     return {
-        "items": [
-            {**item, "categoryLabel": services_store.category_label(str(item.get("category") or ""))}
-            for item in items
-        ],
+        "items": [_public_service(item) for item in services_store.list_services()],
         "categories": [
             {"key": key, "label": label} for key, label in services_store.CATEGORIES.items()
         ],

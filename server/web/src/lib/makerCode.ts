@@ -79,59 +79,6 @@ function resolveMakerShape(prefix: string): MakerCodeShape {
   return "std";
 }
 
-/** 与后端 search_av.resolve_maker_shape / prefix_format_meta 对齐的规范样例 */
-export function makerCodeFormatMeta(prefix: string): {
-  shape: MakerCodeShape;
-  codeFormat: string;
-  codeSample: string;
-  padEditable: boolean;
-} {
-  const key = prefixKey(prefix);
-  const compact = westernKey(prefix);
-  const shape = resolveMakerShape(prefix);
-  if (shape === "western_date") {
-    return {
-      shape,
-      codeFormat: "western_date",
-      codeSample: `${compact || key}.2026.01.15`,
-      padEditable: false,
-    };
-  }
-  if (shape === "fc2ppv" || shape === "fc2") {
-    return {
-      shape: "fc2",
-      codeFormat: "fc2",
-      codeSample: "FC2-1234567",
-      padEditable: false,
-    };
-  }
-  if (shape === "date6") {
-    const label = DATE6_PREFIX_LABEL[key] || DATE6_PREFIX_LABEL[compact] || key;
-    return {
-      shape,
-      codeFormat: "date6",
-      codeSample: `${label}-260115-001`,
-      padEditable: false,
-    };
-  }
-  if (shape === "alnum_id") {
-    const sample =
-      key === "H0930"
-        ? "H0930-ORI123"
-        : key === "C0930"
-          ? "C0930-ABC123"
-          : key === "H4610"
-            ? "H4610-ABC123"
-            : `${key}-ABC123`;
-    return { shape, codeFormat: "alnum_id", codeSample: sample, padEditable: false };
-  }
-  return {
-    shape: "std",
-    codeFormat: "digit_pad",
-    codeSample: `${key}-001`,
-    padEditable: true,
-  };
-}
 
 export { resolveMakerShape };
 

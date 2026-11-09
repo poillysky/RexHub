@@ -4,7 +4,7 @@
 import logging
 import re
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 from urllib.parse import quote
 
@@ -186,6 +186,12 @@ _CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
 # 中文 ILIKE 只能全表扫（~200 万行，单次 20s）。库里若有 cjk_bigrams(text)
 # 函数，就追加 `@> 二元组数组` 让 GIN 索引先缩范围；没有则保持原样。
 _cjk_index_state: bool | None = None
+
+
+def reset_cjk_state() -> None:
+    """DSN 变更后清掉探测缓存，让新库重新判断是否有 cjk_bigrams。"""
+    global _cjk_index_state
+    _cjk_index_state = None
 
 
 def _cjk_bigrams(text: str) -> list[str]:
@@ -716,8 +722,19 @@ def search(
                 )
 
             merged: dict[Any, dict[str, Any]] = {}
+            parts: list[list[dict[str, Any]]] = []
+            first_error: Exception | None = None
             with ThreadPoolExecutor(max_workers=min(len(terms), 4)) as pool:
-                parts = list(pool.map(_query_term, range(len(terms))))
+                futures = [pool.submit(_query_term, i) for i in range(len(terms))]
+                for fut in as_completed(futures):
+                    try:
+                        parts.append(fut.result())
+                    except Exception as e:  # noqa: BLE001 - 单个别名失败不拖垮整次搜索
+                        if first_error is None:
+                            first_error = e
+            # 全部分别名都失败才向上抛；部分失败仍返回能拿到的结果
+            if first_error is not None and not parts:
+                raise first_error
             for part in parts:
                 for r in part:
                     h = r["info_hash"]

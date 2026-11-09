@@ -8,7 +8,8 @@ from typing import Any
 from urllib.parse import quote, urljoin
 
 from .fetch import UpstreamError, proxy_get
-from .streams import _direct_rank, _normalize, _resource_names, _text
+from .collect import resource_names as _resource_names, text as _text
+from .streams import _direct_rank, _normalize
 
 MAX_ITEMS = 100
 # 目录额外参数：只透传 Stremio 协议里约定的几种，避免把任意 query 拼进上游

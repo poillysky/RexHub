@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useRef } from 'react';
-import type { HapticInput } from 'web-haptics';
+import type { HapticInput, WebHaptics } from 'web-haptics';
 
 /**
  * Centralized haptic feedback for all interactive elements.
@@ -74,10 +74,10 @@ function getHapticType(el: HTMLElement): string | null {
 }
 
 export function HapticsProvider({ children }: { children: React.ReactNode }) {
-  const hapticsRef = useRef<any>(null);
+  const hapticsRef = useRef<WebHaptics | null>(null);
 
   useEffect(() => {
-    let haptics: any = null;
+    let haptics: WebHaptics | null = null;
     let destroyed = false;
 
     // Dynamic import so the class is instantiated purely client-side
@@ -99,17 +99,17 @@ export function HapticsProvider({ children }: { children: React.ReactNode }) {
 
       switch (type) {
         case 'success':
-          hapticsRef.current.trigger('success');
+          void hapticsRef.current.trigger('success');
           break;
         case 'error':
-          hapticsRef.current.trigger('error');
+          void hapticsRef.current.trigger('error');
           break;
         case 'nudge':
-          hapticsRef.current.trigger('nudge');
+          void hapticsRef.current.trigger('nudge');
           break;
         case 'light':
         default:
-          hapticsRef.current.trigger('light');
+          void hapticsRef.current.trigger('light');
           break;
       }
     };

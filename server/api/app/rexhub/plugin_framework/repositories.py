@@ -26,7 +26,6 @@ from urllib.parse import quote, urlparse
 
 from app.rexhub import network_store
 from app.rexhub.plugin_framework import manifest as manifest_mod
-from app.rexhub.plugin_framework import store
 
 FETCH_TIMEOUT = 20
 MAX_INDEX_BYTES = 2 * 1024 * 1024

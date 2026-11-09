@@ -4,98 +4,78 @@
 例如 ``GET {base}/api/v1/user/?apikey=<令牌>``。
 """
 
-
 import hashlib
-import re
 import time
 from typing import Any
 
-import httpx
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 import app.core.settings_store as settings_store
-from app.search.pansou_client import _normalize_base
+from app.auth.routes import require_admin
+from app.core.moviepilot_config import (
+    MOVIEPILOT_KEY,
+    MoviePilotConfigBody,
+    MoviePilotTestBody,
+    _probe,
+    get_config,
+)
+from app.core.moviepilot_http import (
+    _CACHE_TTL_S,
+    _DOWNLOAD_CACHE_TTL_S,
+    _PT_SEARCH_BUDGET_S,
+    _SEARCH_CACHE_TTL_S,
+    _detail_cache,
+    _douban_personage_id,
+    _download_cache,
+    _fetch_list,
+    _mp_get,
+    _mp_get_rows,
+    _mp_post,
+    _person_cache,
+    _search_cache,
+    _seg,
+)
+from app.core.moviepilot_normalize import (
+    _num,
+    _normalize_detail,
+    _normalize_item,
+    _normalize_person,
+    _normalize_related,
+    _normalize_torrent,
+    _promo_rank,
+    _text,
+)
+from app.rexhub.auth_guard import require_session
+from app.core.service_config import normalize_base
 
-router = APIRouter(tags=["moviepilot"])
-
-MOVIEPILOT_KEY = "moviepilot"
-DEFAULT_BASE_URL = ""
-DEFAULT_TIMEOUT_S = 15.0
-# 需要鉴权的轻量接口：能返回用户列表即代表地址与令牌都有效
-_PROBE_PATH = "/api/v1/user/"
-
-
-class MoviePilotConfigBody(BaseModel):
-    enabled: bool = True
-    baseUrl: str = Field(default=DEFAULT_BASE_URL, max_length=300)
-    apiKey: str = Field(default="", max_length=200)
-    timeoutSec: float = Field(default=DEFAULT_TIMEOUT_S, ge=5, le=120)
-    note: str = Field(default="", max_length=200)
-
-
-def get_config(*, include_secrets: bool = False) -> dict[str, Any]:
-    raw = settings_store.get_setting(MOVIEPILOT_KEY) or {}
-    if not isinstance(raw, dict):
-        raw = {}
-    base = _normalize_base(str(raw.get("baseUrl") or ""))
-    api_key = str(raw.get("apiKey") or "").strip()
-    enabled = raw.get("enabled")
-    if enabled is None:
-        enabled = True
-    timeout = float(raw.get("timeoutSec") or DEFAULT_TIMEOUT_S)
-    out: dict[str, Any] = {
-        "enabled": bool(enabled),
-        "baseUrl": base,
-        "timeoutSec": max(5.0, min(timeout, 120.0)),
-        "hasApiKey": bool(api_key),
-        "note": str(raw.get("note") or ""),
-    }
-    if include_secrets:
-        out["apiKey"] = api_key
-    return out
-
-
-def _probe(base: str, api_key: str, timeout: float) -> dict[str, Any]:
-    try:
-        with httpx.Client(
-            timeout=timeout, trust_env=False, follow_redirects=True
-        ) as client:
-            resp = client.get(f"{base}{_PROBE_PATH}", params={"apikey": api_key})
-    except Exception as e:
-        return {"ok": False, "message": f"连接失败: {e}"}
-    if resp.status_code == 401:
-        return {"ok": False, "message": "令牌无效（401）"}
-    if resp.status_code >= 400:
-        return {"ok": False, "message": f"HTTP {resp.status_code}"}
-    try:
-        payload = resp.json()
-    except ValueError:
-        return {"ok": False, "message": "响应不是 JSON"}
-    if payload.get("success") is False:
-        return {"ok": False, "message": str(payload.get("message") or "接口返回异常")}
-    users = payload.get("data")
-    return {
-        "ok": True,
-        "message": "连接成功",
-        "userCount": len(users) if isinstance(users, list) else 0,
-    }
+router = APIRouter(tags=["moviepilot"], dependencies=[Depends(require_session)])
 
 
 def _wrap(data: Any, message: str = "ok", status: int = 200) -> dict[str, Any]:
     return {"data": data, "message": message, "status": status}
 
 
-@router.get("/moviepilot/health")
-def moviepilot_health() -> dict[str, Any]:
-    cfg = get_config(include_secrets=True)
-    base = str(cfg["baseUrl"])
-    if not cfg["enabled"]:
-        return _wrap({"ok": False, "configured": False, "baseUrl": base, "message": "未启用"})
+@router.post("/moviepilot/test")
+def test_moviepilot_settings(
+    body: MoviePilotTestBody,
+    _admin: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """用请求里的草稿配置探测连接，不落库；令牌留空时复用已保存的令牌。"""
+    prev = get_config(include_secrets=True)
+    if body.baseUrl.strip():
+        base = normalize_base(body.baseUrl)
+        if not base:
+            raise HTTPException(status_code=400, detail="地址需为 http(s):// 开头的有效地址")
+    else:
+        base = str(prev["baseUrl"])
     if not base:
-        return _wrap({"ok": False, "configured": False, "baseUrl": "", "message": "未配置服务地址"})
-    result = _probe(base, str(cfg.get("apiKey") or ""), float(cfg["timeoutSec"]))
-    return _wrap({"configured": True, "baseUrl": base, **result})
+        raise HTTPException(status_code=400, detail="请填写服务地址")
+    api_key = body.apiKey.strip() or str(prev.get("apiKey") or "")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="请填写 API 令牌")
+    timeout = body.timeoutSec or float(prev["timeoutSec"])
+    return _wrap(_probe(base, api_key, timeout))
 
 
 @router.get("/settings/moviepilot")
@@ -135,130 +115,6 @@ _ALLOWED_PARAMS = {
     "status",
     "country",
 }
-_SOURCE_MAP = {
-    "themoviedb": "tmdb",
-    "tmdb": "tmdb",
-    "douban": "douban",
-    "bangumi": "bangumi",
-    "anilist": "anilist",
-}
-_ID_FIELDS = {
-    "tmdb": "tmdb_id",
-    "douban": "douban_id",
-    "bangumi": "bangumi_id",
-    "anilist": "anilist_id",
-}
-_CACHE_TTL_S = 300.0
-_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
-
-
-def _media_kind(raw: dict[str, Any]) -> str:
-    kind = str(raw.get("type") or "")
-    if "剧" in kind or kind.lower() in ("tv", "series"):
-        return "tv"
-    return "movie"
-
-
-def _normalize_item(raw: Any) -> dict[str, Any] | None:
-    if not isinstance(raw, dict):
-        return None
-    source = _SOURCE_MAP.get(str(raw.get("media_source") or "").strip().lower())
-    if not source:
-        return None
-    mid = raw.get(_ID_FIELDS[source])
-    if mid is None or str(mid).strip() == "":
-        return None
-    title = str(raw.get("title") or "").strip()
-    if not title:
-        return None
-    aka: list[str] = []
-    for key in ("en_title", "hk_title", "tw_title", "sg_title"):
-        value = str(raw.get(key) or "").strip()
-        if value and value != title and value not in aka:
-            aka.append(value)
-    rating: float | None
-    try:
-        rating = float(raw.get("vote_average"))
-    except (TypeError, ValueError):
-        rating = None
-    if rating is not None and rating <= 0:
-        rating = None
-    year = str(raw.get("year") or "").strip()
-    if not year:
-        m = re.match(
-            r"^(\d{4})",
-            str(raw.get("release_date") or raw.get("first_air_date") or ""),
-        )
-        year = m.group(1) if m else ""
-    poster = str(raw.get("poster_path") or "").strip()
-    return {
-        "source": source,
-        "id": str(mid).strip(),
-        "mediaType": _media_kind(raw),
-        "title": title,
-        "originalTitle": str(raw.get("original_title") or "").strip() or None,
-        "aka": aka,
-        "posterUrl": poster or None,
-        "year": year or None,
-        "rating": rating,
-        "overview": str(raw.get("overview") or "").strip() or None,
-    }
-
-
-def _fetch_list(path: str, params: dict[str, str]) -> list[dict[str, Any]]:
-    key = path + "?" + "&".join(f"{k}={v}" for k, v in sorted(params.items()))
-    now = time.time()
-    hit = _cache.get(key)
-    if hit and now - hit[0] < _CACHE_TTL_S:
-        return hit[1]
-
-    cfg = get_config(include_secrets=True)
-    if not cfg["enabled"]:
-        raise HTTPException(status_code=400, detail="MoviePilot 未启用")
-    base = str(cfg["baseUrl"])
-    if not base:
-        raise HTTPException(status_code=400, detail="MoviePilot 未配置服务地址")
-    api_key = str(cfg.get("apiKey") or "")
-    try:
-        with httpx.Client(
-            timeout=float(cfg["timeoutSec"]), trust_env=False, follow_redirects=True
-        ) as client:
-            resp = client.get(
-                f"{base}/api/v1/{path}", params={**params, "apikey": api_key}
-            )
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"MoviePilot 请求失败: {e}") from e
-    if resp.status_code >= 400:
-        raise HTTPException(
-            status_code=502, detail=f"MoviePilot 返回 HTTP {resp.status_code}"
-        )
-    try:
-        payload = resp.json()
-    except ValueError as e:
-        raise HTTPException(status_code=502, detail="MoviePilot 响应不是 JSON") from e
-    if payload.get("success") is False:
-        raise HTTPException(
-            status_code=502,
-            detail=str(payload.get("message") or "MoviePilot 接口返回异常"),
-        )
-    raw_items = payload.get("data")
-    if not isinstance(raw_items, list):
-        raw_items = []
-    items: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for raw in raw_items:
-        item = _normalize_item(raw)
-        if not item:
-            continue
-        uniq = f"{item['source']}:{item['id']}"
-        if uniq in seen:
-            continue
-        seen.add(uniq)
-        items.append(item)
-    _cache[key] = (now, items)
-    if len(_cache) > 256:
-        _cache.clear()
-    return items
 
 
 @router.get("/moviepilot/list")
@@ -292,216 +148,6 @@ _DETAIL_SOURCES = {
     "anilist": "anilist",
 }
 _TYPE_NAMES = {"movie": "电影", "tv": "电视剧"}
-_TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/"
-_detail_cache: dict[str, tuple[float, Any]] = {}
-
-
-def _text(value: Any) -> str:
-    return str(value or "").strip()
-
-
-def _mp_get(
-    path: str, params: dict[str, str] | None = None, *, timeout_s: float | None = None
-) -> Any:
-    cfg = get_config(include_secrets=True)
-    if not cfg["enabled"]:
-        raise HTTPException(status_code=400, detail="MoviePilot 未启用")
-    base = str(cfg["baseUrl"])
-    if not base:
-        raise HTTPException(status_code=400, detail="MoviePilot 未配置服务地址")
-    try:
-        with httpx.Client(
-            timeout=float(timeout_s or cfg["timeoutSec"]),
-            trust_env=False,
-            follow_redirects=True,
-        ) as client:
-            resp = client.get(
-                f"{base}/api/v1/{path}",
-                params={**(params or {}), "apikey": str(cfg.get("apiKey") or "")},
-            )
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"MoviePilot 请求失败: {e}") from e
-    if resp.status_code >= 400:
-        raise HTTPException(
-            status_code=502, detail=f"MoviePilot 返回 HTTP {resp.status_code}"
-        )
-    try:
-        payload = resp.json()
-    except ValueError as e:
-        raise HTTPException(status_code=502, detail="MoviePilot 响应不是 JSON") from e
-    if isinstance(payload, dict) and payload.get("success") is False:
-        raise HTTPException(
-            status_code=502,
-            detail=str(payload.get("message") or "MoviePilot 接口返回异常"),
-        )
-    return payload.get("data") if isinstance(payload, dict) else payload
-
-
-def _mp_post(
-    path: str, body: dict[str, Any], *, timeout_s: float | None = None
-) -> dict[str, Any]:
-    """POST 到 MoviePilot，返回原始响应体（success=false 交由调用方判定）。"""
-    cfg = get_config(include_secrets=True)
-    if not cfg["enabled"]:
-        raise HTTPException(status_code=400, detail="MoviePilot 未启用")
-    base = str(cfg["baseUrl"])
-    if not base:
-        raise HTTPException(status_code=400, detail="MoviePilot 未配置服务地址")
-    try:
-        with httpx.Client(
-            timeout=float(timeout_s or cfg["timeoutSec"]),
-            trust_env=False,
-            follow_redirects=True,
-        ) as client:
-            resp = client.post(
-                f"{base}/api/v1/{path}",
-                params={"apikey": str(cfg.get("apiKey") or "")},
-                json=body,
-            )
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"MoviePilot 请求失败: {e}") from e
-    if resp.status_code == 401:
-        raise HTTPException(status_code=502, detail="MoviePilot 令牌无效（401）")
-    try:
-        payload = resp.json()
-    except ValueError as e:
-        raise HTTPException(
-            status_code=502, detail=f"MoviePilot 返回 HTTP {resp.status_code}"
-        ) from e
-    if not isinstance(payload, dict):
-        raise HTTPException(status_code=502, detail="MoviePilot 响应格式异常")
-    return payload
-
-
-def _mp_get_rows(path: str) -> list[dict[str, Any]]:
-    try:
-        rows = _mp_get(path)
-    except HTTPException:
-        return []
-    return [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
-
-
-def _avatar_url(person: dict[str, Any]) -> str | None:
-    profile = _text(person.get("profile_path"))
-    if profile:
-        if profile.startswith(("http://", "https://")):
-            return profile
-        return f"{_TMDB_IMAGE_BASE}w185{profile}"
-    for key in ("images", "avatar"):
-        value = person.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-        if isinstance(value, dict):
-            for size in ("large", "medium", "normal", "small", "grid"):
-                url = _text(value.get(size))
-                if url:
-                    return url
-    return None
-
-
-def _cast_rows(raw: Any) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for person in raw if isinstance(raw, list) else []:
-        if not isinstance(person, dict):
-            continue
-        name = _text(person.get("name"))
-        if not name:
-            continue
-        pid = person.get("id")
-        rows.append(
-            {
-                "id": _text(pid) or None,
-                "name": name,
-                "avatarUrl": _avatar_url(person),
-            }
-        )
-    return rows
-
-
-def _normalize_detail(
-    raw: Any, source: str, media_id: str, media_type: str
-) -> dict[str, Any]:
-    row = raw if isinstance(raw, dict) else {}
-    title = _text(row.get("title")) or _text(row.get("name"))
-    original = _text(row.get("original_title")) or _text(row.get("original_name"))
-    aka: list[str] = []
-    for value in [original, row.get("en_title"), *(row.get("names") or [])]:
-        text = _text(value)
-        if text and text != title and text not in aka:
-            aka.append(text)
-        if len(aka) >= 8:
-            break
-
-    genres: list[str] = []
-    for genre in row.get("genres") or []:
-        text = _text(genre.get("name") if isinstance(genre, dict) else genre)
-        if text and text not in genres:
-            genres.append(text)
-
-    countries: list[str] = []
-    for country in row.get("production_countries") or []:
-        text = _text(country.get("name") if isinstance(country, dict) else country)
-        if text and text not in countries:
-            countries.append(text)
-
-    runtime = row.get("runtime")
-    if not runtime:
-        run_times = row.get("episode_run_time")
-        if isinstance(run_times, list) and run_times:
-            runtime = run_times[0]
-    try:
-        runtime_min = int(float(runtime)) if runtime else None
-    except (TypeError, ValueError):
-        runtime_min = None
-
-    try:
-        rating = float(row.get("vote_average"))
-    except (TypeError, ValueError):
-        rating = None
-    if rating is not None and rating <= 0:
-        rating = None
-
-    year = _text(row.get("year"))
-    if not year:
-        match = re.match(
-            r"^(\d{4})",
-            _text(row.get("release_date") or row.get("first_air_date")),
-        )
-        year = match.group(1) if match else ""
-
-    poster = _text(row.get("poster_path"))
-    return {
-        "source": source,
-        "id": _text(media_id),
-        "mediaType": media_type,
-        "title": title,
-        "originalTitle": original or None,
-        "aka": aka,
-        "posterUrl": poster or None,
-        "year": year or None,
-        "rating": rating,
-        "overview": _text(row.get("overview")) or None,
-        "cast": _cast_rows(row.get("actors")),
-        "genres": genres,
-        "runtime": runtime_min,
-        "countries": countries,
-        "imdbId": _text(row.get("imdb_id")) or None,
-    }
-
-
-def _normalize_related(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    items: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for row in rows:
-        item = _normalize_item(row)
-        if not item:
-            continue
-        uniq = f"{item['source']}:{item['id']}"
-        if uniq in seen:
-            continue
-        seen.add(uniq)
-        items.append(item)
-    return items
 
 
 @router.get("/moviepilot/detail")
@@ -515,6 +161,7 @@ def moviepilot_detail(
     media_id = id.strip()
     if not media_id:
         raise HTTPException(status_code=400, detail="缺少条目 ID")
+    media_seg = _seg(media_id, "条目 ID")
 
     cache_key = f"detail:{key_source}:{media_id}:{media_type}"
     now = time.time()
@@ -523,7 +170,7 @@ def moviepilot_detail(
         return _wrap(hit[1])
 
     raw = _mp_get(
-        f"media/{media_id}",
+        f"media/{media_seg}",
         {
             "media_source": _DETAIL_SOURCES[key_source],
             "type_name": _TYPE_NAMES[media_type],
@@ -547,6 +194,7 @@ def moviepilot_related(
     media_id = id.strip()
     if not media_id:
         raise HTTPException(status_code=400, detail="缺少条目 ID")
+    media_seg = _seg(media_id, "条目 ID")
 
     cache_key = f"related:{key_source}:{media_id}:{media_type}"
     now = time.time()
@@ -559,22 +207,22 @@ def moviepilot_related(
     recommendations: list[dict[str, Any]] = []
     if key_source == "tmdb":
         recommendations = _normalize_related(
-            _mp_get_rows(f"tmdb/recommend/{media_id}/{kind}")
+            _mp_get_rows(f"tmdb/recommend/{media_seg}/{kind}")
         )
         similar = _normalize_related(
-            _mp_get_rows(f"tmdb/similar/{media_id}/{kind}")
+            _mp_get_rows(f"tmdb/similar/{media_seg}/{kind}")
         )
     elif key_source == "douban":
         recommendations = _normalize_related(
-            _mp_get_rows(f"douban/recommend/{media_id}/{kind}")
+            _mp_get_rows(f"douban/recommend/{media_seg}/{kind}")
         )
     elif key_source == "bangumi":
         recommendations = _normalize_related(
-            _mp_get_rows(f"bangumi/recommend/{media_id}")
+            _mp_get_rows(f"bangumi/recommend/{media_seg}")
         )
     else:
         recommendations = _normalize_related(
-            _mp_get_rows(f"anilist/recommend/{media_id}")
+            _mp_get_rows(f"anilist/recommend/{media_seg}")
         )
 
     data = {"similar": similar, "recommendations": recommendations}
@@ -600,63 +248,6 @@ _PERSON_SOURCES = {
     "anilist": "anilist",
 }
 _PERSON_PAGE_SIZE = 24
-_GENDER_LABELS = {1: "女", 2: "男"}
-_DEPARTMENT_LABELS = {
-    "acting": "演员",
-    "directing": "导演",
-    "writing": "编剧",
-    "production": "制片",
-    "camera": "摄影",
-    "sound": "音效",
-    "art": "美术",
-    "editing": "剪辑",
-    "costume & make-up": "服装",
-}
-_person_cache: dict[str, tuple[float, Any]] = {}
-
-# 豆瓣详情里的演员是旧版 celebrity id，MoviePilot 只认新版 personage id：
-# 用旧 id 请求 MP 只会拿到空壳（name 为 null）。这里借豆瓣 rexxar 接口取
-# personage id（payload.id）做一次换算并缓存。
-_DOUBAN_REXXAR_UA = (
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) "
-    "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1"
-)
-_DOUBAN_MAP_TTL_S = 86400.0
-_douban_personage_cache: dict[str, tuple[float, str | None]] = {}
-
-
-def _douban_personage_id(celebrity_id: str) -> str | None:
-    key = celebrity_id.strip()
-    if not key:
-        return None
-    now = time.time()
-    hit = _douban_personage_cache.get(key)
-    if hit and now - hit[0] < _DOUBAN_MAP_TTL_S:
-        return hit[1]
-    resolved: str | None = None
-    try:
-        with httpx.Client(
-            timeout=8.0, trust_env=False, follow_redirects=True
-        ) as client:
-            resp = client.get(
-                f"https://m.douban.com/rexxar/api/v2/celebrity/{key}",
-                headers={
-                    "User-Agent": _DOUBAN_REXXAR_UA,
-                    "Referer": f"https://m.douban.com/movie/celebrity/{key}/",
-                },
-            )
-        if resp.status_code < 400:
-            payload = resp.json()
-            if str(payload.get("subtype") or "") == "person":
-                pid = str(payload.get("id") or "").strip()
-                if pid and pid != key:
-                    resolved = pid
-    except Exception:
-        resolved = None
-    if len(_douban_personage_cache) > 512:
-        _douban_personage_cache.clear()
-    _douban_personage_cache[key] = (now, resolved)
-    return resolved
 
 
 def _person_source(source: str) -> tuple[str, str]:
@@ -675,78 +266,6 @@ def _resolve_person_id(src: str, person_id: str) -> str:
     return _douban_personage_id(person_id) or person_id
 
 
-def _person_gender(value: Any) -> str | None:
-    text = _text(value)
-    if not text:
-        return None
-    if text.isdigit():
-        return _GENDER_LABELS.get(int(text))
-    low = text.lower()
-    if low in ("male", "man"):
-        return "男"
-    if low in ("female", "woman"):
-        return "女"
-    return text
-
-
-def _normalize_person(raw: Any, source: str, person_id: str) -> dict[str, Any]:
-    row = raw if isinstance(raw, dict) else {}
-    birthday = _text(row.get("birthday")) or None
-    deathday = _text(row.get("deathday")) or None
-    place = _text(row.get("place_of_birth")) or None
-    gender = _person_gender(row.get("gender"))
-    imdb_id = _text(row.get("imdb_id")) or None
-    aliases: list[str] = []
-    for value in row.get("also_known_as") or []:
-        text = _text(value)
-        if not text:
-            continue
-        # 豆瓣把「性别：男」「出生日期：…」这类字段塞进 also_known_as，
-        # 这里拆回结构化字段，避免影人页把整句当别名展示。
-        label, sep, val = text.partition("：")
-        val = val.strip()
-        if sep and val:
-            if label == "性别" and not gender:
-                gender = val
-                continue
-            if label == "出生日期" and not birthday:
-                birthday = val
-                continue
-            if label == "出生地" and not place:
-                place = val
-                continue
-            if label == "IMDb编号" and not imdb_id:
-                imdb_id = val
-                continue
-            if label in ("更多中文名", "更多外文名"):
-                for part in re.split(r"[/、]", val):
-                    part = part.strip()
-                    if part and part not in aliases:
-                        aliases.append(part)
-                continue
-            # 其余「家庭成员：…」「职业：…」等只是豆瓣的元信息，不是别名
-            continue
-        if text not in aliases:
-            aliases.append(text)
-    department = _text(row.get("known_for_department"))
-    return {
-        "source": source,
-        "id": person_id,
-        "name": _text(row.get("name")) or _text(row.get("original_name")),
-        "originalName": _text(row.get("original_name")) or None,
-        "avatarUrl": _avatar_url(row),
-        "birthday": birthday,
-        "deathday": deathday,
-        "placeOfBirth": place,
-        "gender": gender,
-        "department": _DEPARTMENT_LABELS.get(department.lower(), department)
-        or None,
-        "aliases": aliases[:8],
-        "biography": _text(row.get("biography")) or None,
-        "imdbId": imdb_id,
-    }
-
-
 @router.get("/moviepilot/person")
 def moviepilot_person(source: str, id: str) -> dict[str, Any]:
     src, key_source = _person_source(source)
@@ -760,13 +279,15 @@ def moviepilot_person(source: str, id: str) -> dict[str, Any]:
     if hit and now - hit[0] < _CACHE_TTL_S:
         return _wrap(hit[1])
 
-    person = _normalize_person(_mp_get(f"{src}/person/{pid}"), key_source, pid)
+    person = _normalize_person(
+        _mp_get(f"{src}/person/{_seg(pid, '影人 ID')}"), key_source, pid
+    )
     if not person["name"] and key_source == "douban":
         mapped = _douban_personage_id(pid)
         if mapped:
             pid = mapped
             person = _normalize_person(
-                _mp_get(f"{src}/person/{pid}"), key_source, pid
+                _mp_get(f"{src}/person/{_seg(pid, '影人 ID')}"), key_source, pid
             )
     if not person["name"]:
         raise HTTPException(status_code=404, detail="MoviePilot 未找到该影人")
@@ -793,7 +314,7 @@ def moviepilot_person_credits(
         return _wrap(hit[1])
 
     rows = _mp_get(
-        f"{src}/person/credits/{_resolve_person_id(src, pid)}",
+        f"{src}/person/credits/{_seg(_resolve_person_id(src, pid), '影人 ID')}",
         {"page": str(page_no)},
     )
     raw_rows = rows if isinstance(rows, list) else []
@@ -902,75 +423,6 @@ def moviepilot_media_search(
 # 敏感字段，这里只挑前端需要的字段透出。
 # ---------------------------------------------------------------------------
 
-_SEARCH_CACHE_TTL_S = 120.0
-_search_cache: dict[str, tuple[float, Any]] = {}
-
-# 提交下载时要把搜索结果里的 torrent_info（含站点 Cookie / UA）原样回传给 MP，
-# 这些字段不适合透出到前端，按资源生成 downloadKey 在服务端短时缓存。
-_DOWNLOAD_CACHE_TTL_S = 1800.0
-_download_cache: dict[
-    str, tuple[float, list[tuple[dict[str, Any], dict[str, Any]]]]
-] = {}
-
-
-def _num(value: Any) -> float | None:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _promo_rank(value: Any) -> int:
-    """促销标签优先级：免费 > 折扣 / 2X > 普通，用于跨站合并时取最优。"""
-    text = _text(value).upper()
-    if not text:
-        return 0
-    if "免费" in text:
-        return 3
-    if "2X" in text or "%" in text:
-        return 2
-    return 1
-
-
-def _normalize_torrent(raw: Any) -> dict[str, Any] | None:
-    if not isinstance(raw, dict):
-        return None
-    info = raw.get("torrent_info")
-    if not isinstance(info, dict):
-        return None
-    title = _text(info.get("title"))
-    if not title:
-        return None
-    labels = info.get("labels")
-    meta = raw.get("meta_info")
-    if not isinstance(meta, dict):
-        meta = {}
-    return {
-        "site": _text(info.get("site_name")) or _text(info.get("site")),
-        "title": title,
-        "description": _text(info.get("description"))[:400] or None,
-        "category": _text(info.get("category")) or None,
-        "size": _num(info.get("size")),
-        "seeders": int(_num(info.get("seeders")) or 0),
-        "peers": int(_num(info.get("peers")) or 0),
-        "grabs": int(_num(info.get("grabs")) or 0),
-        "pubdate": _text(info.get("pubdate")) or None,
-        "dateElapsed": _text(info.get("date_elapsed")) or None,
-        "volumeFactor": _text(info.get("volume_factor")) or None,
-        # 以下字段与 MoviePilot 资源筛选条一一对应（直接取 meta_info，不做标题推测）
-        "seasonEpisode": _text(meta.get("season_episode")) or None,
-        "releaseGroup": _text(meta.get("resource_team")) or None,
-        "webSource": _text(meta.get("web_source")) or None,
-        "edition": _text(meta.get("edition")) or None,
-        "resolution": _text(meta.get("resource_pix")) or None,
-        "videoCode": _text(meta.get("video_encode")) or None,
-        "downloadVolumeFactor": _num(info.get("downloadvolumefactor")),
-        "hitAndRun": bool(info.get("hit_and_run")),
-        "labels": [str(x) for x in labels] if isinstance(labels, list) else [],
-        "pageUrl": _text(info.get("page_url")) or None,
-        "downloadUrl": _text(info.get("enclosure")) or None,
-    }
-
 
 @router.get("/moviepilot/search")
 def moviepilot_search(
@@ -992,7 +444,7 @@ def moviepilot_search(
     by_imdb = area.strip().lower() == "imdbid" and bool(media_id and mp_source)
 
     if by_imdb:
-        path = f"search/media/{media_id}"
+        path = f"search/media/{_seg(media_id, 'IMDb ID')}"
         params = {
             "media_source": mp_source,
             "mtype": mp_type,
@@ -1020,10 +472,16 @@ def moviepilot_search(
     # MP 按页返回结果，这里逐页拉全量后一次下发，前端不再翻页
     rows: list[Any] = []
     seen_titles: set[str] = set()
+    deadline = time.monotonic() + _PT_SEARCH_BUDGET_S
     for page_no in range(1, 11):
+        remaining = deadline - time.monotonic()
+        if remaining <= 1.0:
+            break
         try:
             chunk = _mp_get(
-                path, {**params, "page": str(page_no)}, timeout_s=timeout_s
+                path,
+                {**params, "page": str(page_no)},
+                timeout_s=min(timeout_s, remaining),
             )
         except HTTPException:
             # 超出末页时 MP 返回 success=false「未搜索到任何资源」，视为已到末页
@@ -1186,7 +644,10 @@ def _pick_download_candidate(
 
 
 @router.post("/moviepilot/download")
-def moviepilot_download(body: MoviePilotDownloadBody) -> dict[str, Any]:
+def moviepilot_download(
+    body: MoviePilotDownloadBody,
+    _user: dict = Depends(require_session),
+) -> dict[str, Any]:
     """提交下载任务到 MoviePilot，返回任务 hash 供前端轮询。"""
     key = body.key.strip()
     hit = _download_cache.get(key)
@@ -1261,24 +722,24 @@ def moviepilot_download_status(
 
 
 @router.put("/settings/moviepilot")
-def put_moviepilot_settings(body: MoviePilotConfigBody) -> dict[str, Any]:
-    base = _normalize_base(body.baseUrl)
+def put_moviepilot_settings(
+    body: MoviePilotConfigBody,
+    _admin: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    base = normalize_base(body.baseUrl)
     if not base:
-        raise HTTPException(status_code=400, detail="baseUrl 不能为空")
-    prev = settings_store.get_setting(MOVIEPILOT_KEY) or {}
-    if not isinstance(prev, dict):
-        prev = {}
+        raise HTTPException(status_code=400, detail="地址需为 http(s):// 开头的有效地址")
     api_key = body.apiKey.strip()
-    if not api_key:
-        api_key = str(prev.get("apiKey") or "")
-    settings_store.put_setting(
-        MOVIEPILOT_KEY,
-        {
+    note = body.note.strip() if body.note is not None else None
+
+    def _merge(prev: dict[str, Any]) -> dict[str, Any]:
+        return {
             "enabled": body.enabled,
             "baseUrl": base,
-            "apiKey": api_key,
+            "apiKey": api_key or str(prev.get("apiKey") or ""),
             "timeoutSec": body.timeoutSec,
-            "note": body.note.strip(),
-        },
-    )
+            "note": note if note is not None else str(prev.get("note") or ""),
+        }
+
+    settings_store.update_setting(MOVIEPILOT_KEY, _merge)
     return _wrap(get_config(include_secrets=False), "saved")

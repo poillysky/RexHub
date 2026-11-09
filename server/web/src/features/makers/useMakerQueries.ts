@@ -1,8 +1,7 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import {
-  fetchMakerAccount,
   fetchMakerActorDetail,
   fetchMakerActorRecommend,
   fetchMakerActors,
@@ -35,22 +34,29 @@ import {
   type MakerSearchType,
 } from '@/lib/api/makers';
 
-export function useMakerRank(category: MakerCategoryId, period: MakerPeriod) {
+export function useMakerRank(
+  category: MakerCategoryId,
+  period: MakerPeriod,
+  enabled = true,
+) {
   return useQuery({
     queryKey: ['maker-rank', category, period],
     queryFn: ({ signal }) => fetchMakerRank({ category, period, signal }),
     staleTime: 5 * 60 * 1000,
+    enabled,
   });
 }
 
 export function useMakerPlayback(
   period: MakerPeriod,
   filterBy: MakerPlaybackFilter = 'all',
+  enabled = true,
 ) {
   return useQuery({
     queryKey: ['maker-playback', period, filterBy],
     queryFn: ({ signal }) => fetchMakerPlayback({ period, filterBy, signal }),
     staleTime: 5 * 60 * 1000,
+    enabled,
   });
 }
 
@@ -59,12 +65,15 @@ export function useMakerLatest(
   page: number,
   sortBy: MakerLatestSort = 'update',
   filterBy: MakerLatestFilter = 'all',
+  enabled = true,
 ) {
   return useQuery({
     queryKey: ['maker-latest', category, page, sortBy, filterBy],
     queryFn: ({ signal }) =>
       fetchMakerLatest({ category, page, sortBy, filterBy, signal }),
     staleTime: 2 * 60 * 1000,
+    placeholderData: keepPreviousData,
+    enabled,
   });
 }
 
@@ -72,11 +81,14 @@ export function useMakerTop(
   category: MakerCategoryId,
   page: number,
   year = '',
+  enabled = true,
 ) {
   return useQuery({
     queryKey: ['maker-top', category, page, year],
     queryFn: ({ signal }) => fetchMakerTop({ category, page, year, signal }),
     staleTime: 5 * 60 * 1000,
+    placeholderData: keepPreviousData,
+    enabled,
   });
 }
 
@@ -89,11 +101,12 @@ export function useMakerYears(enabled = true) {
   });
 }
 
-export function useMakerRecommend() {
+export function useMakerRecommend(enabled = true) {
   return useQuery({
     queryKey: ['maker-recommend'],
     queryFn: ({ signal }) => fetchMakerRecommend(signal),
     staleTime: 10 * 60 * 1000,
+    enabled,
   });
 }
 
@@ -111,6 +124,7 @@ export function useMakerReviews(movieId: string, page: number) {
     queryFn: ({ signal }) => fetchMakerReviews({ movieId, page, signal }),
     enabled: !!movieId,
     staleTime: 5 * 60 * 1000,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -119,6 +133,7 @@ export function useMakerActors(category: MakerCategoryId, page: number) {
     queryKey: ['maker-actors', category, page],
     queryFn: ({ signal }) => fetchMakerActors({ category, page, signal }),
     staleTime: 10 * 60 * 1000,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -208,6 +223,7 @@ export function useMakerMovieSearch(
       }),
     enabled: keyword.length > 0,
     staleTime: 5 * 60 * 1000,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -217,6 +233,7 @@ export function useMakerMovies(name: string, page: number) {
     queryFn: ({ signal }) => fetchMakerMovies({ name, page, signal }),
     enabled: !!name.trim(),
     staleTime: 5 * 60 * 1000,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -281,14 +298,6 @@ export function useMakerRecentViewed() {
   });
 }
 
-export function useMakerAccount() {
-  return useQuery({
-    queryKey: ['maker-account'],
-    queryFn: ({ signal }) => fetchMakerAccount(signal),
-    staleTime: 10 * 60 * 1000,
-  });
-}
-
 export function useMakerTorrents(
   keyword: string,
   page: number,
@@ -301,5 +310,6 @@ export function useMakerTorrents(
       fetchMakerTorrents({ keyword: kw, page, exact, signal }),
     enabled: kw.length > 0,
     staleTime: 5 * 60 * 1000,
+    placeholderData: keepPreviousData,
   });
 }

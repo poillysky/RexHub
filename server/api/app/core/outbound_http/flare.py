@@ -10,10 +10,9 @@ import httpx
 
 from .classify import looks_blocked_html
 from .clearance import _cookies_to_header, remember_clearance
-from .proxy import normalize_flaresolverr_url, resolve_flaresolverr_url, resolve_scrape_proxy_url
+from .proxy import normalize_flaresolverr_url, resolve_flaresolverr_url, resolve_proxy_url
 from .shared import _host_key, log
 
-_DEFAULT_FLARE_PORT = 8191
 # 对齐 MDCS：单共享 session 可闲置较久；负载靠 monitor 回收控制
 _SESSION_IDLE_MS = 25 * 60 * 1000
 _FLARE_MIN_GAP_MS = 120
@@ -247,7 +246,7 @@ def flaresolverr_request_full(
         raise RuntimeError("未启用 FlareSolverr")
 
     max_timeout = max(10000, int(max_timeout_ms))
-    proxy = resolve_scrape_proxy_url() if use_proxy else ""
+    proxy = resolve_proxy_url() if use_proxy else ""
     wait_s = max(0, min(30, int(wait_in_seconds or 0)))
     host = _host_key(url) or "default"
     pad = (

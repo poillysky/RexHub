@@ -224,15 +224,6 @@ export function buildMediaSearchQuery(
   return buildMediaSearchTerms(item).join('，');
 }
 
-/** 盘搜 / CloudSaver：优先中文词，其次主名。 */
-export function pickCloudSearchKeyword(
-  item: Pick<MediaItem, 'title' | 'originalTitle' | 'aka'>,
-): string {
-  const terms = buildMediaSearchTerms(item, { maxTerms: 4, maxLen: 80 });
-  const zh = terms.find((t) => /[\u4e00-\u9fff]/.test(t));
-  return (zh || terms[0] || String(item.title || '').trim()).trim();
-}
-
 /** 影视 / 片商跳转仓库：双库同搜 */
 export function openHomeSearch(
   names: string[] | string,

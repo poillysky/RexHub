@@ -467,16 +467,6 @@ def _description_lines_cached(text: str) -> tuple[tuple[str, str], ...]:
     return tuple(known + rest)
 
 
-def format_description_lines(description: str | None) -> list[dict[str, str]]:
-    text = (description or "").strip()
-    if not text:
-        return []
-    return [
-        {"label": label, "value": value}
-        for label, value in _description_lines_cached(text)
-    ]
-
-
 def get_description_field(description: str | None, label: str) -> str | None:
     text = (description or "").strip()
     if not text:

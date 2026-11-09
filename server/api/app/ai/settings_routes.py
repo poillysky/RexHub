@@ -7,7 +7,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.auth.routes import get_optional_user, require_user
+from app.auth.routes import require_admin
 import app.core.settings_store as settings_store
 from app.ai.config import (
     AI_ASSISTANT_KEY,
@@ -219,6 +219,7 @@ def _merge_llm_put(prev: dict[str, Any], body: AiLlmBody) -> dict[str, Any]:
             default=DEFAULT_LLM_BASE,
         ),
         "model": str(body.model or prev.get("model") or DEFAULT_LLM_MODEL).strip() or DEFAULT_LLM_MODEL,
+        "models": prev.get("models") if isinstance(prev.get("models"), list) else [],
         "apiKey": next_key or prev_key,
         "promptPostProcessing": str(
             body.prompt_post_processing
@@ -316,7 +317,7 @@ def _merge_embed_put(prev: dict[str, Any], body: AiEmbedBody) -> dict[str, Any]:
 
 
 @router.get("/presets", response_model=Envelope)
-def get_ai_presets(_user: dict[str, Any] | None = Depends(get_optional_user)) -> Envelope:
+def get_ai_presets(_user: dict[str, Any] | None = Depends(require_admin)) -> Envelope:
     return Envelope(
         data={
             "chatSources": CHAT_SOURCES,
@@ -340,6 +341,7 @@ class AiWebSearchBody(BaseModel):
 
 
 class AiAssistantBody(BaseModel):
+    model: str | None = None
     suggest_chips: list[str] | None = Field(default=None, alias="suggestChips")
     system_prompt: str | None = Field(default=None, alias="systemPrompt")
     tools: dict[str, bool] | None = None
@@ -348,7 +350,7 @@ class AiAssistantBody(BaseModel):
 
 
 @router.get("/web-search", response_model=Envelope)
-def get_ai_web_search(_user: dict[str, Any] | None = Depends(get_optional_user)) -> Envelope:
+def get_ai_web_search(_user: dict[str, Any] | None = Depends(require_admin)) -> Envelope:
     data = web_search_public(settings_store.get_setting(AI_WEB_SEARCH_KEY))
     return Envelope(data=data, message="ok")
 
@@ -356,7 +358,7 @@ def get_ai_web_search(_user: dict[str, Any] | None = Depends(get_optional_user))
 @router.put("/web-search", response_model=Envelope)
 def put_ai_web_search(
     body: AiWebSearchBody,
-    _user: dict[str, Any] = Depends(require_user),
+    _user: dict[str, Any] = Depends(require_admin),
 ) -> Envelope:
     prev = settings_store.get_setting(AI_WEB_SEARCH_KEY) or {}
     if not isinstance(prev, dict):
@@ -384,7 +386,7 @@ def put_ai_web_search(
 
 
 @router.get("/assistant", response_model=Envelope)
-def get_ai_assistant(_user: dict[str, Any] | None = Depends(get_optional_user)) -> Envelope:
+def get_ai_assistant(_user: dict[str, Any] | None = Depends(require_admin)) -> Envelope:
     data = assistant_public(settings_store.get_setting(AI_ASSISTANT_KEY))
     return Envelope(data=data, message="ok")
 
@@ -392,7 +394,7 @@ def get_ai_assistant(_user: dict[str, Any] | None = Depends(get_optional_user)) 
 @router.put("/assistant", response_model=Envelope)
 def put_ai_assistant(
     body: AiAssistantBody,
-    _user: dict[str, Any] = Depends(require_user),
+    _user: dict[str, Any] = Depends(require_admin),
 ) -> Envelope:
     from app.ai.config import _normalize_assistant_tools
 
@@ -413,7 +415,13 @@ def put_ai_assistant(
         tools_out = _normalize_assistant_tools(body.tools)
     else:
         tools_out = _normalize_assistant_tools(prev.get("tools") or prev.get("enabledTools"))
+    model = (
+        body.model
+        if body.model is not None
+        else prev.get("model") or ""
+    )
     next_cfg = {
+        "model": str(model or "").strip(),
         "suggestChips": chips_out if isinstance(chips_out, list) else [],
         "systemPrompt": str(system or ""),
         "tools": tools_out,
@@ -426,7 +434,7 @@ def put_ai_assistant(
 
 
 @router.get("/llm", response_model=Envelope)
-def get_ai_llm(_user: dict[str, Any] | None = Depends(get_optional_user)) -> Envelope:
+def get_ai_llm(_user: dict[str, Any] | None = Depends(require_admin)) -> Envelope:
     data = llm_public(settings_store.get_setting(AI_LLM_KEY))
     return Envelope(data=data, message="ok")
 
@@ -434,7 +442,7 @@ def get_ai_llm(_user: dict[str, Any] | None = Depends(get_optional_user)) -> Env
 @router.put("/llm", response_model=Envelope)
 def put_ai_llm(
     body: AiLlmBody,
-    _user: dict[str, Any] = Depends(require_user),
+    _user: dict[str, Any] = Depends(require_admin),
 ) -> Envelope:
     prev = settings_store.get_setting(AI_LLM_KEY) or {}
     next = _merge_llm_put(prev, body)
@@ -447,7 +455,7 @@ def put_ai_llm(
 @router.post("/llm/connect", response_model=Envelope)
 async def connect_ai_llm(
     body: AiLlmConnectBody,
-    _user: dict[str, Any] = Depends(require_user),
+    _user: dict[str, Any] = Depends(require_admin),
 ) -> Envelope:
     stored = settings_store.get_setting(AI_LLM_KEY) or {}
     api_key = _resolve_llm_key(body.api_key, stored)
@@ -485,6 +493,8 @@ async def connect_ai_llm(
         except Exception:
             models = []
     current = str(stored.get("model") or DEFAULT_LLM_MODEL).strip()
+    if models:
+        settings_store.put_setting(AI_LLM_KEY, {**stored, "models": models})
     msg = f"连接成功 · {len(models)} 个模型" if models else "连接成功"
     return Envelope(
         data={
@@ -501,7 +511,7 @@ async def connect_ai_llm(
 @router.post("/llm/test", response_model=Envelope)
 async def test_ai_llm(
     body: AiLlmTestBody,
-    _user: dict[str, Any] = Depends(require_user),
+    _user: dict[str, Any] = Depends(require_admin),
 ) -> Envelope:
     stored = settings_store.get_setting(AI_LLM_KEY) or {}
     merged = _merge_llm_put(stored, body)
@@ -542,7 +552,7 @@ async def test_ai_llm(
 
 
 @router.get("/embed", response_model=Envelope)
-def get_ai_embed(_user: dict[str, Any] | None = Depends(get_optional_user)) -> Envelope:
+def get_ai_embed(_user: dict[str, Any] | None = Depends(require_admin)) -> Envelope:
     data = embed_public(settings_store.get_setting(AI_EMBED_KEY))
     return Envelope(data=data, message="ok")
 
@@ -550,7 +560,7 @@ def get_ai_embed(_user: dict[str, Any] | None = Depends(get_optional_user)) -> E
 @router.put("/embed", response_model=Envelope)
 def put_ai_embed(
     body: AiEmbedBody,
-    _user: dict[str, Any] = Depends(require_user),
+    _user: dict[str, Any] = Depends(require_admin),
 ) -> Envelope:
     prev = settings_store.get_setting(AI_EMBED_KEY) or {}
     next = _merge_embed_put(prev, body)
@@ -569,7 +579,7 @@ def put_ai_embed(
 @router.post("/embed/connect", response_model=Envelope)
 async def connect_ai_embed(
     body: AiEmbedConnectBody,
-    _user: dict[str, Any] = Depends(require_user),
+    _user: dict[str, Any] = Depends(require_admin),
 ) -> Envelope:
     stored = settings_store.get_setting(AI_EMBED_KEY) or {}
     merged = _merge_embed_put(
@@ -688,7 +698,7 @@ async def connect_ai_embed(
 @router.post("/embed/test", response_model=Envelope)
 async def test_ai_embed(
     body: AiEmbedTestBody,
-    _user: dict[str, Any] = Depends(require_user),
+    _user: dict[str, Any] = Depends(require_admin),
 ) -> Envelope:
     stored = settings_store.get_setting(AI_EMBED_KEY) or {}
     merged = _merge_embed_put(stored, body)
@@ -709,7 +719,7 @@ async def test_ai_embed(
 @router.post("/embed/download", response_model=Envelope)
 def download_ai_embed(
     body: AiEmbedBody,
-    _user: dict[str, Any] = Depends(require_user),
+    _user: dict[str, Any] = Depends(require_admin),
 ) -> Envelope:
     """按当前配置下载本地向量模型；已缓存则跳过。"""
     stored = settings_store.get_setting(AI_EMBED_KEY) or {}

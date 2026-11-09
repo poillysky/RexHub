@@ -155,6 +155,17 @@ def _stored_embed() -> dict[str, Any]:
     return raw if isinstance(raw, dict) else {}
 
 
+def _clean_model_list(raw: Any) -> list[str]:
+    if not isinstance(raw, list):
+        return []
+    out: list[str] = []
+    for item in raw:
+        name = _strip(item if isinstance(item, str) else None)
+        if name and name not in out:
+            out.append(name)
+    return out[:80]
+
+
 def _merge_llm_stored(stored: dict[str, Any]) -> dict[str, Any]:
     api_key = _strip(stored.get("apiKey") or stored.get("api_key"))
     base_url = normalize_openai_base(
@@ -169,6 +180,7 @@ def _merge_llm_stored(stored: dict[str, Any]) -> dict[str, Any]:
         "apiMode": _strip(stored.get("apiMode") or stored.get("api_mode") or "chat") or "chat",
         "baseUrl": base_url,
         "model": model,
+        "models": _clean_model_list(stored.get("models")),
         "apiKey": api_key,
         "promptPostProcessing": _strip(stored.get("promptPostProcessing") or stored.get("prompt_post_processing") or ""),
         "customIncludeHeaders": _strip(stored.get("customIncludeHeaders") or stored.get("custom_include_headers") or ""),
@@ -270,6 +282,7 @@ def llm_public(raw: dict[str, Any] | None = None) -> dict[str, Any]:
         "apiMode": cfg["apiMode"],
         "baseUrl": cfg["baseUrl"],
         "model": cfg["model"],
+        "models": cfg["models"],
         "promptPostProcessing": cfg["promptPostProcessing"],
         "customIncludeHeaders": cfg["customIncludeHeaders"],
         "customIncludeBody": cfg["customIncludeBody"],
@@ -517,6 +530,7 @@ def resolve_assistant_config() -> dict[str, Any]:
     system = _strip(stored.get("systemPrompt") or stored.get("system_prompt")) or SYSTEM_PROMPT
     tools = _normalize_assistant_tools(stored.get("tools") or stored.get("enabledTools"))
     return {
+        "model": _strip(stored.get("model") or ""),
         "systemPrompt": system,
         "suggestChips": chips,
         "tools": tools,
@@ -561,6 +575,7 @@ def assistant_public(raw: dict[str, Any] | None = None) -> dict[str, Any]:
     system = _strip(stored.get("systemPrompt") or stored.get("system_prompt")) or SYSTEM_PROMPT
     tools = _normalize_assistant_tools(stored.get("tools") or stored.get("enabledTools"))
     return {
+        "model": _strip(stored.get("model") or ""),
         "systemPrompt": system,
         "suggestChips": chips,
         "tools": tools,

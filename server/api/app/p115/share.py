@@ -17,15 +17,9 @@ from app.p115.client import (
     human_error,
     normalize_cookie,
 )
+from app.p115.naming import ARCHIVE_RE, PASSWORD_TAG_RE
 
 log = logging.getLogger("p115-share")
-
-# 文件夹 / 压缩包名里的密码标记：xxx [密码 abc] / xxx【密码:abc】（兼容旧标记）
-PASSWORD_TAG_RE = re.compile(
-    r"(?:【\s*(?:解压)?密码\s*[:：]\s*[^】]*】|\[\s*密码\s*[:：]?\s*[^\]]*\])"
-)
-# 转存时会标注密码的压缩包后缀
-ARCHIVE_RE = re.compile(r"\.(zip|rar|7z)$", re.I)
 
 SHARE_URL_RE = re.compile(
     r"(?:https?://)?(?:www\.)?(115cdn\.com|115\.com)/s/([A-Za-z0-9]+)(?:\?([^\s#]*))?",
@@ -219,20 +213,34 @@ def _post_share_receive(
         return {"ok": False, "message": str(err) or "分享转存请求失败"}
 
 
-def _folder_snapshot(folder_cid: str) -> dict[str, tuple[str, bool]]:
-    """目标目录当前的顶层条目（id → 名称、是否文件夹），用于对比转存新增了哪些。"""
-    try:
-        from app.rexhub import pan115
+LIST_PAGE = 200
+MAX_LIST_PAGES = 20
 
-        data = pan115.list_files(folder_cid or "0", 0, 200)
-    except Exception as err:  # noqa: BLE001 - 标记失败不影响转存结果
-        log.info("list folder %s for password tag failed: %s", folder_cid, err)
-        return {}
-    return {
-        str(item.get("id")): (str(item.get("name") or ""), bool(item.get("is_dir")))
-        for item in data.get("items") or []
-        if item.get("id")
-    }
+
+def _folder_snapshot(folder_cid: str) -> dict[str, tuple[str, bool]] | None:
+    """目标目录当前的顶层条目（id → 名称、是否文件夹），用于对比转存新增了哪些。
+
+    目录可能超过一页，必须翻完；任何一页失败返回 None，调用方放弃标注密码。
+    """
+    from app.rexhub import pan115
+
+    snapshot: dict[str, tuple[str, bool]] = {}
+    offset = 0
+    for _ in range(MAX_LIST_PAGES):
+        try:
+            data = pan115.list_files(folder_cid or "0", offset, LIST_PAGE)
+        except Exception as err:  # noqa: BLE001 - 标记失败不影响转存结果
+            log.info("list folder %s for password tag failed: %s", folder_cid, err)
+            return None
+        items = data.get("items") or []
+        for item in items:
+            fid = str(item.get("id") or "")
+            if fid:
+                snapshot[fid] = (str(item.get("name") or ""), bool(item.get("is_dir")))
+        if len(items) < LIST_PAGE:
+            break
+        offset += LIST_PAGE
+    return snapshot
 
 
 def _tagged_name(name: str, is_dir: bool, pwd: str) -> str:
@@ -253,14 +261,16 @@ def _tagged_name(name: str, is_dir: bool, pwd: str) -> str:
 
 def _tag_received_items(
     folder_cid: str,
-    before: dict[str, tuple[str, bool]],
+    before: dict[str, tuple[str, bool]] | None,
     password: str,
 ) -> int:
     """给本次转存新增的压缩包 / 文件夹名追加 ` [密码 xxx]`，解压时直接读名字。"""
     pwd = str(password or "").strip()
-    if not pwd:
+    if not pwd or before is None:
         return 0
     after = _folder_snapshot(folder_cid)
+    if after is None:
+        return 0
     pairs: list[tuple[str, str]] = []
     for fid, (name, is_dir) in after.items():
         if fid in before or not name or PASSWORD_TAG_RE.search(name):
@@ -318,7 +328,7 @@ def receive_115_shares(
                 )
                 continue
 
-            before = _folder_snapshot(folder_cid or "0") if fallback_password else {}
+            before = _folder_snapshot(folder_cid or "0") if fallback_password else None
             result = _post_share_receive(
                 client,
                 cookie,

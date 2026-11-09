@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Search } from 'lucide-react';
 import type { MediaItem, MediaSourceId } from '@/lib/api';
 import { SEARCH_KEYWORD_LENGTH_MIN } from '@/config/search';
@@ -10,16 +10,23 @@ import { useMediaSearch } from './useMediaQueries';
 export function MediaSearchBody({
   source,
   initialQuery = '',
+  initialPage = 1,
   onOpen,
+  onStateChange,
 }: {
   source: MediaSourceId;
   initialQuery?: string;
+  /** 从详情返回时恢复页码 */
+  initialPage?: number;
   onOpen: (item: MediaItem) => void;
+  /** 把关键词与页码回传给页面栈，返回时可原样恢复 */
+  onStateChange?: (state: { q: string; page: number }) => void;
 }) {
   const [draft, setDraft] = useState(initialQuery);
   const [query, setQuery] = useState(initialQuery.trim());
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(() => Math.max(1, initialPage));
   const [formErr, setFormErr] = useState('');
+  const rootRef = useRef<HTMLDivElement>(null);
 
   const result = useMediaSearch({
     source,
@@ -30,7 +37,8 @@ export function MediaSearchBody({
   const items: MediaItem[] = result.data?.items || [];
   const terms = Array.isArray(result.data?.terms) ? result.data.terms : [];
   const hasMore = Boolean(result.data?.hasMore);
-  const loading = result.isPending || result.isPlaceholderData;
+  // query 为空时查询是 disabled，isPending 会一直为 true，不能当成加载中
+  const loading = Boolean(query) && (result.isPending || result.isPlaceholderData);
   const rawErr = result.isError
     ? result.error instanceof Error
       ? result.error.message
@@ -47,12 +55,20 @@ export function MediaSearchBody({
     setFormErr('');
     setPage(1);
     setQuery(next);
+    onStateChange?.({ q: next, page: 1 });
+    rootRef.current?.closest('.app-push__body')?.scrollTo({ top: 0 });
+  }
+
+  function goPage(next: number) {
+    setPage(next);
+    onStateChange?.({ q: query, page: next });
+    rootRef.current?.closest('.app-push__body')?.scrollTo({ top: 0 });
   }
 
   const multi = terms.length > 1;
 
   return (
-    <div className="media-search">
+    <div className="media-search" ref={rootRef}>
       <form
         className="media-search__bar"
         onSubmit={(e) => {
@@ -72,6 +88,7 @@ export function MediaSearchBody({
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             placeholder="片名… 多部用逗号/顿号分隔"
+            aria-label="搜索片名"
             enterKeyHint="search"
             autoCapitalize="off"
             autoCorrect="off"
@@ -126,13 +143,13 @@ export function MediaSearchBody({
         </div>
       ) : null}
 
-      {!loading && !err && !multi && (page > 1 || hasMore) ? (
+      {!loading && !multi && (page > 1 || (!err && hasMore)) ? (
         <div className="media-chart__pager">
           <button
             type="button"
             className="media-chart__page-btn"
             disabled={page <= 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            onClick={() => goPage(Math.max(1, page - 1))}
           >
             上一页
           </button>
@@ -140,8 +157,8 @@ export function MediaSearchBody({
           <button
             type="button"
             className="media-chart__page-btn"
-            disabled={!hasMore}
-            onClick={() => setPage((p) => p + 1)}
+            disabled={!hasMore || Boolean(err)}
+            onClick={() => goPage(page + 1)}
           >
             下一页
           </button>

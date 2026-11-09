@@ -7,8 +7,8 @@ import {
   useRef,
   useState,
   useEffect,
+  useSyncExternalStore,
   type ReactNode,
-  type RefObject,
 } from 'react';
 import { unlockPinnedPage, pinDocumentScroll } from '@/lib/iosKeyboard';
 
@@ -43,12 +43,17 @@ interface TabContextValue {
   /** 当前 Tab 索引（指示条 / 轨道位移） */
   scrollProgress: number;
   scrollToTab: (tab: TabRoute) => void;
-  containerRef: RefObject<HTMLDivElement | null>;
-  paneHeight: number;
-  /** 相对滚动容器宽度（预览框内 ≠ 100vw） */
-  paneWidth: number;
   /** 再次点击当前 Tab：子页应回到 Hub */
   tabReselect: number;
+}
+
+function subscribeTabLocation(onChange: () => void) {
+  window.addEventListener('hashchange', onChange);
+  window.addEventListener('popstate', onChange);
+  return () => {
+    window.removeEventListener('hashchange', onChange);
+    window.removeEventListener('popstate', onChange);
+  };
 }
 
 const TabCtx = createContext<TabContextValue | null>(null);
@@ -58,13 +63,19 @@ export function useTabNavigation() {
 }
 
 export function TabProvider({ children }: { children: ReactNode }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [activeTab, setActiveTab] = useState<TabRoute>('/');
-  const [scrollProgress, setScrollProgress] = useState(0);
-  const [paneHeight, setPaneHeight] = useState(0);
-  const [paneWidth, setPaneWidth] = useState(0);
+  /** 水合前的服务端快照固定为 null，水合后自动换成真实 hash/path */
+  const locatedTab = useSyncExternalStore(
+    subscribeTabLocation,
+    readTabFromLocation,
+    () => null,
+  );
+  const [activeTabState, setActiveTab] = useState<TabRoute | null>(null);
+  const [scrollProgressState, setScrollProgress] = useState<number | null>(null);
   const [tabReselect, setTabReselect] = useState(0);
-  const activeTabRef = useRef<TabRoute>('/');
+  const activeTab = activeTabState ?? locatedTab ?? '/';
+  const scrollProgress =
+    scrollProgressState ?? (locatedTab ? TAB_ROUTES.indexOf(locatedTab) : 0);
+  const activeTabRef = useRef<TabRoute>(activeTab);
 
   useEffect(() => {
     activeTabRef.current = activeTab;
@@ -120,27 +131,12 @@ export function TabProvider({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    const ro = new ResizeObserver(([entry]) => {
-      const { width, height } = entry.contentRect;
-      setPaneHeight(height);
-      setPaneWidth(width);
-    });
-    ro.observe(container);
-    setPaneHeight(container.clientHeight);
-    setPaneWidth(container.clientWidth);
-    return () => ro.disconnect();
-  }, []);
-
-  useEffect(() => {
-    const tab = readTabFromLocation();
-    if (!tab) return;
-    const index = TAB_ROUTES.indexOf(tab);
-    setActiveTab(tab);
-    setScrollProgress(index);
-    window.history.replaceState(null, '', tabToUrl(tab));
-  }, []);
+    if (!locatedTab) return;
+    const url = tabToUrl(locatedTab);
+    if (`${window.location.pathname}${window.location.hash}` !== url) {
+      window.history.replaceState(null, '', url);
+    }
+  }, [locatedTab]);
 
   return (
     <TabCtx.Provider
@@ -148,9 +144,6 @@ export function TabProvider({ children }: { children: ReactNode }) {
         activeTab,
         scrollProgress,
         scrollToTab,
-        containerRef,
-        paneHeight,
-        paneWidth,
         tabReselect,
       }}
     >

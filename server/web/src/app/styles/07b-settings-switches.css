@@ -1,0 +1,601 @@
+
+
+/* 服务管理三面板（Bitmagnet / CloudSaver / 色花堂 · 资源库）：表单与布局统一 */
+.settings-screen-root .svc-panel {
+  padding: 2px 0 8px;
+}
+
+.settings-screen-root .svc-panel .settings-group-label {
+  margin: 20px 16px 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--mute);
+}
+
+.settings-screen-root .svc-panel .settings-group-label:first-child {
+  margin-top: 6px;
+}
+
+.settings-screen-root .svc-panel .app-section {
+  padding: 2px 16px 8px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-elevated, #fff) 96%, transparent);
+}
+
+.settings-screen-root .svc-panel .app-section-body {
+  padding-bottom: 4px;
+}
+
+.settings-screen-root .svc-panel .app-field--stack {
+  gap: 7px;
+  padding: 12px 0;
+}
+
+.settings-screen-root .svc-panel .app-field--stack .app-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--mute);
+}
+
+.settings-screen-root .svc-panel .app-field--stack input {
+  min-height: 38px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--hairline) 22%, transparent);
+  transition: background 0.16s ease, box-shadow 0.16s ease;
+}
+
+.settings-screen-root .svc-panel .app-field--stack:focus-within input {
+  background: color-mix(in srgb, #007aff 8%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, #007aff 14%, transparent);
+}
+
+.dark .settings-screen-root .svc-panel .app-field--stack input {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.dark .settings-screen-root .svc-panel .app-field--stack:focus-within input {
+  background: rgba(10, 132, 255, 0.14);
+  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.18);
+}
+
+.settings-screen-root .svc-panel .settings-kv {
+  min-height: 46px;
+}
+
+/* 插件空状态 */
+.settings-screen-root .plugin-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 40px 24px 42px;
+  text-align: center;
+  border: 1px dashed color-mix(in srgb, var(--hairline) 90%, transparent);
+  border-radius: 18px;
+  background:
+    radial-gradient(
+      120% 100% at 50% 0%,
+      color-mix(in srgb, #007aff 7%, transparent),
+      transparent 70%
+    ),
+    color-mix(in srgb, var(--bg-soft, #f2f2f7) 40%, transparent);
+}
+
+.settings-screen-root .plugin-empty__icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 2px;
+  border-radius: 50%;
+  color: #007aff;
+  background: color-mix(in srgb, #007aff 12%, transparent);
+}
+
+.settings-screen-root .plugin-empty__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.settings-screen-root .plugin-empty__desc {
+  max-width: 240px;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--mute);
+}
+
+html.theme-dark .settings-screen-root .plugin-empty {
+  background:
+    radial-gradient(
+      120% 100% at 50% 0%,
+      color-mix(in srgb, #0a84ff 14%, transparent),
+      transparent 70%
+    ),
+    rgba(255, 255, 255, 0.035);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+html.theme-dark .settings-screen-root .plugin-empty__icon {
+  color: #0a84ff;
+  background: color-mix(in srgb, #0a84ff 18%, transparent);
+}
+
+/* Stremio 插件库：仓库列表 → addon 列表 → addon 详情 */
+.stremio-page .settings-group {
+  margin-bottom: 14px;
+}
+
+.stremio-repo {
+  gap: 12px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.stremio-repo__icon,
+.stremio-addon-icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  color: #0a84ff;
+  background: linear-gradient(180deg, rgba(10, 132, 255, 0.16), rgba(10, 132, 255, 0.08));
+}
+
+.stremio-addon-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  color: #5e5ce6;
+  background: rgba(94, 92, 230, 0.12);
+}
+
+/* 列表行：图标放大后收紧上下留白，避免行高过于松散 */
+.stremio-addon.settings-nav {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+/* manifest.logo 存在时用真实图标，失败由组件回退到 Package 占位 */
+.stremio-avatar--image {
+  overflow: hidden;
+  background: #fff;
+}
+
+.stremio-avatar--image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+html.theme-dark .stremio-avatar--image {
+  background: #f2f2f7;
+}
+
+.stremio-repo--direct .stremio-repo__icon {
+  color: #8e8e93;
+  background: rgba(142, 142, 147, 0.14);
+}
+
+/* 无 favicon / 直接安装：用彩色仓库图标，替代蓝色底 + 线性占位。
+   内边距必须用固定值：百分比 padding 按“包含块宽度”计算，行宽可达数百像素，
+   会把 34px 的图标撑到 90px 以上，整行布局被挤乱。 */
+.stremio-page .stremio-repo__icon--brand {
+  padding: 4px;
+  overflow: hidden;
+  background: #fff;
+}
+
+html.theme-dark .stremio-page .stremio-repo__icon--brand {
+  background: #f2f2f7;
+}
+
+.stremio-repo__icon--brand img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.stremio-repo .settings-nav__desc,
+.stremio-addon .settings-nav__desc {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 列表第三行：类型标签 */
+.stremio-addon__types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 2px;
+}
+
+.stremio-addon__type {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border-radius: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: 0.01em;
+  color: var(--mute);
+  background: color-mix(in srgb, var(--mute) 13%, transparent);
+}
+
+html.theme-dark .stremio-addon__type {
+  color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* 行尾徽标 / 状态与箭头并排对齐 */
+.stremio-repo .settings-nav__trail,
+.stremio-addon .settings-nav__trail {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.stremio-repo .settings-nav__chev,
+.stremio-addon .settings-nav__chev {
+  flex-shrink: 0;
+}
+
+.stremio-count {
+  display: inline-flex;
+  min-width: 30px;
+  height: 20px;
+  padding: 0 8px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 650;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--mute);
+  background: color-mix(in srgb, var(--hairline) 55%, transparent);
+}
+
+.stremio-repo-hero,
+.stremio-addon-hero {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px;
+  border: 0.5px solid var(--hairline);
+  border-radius: 18px;
+  background:
+    radial-gradient(120% 90% at 0% 0%, rgba(10, 132, 255, 0.12), transparent 62%),
+    var(--surface-elevated);
+}
+
+.stremio-repo-hero.is-direct {
+  background:
+    radial-gradient(120% 90% at 0% 0%, rgba(142, 142, 147, 0.14), transparent 62%),
+    var(--surface-elevated);
+}
+
+.stremio-repo-hero__icon,
+.stremio-addon-hero__icon {
+  flex: 0 0 auto;
+  align-self: center;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  color: #0a84ff;
+  background: rgba(10, 132, 255, 0.14);
+}
+
+.stremio-addon-hero__icon {
+  color: #5e5ce6;
+  background: rgba(94, 92, 230, 0.14);
+}
+
+.stremio-repo-hero__main,
+.stremio-addon-hero__main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.stremio-hero__title {
+  margin: 0;
+  overflow: hidden;
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stremio-hero__heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.stremio-hero__heading .stremio-hero__title {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.stremio-hero__version {
+  flex: 0 0 auto;
+  color: #0a84ff;
+  background: color-mix(in srgb, #0a84ff 12%, transparent);
+}
+
+.stremio-hero__desc {
+  margin: 3px 0 0;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--mute);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stremio-hero__note {
+  margin: 10px 2px 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--mute);
+}
+
+.stremio-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.stremio-chip {
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--mute);
+  background: color-mix(in srgb, var(--hairline) 50%, transparent);
+}
+
+.stremio-chip.is-on {
+  color: #248a3d;
+  background: rgba(52, 199, 89, 0.15);
+}
+
+.stremio-chip.is-off {
+  color: #8e8e93;
+  background: rgba(142, 142, 147, 0.16);
+}
+
+.stremio-chip.is-bad {
+  color: #d70015;
+  background: rgba(255, 59, 48, 0.14);
+}
+
+.stremio-chip.is-warn {
+  color: #b25000;
+  background: rgba(255, 149, 0, 0.16);
+}
+
+html.theme-dark .stremio-chip.is-warn {
+  color: #ff9f0a;
+  background: rgba(255, 159, 10, 0.18);
+}
+
+/* 仓库内分类筛选：横向滚动的胶囊按钮 */
+.stremio-filters {
+  display: flex;
+  gap: 10px;
+  margin: 14px calc(-1 * var(--page-pad-x));
+  padding: 2px var(--page-pad-x) 5px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+  scroll-padding-inline: var(--page-pad-x);
+  -webkit-overflow-scrolling: touch;
+  /* 两侧渐隐，提示还能横向滑动 */
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 12px,
+    #000 calc(100% - 12px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 12px,
+    #000 calc(100% - 12px),
+    transparent 100%
+  );
+}
+
+.stremio-filters::-webkit-scrollbar {
+  display: none;
+}
+
+.stremio-filter {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--mute);
+  background: color-mix(in srgb, var(--hairline) 34%, transparent);
+  scroll-snap-align: start;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.2s ease, color 0.2s ease,
+    box-shadow 0.2s ease, transform 0.12s ease;
+}
+
+.stremio-filter:focus-visible {
+  outline: 2px solid rgba(10, 132, 255, 0.55);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) {
+  .stremio-filter:hover {
+    background: color-mix(in srgb, var(--hairline) 58%, transparent);
+  }
+}
+
+.stremio-filter.is-on {
+  color: #fff;
+  background: linear-gradient(180deg, #3a9bff 0%, #0a84ff 100%);
+  box-shadow: 0 1px 2px rgba(10, 132, 255, 0.3),
+    0 4px 12px rgba(10, 132, 255, 0.2);
+}
+
+.stremio-filter:active {
+  transform: scale(0.96);
+}
+
+.stremio-filter__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--mute);
+  background: color-mix(in srgb, var(--surface-elevated) 72%, transparent);
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.stremio-filter.is-on .stremio-filter__count {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+html.theme-dark .stremio-filter {
+  color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+html.theme-dark .stremio-filter:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+html.theme-dark .stremio-filter.is-on {
+  color: #fff;
+  background: linear-gradient(180deg, #3a9bff 0%, #0a7cf2 100%);
+}
+
+html.theme-dark .stremio-filter__count {
+  color: rgba(255, 255, 255, 0.66);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+html.theme-dark .stremio-filter.is-on .stremio-filter__count {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.stremio-hero-actions {
+  display: flex;
+  gap: 10px;
+  margin: 12px 0 2px;
+}
+
+.stremio-hero-actions .app-btn-secondary {
+  flex: 1 1 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.stremio-page .stremio-danger-btn {
+  color: #d70015;
+}
+
+.stremio-page .stremio-url {
+  display: block;
+  padding: 12px 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--mute);
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.stremio-page .stremio-url:active {
+  opacity: 0.6;
+}
+
+.stremio-page .app-actions {
+  margin-top: 12px;
+}
+
+/* 仓库内 addon 分页加载 */
+.stremio-more {
+  display: flex;
+  width: 100%;
+  height: 40px;
+  margin: -4px 0 14px;
+  align-items: center;
+  justify-content: center;
+  border: 0.5px solid var(--hairline);
+  border-radius: var(--radius-row);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #0a84ff;
+  background: var(--surface-elevated);
+}
+
+.stremio-more:active {
+  opacity: 0.7;
+}
+
+.stremio-more:disabled {
+  opacity: 0.5;
+}
+
+.stremio-more__done {
+  margin: -2px 0 14px;
+  font-size: 12px;
+  text-align: center;
+  color: var(--mute);
+}
+
+html.theme-dark .stremio-repo-hero,
+html.theme-dark .stremio-addon-hero {
+  border-color: rgba(84, 84, 88, 0.55);
+  background:
+    radial-gradient(120% 90% at 0% 0%, rgba(10, 132, 255, 0.18), transparent 62%),
+    var(--surface-elevated);
+}
+
+html.theme-dark .stremio-repo-hero.is-direct {
+  background:
+    radial-gradient(120% 90% at 0% 0%, rgba(142, 142, 147, 0.18), transparent 62%),
+    var(--surface-elevated);
+}

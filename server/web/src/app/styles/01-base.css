@@ -1,19 +1,14 @@
-/* 基础壳层：App 外壳、Tab 栏、Hub 顶栏、Toast、通用列表
-   顺序敏感：由 app-ui.css 按 01 顺序 @import，请勿调整引入次序。 */
+/* 基础壳层：App 外壳、Tab 栏、Hub 顶栏、Toast、通用列表。 */
 
 /* Shared app chrome ? aligned with login (iOS blue, cardless groups, no focus rings) */
 
 :root {
-
   --ink: #000000;
-
   --ink-muted: #8e8e93;
-
   --mute: var(--ink-muted);
 
   /* 次级 / 三级文字：统一语义 token，替代散落的 #6c6c70 / #3a3a3c */
   --text-secondary: #6c6c70;
-
   --text-tertiary: #3a3a3c;
 
   /* 占位符灰：统一 token，替代散落的 #c8c8c8 */
@@ -21,49 +16,28 @@
 
   /* iOS 原生中性灰阴影（替代偏蓝的 rgba(15,40,80,...)） */
   --shadow-color: 15, 23, 42;
-
   --login-blue: #007aff;
-
   --login-blue-deep: #0066d6;
-
   --login-blue-soft: rgba(0, 122, 255, 0.12);
-
   --brand: var(--login-blue);
-
   --bg-soft: #e5e5ea;
-
   --hairline: rgba(60, 60, 67, 0.18);
-
   --radius-card: 14px;
-
   --radius-row: 12px;
-
   --radius-chip: 10px;
-
   --radius-modal: 16px;
-
-  --shadow-card: 0 1px 2px rgba(var(--shadow-color), 0.04), 0 8px 24px rgba(var(--shadow-color), 0.06);
-
+  --shadow-card: 0 4px 18px rgba(var(--shadow-color), 0.06);
+  --shadow-soft: 0 4px 16px rgba(var(--shadow-color), 0.05);
   --shadow-modal: 0 1px 0 rgba(255, 255, 255, 0.75) inset, 0 18px 48px rgba(var(--shadow-color), 0.2);
-
   --surface-elevated: rgba(255, 255, 255, 0.94);
-
   --surface-bar: rgba(247, 250, 255, 0.86);
-
   --chrome-bar-bg: rgba(247, 250, 255, 0.72);
-
   --chrome-bar-blur: saturate(190%) blur(22px);
-
   --chrome-bar-line: rgba(60, 60, 67, 0.14);
-
   --chrome-bar-shine: rgba(255, 255, 255, 0.55);
-
   --chrome-title-size: 26px;
-
   --chrome-title-weight: 700;
-
   --chrome-title-tracking: -0.032em;
-
   --surface-fill: rgba(120, 120, 128, 0.1);
 
   /* 实色底：真机 WebKit 合成层缝默认透黑，无实色会整屏出现横向黑细线 */
@@ -76,46 +50,40 @@
     radial-gradient(ellipse 120% 50% at 50% 62%, rgba(0, 122, 255, 0.05), transparent 60%),
     radial-gradient(ellipse 78% 42% at 100% 88%, rgba(180, 210, 255, 0.08), transparent 52%),
     linear-gradient(180deg, #f2f2f7 0%, #f2f2f7 100%);
-
   --selection-bg: color-mix(in srgb, var(--login-blue) 26%, transparent);
-
   --sat: max(env(safe-area-inset-top, 0px), 0px);
-
   --sab: max(env(safe-area-inset-bottom, 0px), 0px);
-
   --nav-safe-top: var(--sat);
-
   --page-pad-x: 16px;
-
   --ease-ios: cubic-bezier(0.32, 0.72, 0, 1);
-
   --ease-standard: var(--ease-ios);
 
   /* 过冲回弹弹簧：弹出类动效（toast / 弹窗 rise / 侧滑回弹）用，更「活」 */
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-
   --row-h: 44px;
-
   --surface-solid: rgba(255, 255, 255, 0.92);
-
   --border-subtle: var(--hairline);
-
   --text: var(--ink);
+  --accent-subtle: rgba(0, 122, 255, 0.1);
+  --tabbar-glass: rgba(252, 253, 255, 0.74);
+  --tabbar-glass-border: rgba(255, 255, 255, 0.7);
+  --tabbar-glass-shadow:
+    0 0 0 0.5px rgba(60, 60, 67, 0.08),
+    0 1px 0 rgba(255, 255, 255, 0.6) inset,
+    0 12px 32px rgba(15, 23, 42, 0.14),
+    0 3px 10px rgba(15, 23, 42, 0.06);
+  --tabbar-active-bg: color-mix(in srgb, var(--login-blue) 11%, transparent);
 
 }
 
 /* theme-dark（手动深色 / 跟随系统深色都适用） */
 html.theme-dark {
-
     --ink: #f5f5f7;
-
     --ink-muted: #98989d;
-
     --mute: var(--ink-muted);
 
     /* 次级 / 三级文字（dark）*/
     --text-secondary: #98989d;
-
     --text-tertiary: #ebebf5;
 
     /* 占位符灰（dark）*/
@@ -123,43 +91,34 @@ html.theme-dark {
 
     /* dark 阴影改为纯黑，替代偏蓝灰 */
     --shadow-color: 0, 0, 0;
-
     --login-blue: #0a84ff;
-
     --login-blue-deep: #0070e0;
-
     --login-blue-soft: rgba(10, 132, 255, 0.18);
-
     --hairline: rgba(84, 84, 88, 0.45);
-
     --bg-soft: #2c2c2e;
-
     --surface-solid: rgba(28, 28, 30, 0.94);
-
+    --accent-subtle: rgba(10, 132, 255, 0.18);
+    --tabbar-glass: rgba(30, 32, 38, 0.74);
+    --tabbar-glass-border: rgba(255, 255, 255, 0.09);
+    --tabbar-glass-shadow:
+      0 0 0 0.5px rgba(0, 0, 0, 0.55),
+      0 1px 0 rgba(255, 255, 255, 0.06) inset,
+      0 14px 36px rgba(0, 0, 0, 0.55),
+      0 3px 10px rgba(0, 0, 0, 0.3);
+    --tabbar-active-bg: color-mix(in srgb, var(--login-blue) 18%, transparent);
     --surface-elevated: rgba(28, 28, 30, 0.96);
-
     --surface-bar: rgba(22, 22, 24, 0.88);
-
     --chrome-bar-bg: rgba(22, 22, 24, 0.72);
-
     --chrome-bar-blur: saturate(170%) blur(22px);
-
     --chrome-bar-line: rgba(84, 84, 88, 0.42);
-
     --chrome-bar-shine: rgba(255, 255, 255, 0.06);
-
     --surface-fill: rgba(120, 120, 128, 0.22);
-
     --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35);
-
     --shadow-modal: 0 18px 48px rgba(0, 0, 0, 0.55);
-
     --app-bg-solid: #05070c;
-
     --app-bg:
       radial-gradient(ellipse 120% 50% at 50% 62%, rgba(10, 132, 255, 0.08), transparent 60%),
       linear-gradient(180deg, #05070c 0%, #05070c 100%);
-
     --selection-bg: color-mix(in srgb, var(--login-blue) 34%, transparent);
 
   }
@@ -173,7 +132,6 @@ textarea,
 select,
 
 [contenteditable='true'] {
-
   outline: none;
 
 }
@@ -193,102 +151,46 @@ select:focus-visible,
 [contenteditable='true']:focus,
 
 [contenteditable='true']:focus-visible {
-
   outline: none;
-
   box-shadow: none;
 
 }
 
-.app-title {
-
-  margin: 0;
-
-  font-size: 28px;
-
-  font-weight: 700;
-
-  letter-spacing: -0.02em;
-
-  line-height: 1.15;
-
-  color: var(--ink);
-
-  font-family: inherit;
-
-}
-
-.app-subtitle {
-
-  margin: 4px 0 0;
-
-  font-size: 12px;
-
-  line-height: 1.3;
-
-  color: var(--mute);
-
-}
-
 .app-body {
-
   flex: 1;
-
   min-height: 0;
-
   overflow-x: hidden;
-
   overflow-y: auto;
-
   -webkit-overflow-scrolling: touch;
 
   /* 恢复 iOS 原生橡皮筋回弹（顶部/底部软着陆，避免硬停） */
   overscroll-behavior-y: auto;
-
   padding: 4px var(--page-pad-x) 12px;
-
   scrollbar-width: none;
-
   -ms-overflow-style: none;
 
 }
 
 .app-body::-webkit-scrollbar {
-
   display: none;
-
   width: 0;
-
   height: 0;
 
 }
-
 .app-hint,
-
-.app-footnote,
-
-.app-section-text {
-
+.app-footnote {
   margin: 6px 12px 14px;
-
   padding: 0 4px;
-
   font-size: 13px;
-
   line-height: 1.38;
-
   font-weight: 400;
-
   letter-spacing: -0.01em;
-
   color: var(--text-secondary);
-
   text-align: left;
 
 }
 
 .app-hint {
-
   margin: 0 4px 8px;
 
 }
@@ -296,71 +198,43 @@ select:focus-visible,
 .app-empty,
 
 .app-loading {
-
   display: flex;
-
   flex-direction: column;
-
   align-items: center;
-
   justify-content: center;
-
   gap: 6px;
-
   margin: 12px 0;
-
   padding: 36px 16px;
-
   text-align: center;
-
   font-size: 15px;
-
   font-weight: 400;
-
   letter-spacing: -0.01em;
-
   color: var(--ink-muted);
-
   border-radius: var(--radius-row);
-
   background: color-mix(in srgb, var(--surface-elevated) 72%, transparent);
-
   border: 0.5px solid color-mix(in srgb, var(--hairline) 80%, transparent);
 
 }
 
-/* ?????????? 200ms ??? */
+/* 加载占位 */
 
 .app-loading {
-
   color: transparent;
-
   background: transparent;
-
   border-color: transparent;
-
   animation: app-loading-reveal 0s 200ms forwards;
 
 }
 
 .app-loading::before {
-
   content: '';
-
   width: 18px;
-
   height: 18px;
-
   margin-bottom: 2px;
-
   border-radius: 50%;
-
   border: 2px solid rgba(60, 60, 67, 0.18);
-
   border-top-color: var(--login-blue);
-
   opacity: 0;
-
   animation:
     app-spin 0.7s linear 200ms infinite,
     app-loading-fade 0s 200ms forwards;
@@ -370,7 +244,6 @@ select:focus-visible,
 @keyframes app-spin {
 
   to {
-
     transform: rotate(360deg);
 
   }
@@ -380,7 +253,6 @@ select:focus-visible,
 @keyframes app-loading-fade {
 
   to {
-
     opacity: 1;
 
   }
@@ -390,11 +262,8 @@ select:focus-visible,
 @keyframes app-loading-reveal {
 
   to {
-
     color: #8e8e93;
-
     background: rgba(255, 255, 255, 0.55);
-
     border-color: var(--hairline);
 
   }
@@ -402,39 +271,24 @@ select:focus-visible,
 }
 
 .app-error {
-
   margin: 8px 0 12px;
-
   padding: 12px 14px;
-
   text-align: center;
-
   font-size: 14px;
-
   font-weight: 500;
-
   line-height: 1.4;
-
   letter-spacing: -0.01em;
-
   color: #ff3b30;
-
   background: rgba(255, 59, 48, 0.1);
-
   border: 0.5px solid rgba(255, 59, 48, 0.22);
-
   border-radius: 12px;
 
 }
 
 .app-error-hint {
-
   margin: 6px 0 0;
-
   font-size: 12px;
-
   font-weight: 400;
-
   color: #8e8e93;
 
 }
@@ -442,301 +296,150 @@ select:focus-visible,
 /* Search row */
 
 .app-search-row {
-
   display: flex;
-
   align-items: center;
-
   gap: 8px;
-
   margin-top: 8px;
 
 }
 
 .app-search {
-
   position: relative;
-
   flex: 1;
-
   min-width: 0;
-
   display: flex;
-
   align-items: center;
-
   gap: 8px;
-
   min-height: 36px;
-
   padding: 0 10px;
-
   border-radius: 10px;
-
   background: rgba(255, 255, 255, 0.88);
-
   border: 0.5px solid var(--hairline);
-
   transition: border-color 0.15s ease;
 
 }
 
 .app-search:focus-within {
-
   border-color: var(--login-blue);
 
 }
 
 .app-search input {
-
   flex: 1;
-
   min-width: 0;
-
   width: 100%;
-
   border: 0;
-
   outline: none;
-
   background: transparent;
-
   padding: 8px 0;
-
   font-size: 16px;
-
   color: var(--ink);
-
   font-family: inherit;
 
 }
 
 .app-search input::placeholder {
-
   color: var(--placeholder);
-
-}
-
-.app-chip {
-
-  border: 0.5px solid var(--hairline);
-
-  border-radius: 999px;
-
-  padding: 5px 11px;
-
-  font-size: 12px;
-
-  font-weight: 500;
-
-  font-family: inherit;
-
-  color: var(--mute);
-
-  background: rgba(255, 255, 255, 0.75);
-
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
-
-}
-
-.app-chip:active {
-
-  background: var(--bg-soft);
-
-}
-
-.app-list-title {
-
-  font-size: 15px;
-
-  font-weight: 500;
-
-  line-height: 1.35;
-
-  color: var(--ink);
-
-}
-
-.app-list-meta {
-
-  margin-top: 4px;
-
-  font-size: 12px;
-
-  color: var(--mute);
-
-  display: flex;
-
-  flex-wrap: wrap;
-
-  gap: 6px;
 
 }
 
 /* Settings / detail sections */
 
 .app-section {
-
   margin: 0 0 12px;
-
   padding: 2px 14px 4px;
-
   background: rgba(255, 255, 255, 0.92);
-
   border: 0.5px solid var(--hairline);
-
   border-radius: 12px;
 
 }
 
-.app-section-title {
-
-  margin: 10px 0 2px;
-
-  font-size: 12px;
-
-  font-weight: 600;
-
-  letter-spacing: 0.02em;
-
-  color: var(--mute);
-
-  text-transform: none;
-
-}
-
 .app-section-body {
-
   padding-bottom: 8px;
 
 }
 
 .app-field {
-
   display: flex;
-
   flex-direction: row;
-
   align-items: center;
-
   gap: 12px;
-
   min-height: 48px;
-
   padding: 8px 0;
-
   border-bottom: 0.5px solid var(--hairline);
 
 }
 
 .app-field--stack {
-
   flex-direction: column;
-
   align-items: stretch;
-
   gap: 6px;
-
   min-height: 0;
-
   padding: 10px 0;
 
 }
 
 .app-field--stack .app-label {
-
   flex: none;
-
   width: auto;
 
 }
 
 .app-field--stack textarea {
-
   width: 100%;
-
   min-height: 88px;
-
   resize: vertical;
-
   border: 0;
-
   outline: none;
-
   background: transparent;
-
   padding: 4px 0;
-
   font-size: 14px;
-
   line-height: 1.4;
-
   color: var(--ink);
-
   font-family: inherit;
 
 }
 
 .app-field:last-child {
-
   border-bottom: 0;
 
 }
 
 .app-field:focus-within {
-
   border-bottom-color: var(--login-blue);
 
 }
 
 .app-label {
-
   flex: 0 0 5.5em;
-
   width: 5.5em;
-
   margin: 0;
-
   font-size: 15px;
-
   color: var(--ink);
-
   white-space: nowrap;
 
 }
 
 .app-field input {
-
   flex: 1 1 auto;
-
   min-width: 0;
-
   width: 100%;
-
   border: 0;
-
   outline: none;
-
   background: transparent;
-
   padding: 8px 0;
-
   font-size: 16px;
-
   color: var(--ink);
-
   font-family: inherit;
 
 }
 
 .app-field input::placeholder {
-
   color: var(--placeholder);
 
 }
 
 .app-field input:disabled {
-
   opacity: 0.5;
 
 }
@@ -744,65 +447,43 @@ select:focus-visible,
 .app-btn-primary,
 
 .app-btn-secondary {
-
   display: inline-flex;
-
   align-items: center;
-
   justify-content: center;
-
   min-height: 44px;
-
   padding: 10px 16px;
-
   border-radius: 999px;
-
   font-size: 16px;
-
   font-weight: 500;
-
   letter-spacing: 0.02em;
-
   font-family: inherit;
-
   transition: opacity 0.15s ease, transform 0.15s ease, background 0.15s ease;
 
 }
 
 .app-btn-primary {
-
   border: 0;
-
   color: #fff;
-
   background: linear-gradient(180deg, #1a86ff 0%, var(--login-blue-deep) 100%);
-
   box-shadow: 0 4px 14px rgba(0, 122, 255, 0.22);
 
 }
 
 .app-btn-primary:active {
-
   opacity: 0.9;
-
   transform: scale(0.99);
 
 }
 
 .app-btn-secondary {
-
   border: 0.5px solid var(--hairline);
-
   color: var(--login-blue);
-
   background: rgba(255, 255, 255, 0.92);
-
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
 
 }
 
 .app-btn-secondary:active {
-
   background: var(--bg-soft);
 
 }
@@ -810,220 +491,149 @@ select:focus-visible,
 .app-btn-primary:disabled,
 
 .app-btn-secondary:disabled {
-
   opacity: 0.55;
 
 }
 
 .app-btn-block {
-
   width: 100%;
 
 }
 
 .app-actions {
-
   display: flex;
-
   flex-wrap: wrap;
-
   gap: 10px;
-
   margin-top: 12px;
 
 }
 
 .app-overlay-root {
-
   position: absolute;
-
   inset: 0;
-
   z-index: 600;
-
   pointer-events: none;
-
   overflow: visible;
 
 }
 
-/* iOS HUD Toast???????????? */
+/* iOS HUD Toast */
 
 .toast-stack {
-
   position: absolute;
-
   left: 0;
-
   right: 0;
-
   bottom: calc(58px + var(--sab, 20px) + 10px);
-
   z-index: 600;
-
   display: flex;
-
   flex-direction: column;
-
   align-items: center;
-
   gap: 8px;
-
   padding: 0 20px;
-
   pointer-events: none;
 
 }
 
 html[data-keyboard='1'] .toast-stack {
-
   bottom: calc(12px + var(--sab, 12px));
 
 }
 
 .toast {
-
   pointer-events: none;
-
   display: flex;
-
   align-items: flex-start;
-
   gap: 10px;
-
   max-width: min(340px, 100%);
-
   padding: 12px 16px 12px 12px;
-
   border-radius: 18px;
-
   color: #fff;
-
   font-size: 14px;
-
   font-weight: 510;
-
   line-height: 1.35;
-
   letter-spacing: -0.01em;
-
   background: rgba(28, 28, 30, 0.78);
-
   -webkit-backdrop-filter: saturate(180%) blur(20px);
-
   backdrop-filter: saturate(180%) blur(20px);
-
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.08) inset,
     0 10px 28px rgba(0, 0, 0, 0.22),
     0 2px 8px rgba(0, 0, 0, 0.12);
-
   border: 0.5px solid rgba(255, 255, 255, 0.1);
-
   animation: toast-in 0.4s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)) both;
-
   transform-origin: 50% 100%;
 
 }
 
 .toast--leaving {
-
   animation: toast-out 0.22s ease-in both;
 
 }
 
 .toast__glyph {
-
   flex: 0 0 auto;
-
   width: 26px;
-
   height: 26px;
-
   border-radius: 50%;
-
   display: grid;
-
   place-items: center;
-
   background: rgba(255, 255, 255, 0.16);
 
 }
 
 .toast__icon {
-
   display: block;
 
 }
 
 .toast__text {
-
   margin: 0;
-
   padding-top: 3px;
-
   min-width: 0;
-
   flex: 1 1 auto;
-
   text-align: left;
-
   word-break: break-word;
 
 }
 
 .toast--info .toast__glyph {
-
   background: rgba(10, 132, 255, 0.32);
-
   color: #64b5ff;
 
 }
 
 .toast--success {
-
   background: rgba(20, 120, 56, 0.84);
-
   border-color: rgba(105, 240, 152, 0.22);
 
 }
 
 .toast--success .toast__glyph {
-
   background: rgba(52, 199, 89, 0.95);
-
   color: #fff;
 
 }
 
 .toast--warn {
-
   background: rgba(140, 90, 10, 0.86);
-
   border-color: rgba(255, 204, 0, 0.22);
 
 }
 
 .toast--warn .toast__glyph {
-
   background: rgba(255, 149, 0, 0.95);
-
   color: #fff;
 
 }
 
 .toast--error {
-
   background: rgba(140, 28, 28, 0.88);
-
   border-color: rgba(255, 120, 110, 0.24);
 
 }
 
 .toast--error .toast__glyph {
-
   background: rgba(255, 69, 58, 0.95);
-
   color: #fff;
 
 }
@@ -1031,25 +641,19 @@ html[data-keyboard='1'] .toast-stack {
 @keyframes toast-in {
 
   from {
-
     opacity: 0;
-
     transform: translateY(12px) scale(0.94);
 
   }
 
   70% {
-
     opacity: 1;
-
     transform: translateY(-2px) scale(1.008);
 
   }
 
   to {
-
     opacity: 1;
-
     transform: none;
 
   }
@@ -1059,17 +663,13 @@ html[data-keyboard='1'] .toast-stack {
 @keyframes toast-out {
 
   from {
-
     opacity: 1;
-
     transform: none;
 
   }
 
   to {
-
     opacity: 0;
-
     transform: translateY(8px) scale(0.96);
 
   }
@@ -1081,157 +681,86 @@ html[data-keyboard='1'] .toast-stack {
   .toast,
 
   .toast--leaving {
-
     animation: none;
 
   }
 
   .app-loading::before {
-
     animation: none;
-
     border-top-color: rgba(60, 60, 67, 0.35);
 
   }
 
 }
 
-.app-msg {
-
-  margin: 12px 0 0;
-
-  padding: 10px 14px;
-
-  border-radius: 12px;
-
-  font-size: 13px;
-
-  font-weight: 500;
-
-  line-height: 1.35;
-
-  letter-spacing: -0.01em;
-
-  text-align: center;
-
-  color: var(--text-tertiary);
-
-  background: rgba(120, 120, 128, 0.12);
-
-  border: 0.5px solid rgba(60, 60, 67, 0.12);
-
-}
-
 /* Detail / standalone back */
 
 .app-back {
-
   display: inline-flex;
-
   align-items: center;
-
   gap: 2px;
-
   min-height: 44px;
-
   padding: 8px 10px;
-
   border-radius: 10px;
-
   color: var(--login-blue);
-
   font-size: 16px;
-
   font-weight: 500;
-
   text-decoration: none;
-
   background: transparent;
-
   border: 0;
-
   font-family: inherit;
 
 }
 
 .app-back:active {
-
   background: rgba(0, 122, 255, 0.08);
-
-}
-
-.app-detail-title {
-
-  margin: 0 0 14px;
-
-  font-size: 22px;
-
-  font-weight: 700;
-
-  letter-spacing: -0.02em;
-
-  line-height: 1.3;
-
-  color: var(--ink);
-
-}
-
-.app-kv-label {
-
-  color: var(--mute);
-
-}
-
-.app-kv-value {
-
-  color: var(--ink);
-
-  word-break: break-all;
 
 }
 
 /* Bottom tab bar ? frosted */
 
 .app-tabbar {
-
   flex-shrink: 0;
-
   position: relative;
-
   z-index: 100;
-
-  border-top: 0.5px solid var(--chrome-bar-line, var(--hairline));
-
-  background:
-    linear-gradient(
-      0deg,
-      var(--chrome-bar-shine, rgba(255, 255, 255, 0.55)) 0%,
-      transparent 45%
-    ),
-    var(--chrome-bar-bg, rgba(247, 250, 255, 0.72));
-
-  -webkit-backdrop-filter: var(--chrome-bar-blur, saturate(190%) blur(22px));
-
-  backdrop-filter: var(--chrome-bar-blur, saturate(190%) blur(22px));
-
-  box-shadow:
-    0 -0.5px 0 rgba(255, 255, 255, 0.35) inset,
-    0 -8px 24px rgba(var(--shadow-color), 0.04);
-
+  padding-top: 6px;
+  border-top: 0;
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
   pointer-events: auto;
-
 }
 
-/* ? Tab?transform ?????? scrollLeft??? overflow-x:hidden ??? */
+.app-tabbar__inner {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  justify-content: space-evenly;
+  gap: 2px;
+  width: calc(100% - 24px);
+  max-width: 460px;
+  margin: 0 auto 5px;
+  padding: 4px 5px;
+  border-radius: 24px;
+  background: var(--tabbar-glass);
+  box-shadow: var(--tabbar-glass-shadow);
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
+  backdrop-filter: saturate(180%) blur(24px);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .app-tabbar__inner {
+    background: var(--app-bg-solid, #f2f2f7);
+  }
+}
+
+/* Tab 滑动合成层说明：不要给 track 常驻 will-change */
 
 .app-tab-viewport {
-
   position: relative;
-
   overflow: hidden;
-
   overscroll-behavior: none;
-
   touch-action: pan-y;
 
   /* 与壳同色实底，挡住 Tab transform 合成缝 */
@@ -1240,16 +769,12 @@ html[data-keyboard='1'] .toast-stack {
 }
 
 .app-tab-track {
-
   display: flex;
-
   height: 100%;
-
   width: max-content;
 
   /* 勿常驻 will-change：真机易触发整屏横向合成黑线 */
   transition: none;
-
   background-color: var(--app-bg-solid, #f2f2f7);
 
 }
@@ -1259,167 +784,80 @@ html[data-keyboard='1'] .toast-stack {
 }
 
 .app-tab-item {
-
   position: relative;
-
   display: flex;
-
   flex-direction: column;
-
   align-items: center;
-
   justify-content: center;
-
   gap: 3px;
-
   flex: 1 1 0;
-
-  min-width: 64px;
-
-  min-height: 52px;
-
-  padding: 8px 10px 6px;
-
+  min-width: 56px;
+  max-width: 96px;
+  min-height: 46px;
+  padding: 5px 8px 4px;
   border: 0;
-
-  border-radius: 12px;
-
+  border-radius: 18px;
   background: transparent;
-
-  font-size: 12px;
-
+  font-size: 10px;
   font-weight: 500;
-
-  letter-spacing: 0.02em;
-
+  letter-spacing: 0;
   font-family: inherit;
-
-  color: var(--mute);
-
+  color: var(--text-secondary, var(--mute));
   user-select: none;
-
   text-decoration: none;
-
   -webkit-tap-highlight-color: transparent;
-
+  transition:
+    background-color 0.22s var(--ease-ios, ease),
+    color 0.22s var(--ease-ios, ease),
+    transform 0.18s var(--ease-ios, ease);
 }
 
 .app-tab-item svg {
-
-  width: 26px;
-
-  height: 26px;
-
+  width: 22px;
+  height: 22px;
 }
 
 .app-tab-item--active {
-
   color: var(--login-blue);
-
   font-weight: 600;
-
+  background: var(--tabbar-active-bg);
 }
 
-/* theme-dark（手动深色 / 跟随系统深色都适用） */
+.app-tab-item--active svg {
+  stroke-width: 2.3;
+}
+
+.app-tab-item:active {
+  transform: scale(0.94);
+  background: color-mix(in srgb, var(--login-blue) 16%, transparent);
+}
 html.theme-dark .app-search,
-html.theme-dark .app-list,
 html.theme-dark .app-section,
 html.theme-dark .app-btn-secondary,
-html.theme-dark .app-board-chip,
-html.theme-dark .app-prefix,
-html.theme-dark .app-chip:not(.app-chip--active),
 html.theme-dark .app-empty,
 html.theme-dark .app-loading {
-
     background: rgba(28, 28, 30, 0.92);
 
   }
-
 html.theme-dark .app-hint,
-html.theme-dark .app-footnote,
-html.theme-dark .app-section-text {
-
+html.theme-dark .app-footnote {
     color: var(--text-secondary);
 
   }
 
-html.theme-dark .settings-group-label,
-html.theme-dark .app-hub__label {
-
+html.theme-dark .settings-group-label{
     color: var(--text-secondary);
-
-  }
-
-html.theme-dark .app-section-text code {
-
-    background: rgba(84, 84, 88, 0.45);
-
-    color: var(--text-tertiary);
 
   }
 
 html.theme-dark .app-error {
-
     color: #ff453a;
-
     background: rgba(255, 69, 58, 0.16);
-
-    border-color: rgba(255, 69, 58, 0.32);
-
-  }
-
-html.theme-dark .app-msg {
-
-    color: var(--text-tertiary);
-
-    background: rgba(120, 120, 128, 0.24);
-
-    border-color: rgba(84, 84, 88, 0.45);
-
-  }
-
-html.theme-dark .app-msg--info {
-
-    color: #0a84ff;
-
-    background: rgba(10, 132, 255, 0.18);
-
-    border-color: rgba(10, 132, 255, 0.28);
-
-  }
-
-html.theme-dark .app-msg--ok {
-
-    color: #30d158;
-
-    background: rgba(48, 209, 88, 0.16);
-
-    border-color: rgba(48, 209, 88, 0.3);
-
-  }
-
-html.theme-dark .app-msg--warn {
-
-    color: #ffd60a;
-
-    background: rgba(255, 159, 10, 0.16);
-
-    border-color: rgba(255, 159, 10, 0.3);
-
-  }
-
-html.theme-dark .app-msg--err {
-
-    color: #ff453a;
-
-    background: rgba(255, 69, 58, 0.16);
-
     border-color: rgba(255, 69, 58, 0.32);
 
   }
 
 html.theme-dark .app-tabbar {
-
     box-shadow:
       0 -0.5px 0 rgba(255, 255, 255, 0.06) inset,
       0 -10px 28px rgba(0, 0, 0, 0.28);
@@ -1428,163 +866,60 @@ html.theme-dark .app-tabbar {
 
 html.theme-dark .app-search input::placeholder,
 html.theme-dark .app-field input::placeholder {
-
     color: #636366;
 
   }
 
 .dark {
-
   --ink: #f5f5f7;
-
   --ink-muted: #98989d;
-
   --mute: var(--ink-muted);
-
   --text-secondary: #98989d;
-
   --text-tertiary: #ebebf5;
-
   --placeholder: #636366;
-
   --shadow-color: 0, 0, 0;
-
   --login-blue: #0a84ff;
-
   --login-blue-deep: #0070e0;
-
   --hairline: rgba(84, 84, 88, 0.45);
-
   --bg-soft: #2c2c2e;
-
   --chrome-bar-bg: rgba(22, 22, 24, 0.72);
-
   --chrome-bar-blur: saturate(170%) blur(22px);
-
   --chrome-bar-line: rgba(84, 84, 88, 0.42);
-
   --chrome-bar-shine: rgba(255, 255, 255, 0.06);
-
   --app-bg-solid: #05070c;
-
   --app-bg:
     radial-gradient(ellipse 120% 50% at 50% 62%, rgba(10, 132, 255, 0.08), transparent 60%),
     linear-gradient(180deg, #05070c 0%, #05070c 100%);
-
   --selection-bg: color-mix(in srgb, var(--login-blue) 34%, transparent);
 
 }
-
 .dark .app-search,
-
-.dark .app-list,
-
 .dark .app-section,
-
 .dark .app-btn-secondary,
-
-.dark .app-board-chip,
-
-.dark .app-prefix,
-
-.dark .app-chip:not(.app-chip--active),
-
 .dark .app-empty,
-
 .dark .app-loading {
-
   background: rgba(28, 28, 30, 0.92);
 
 }
-
 .dark .app-hint,
-
-.dark .app-footnote,
-
-.dark .app-section-text {
-
+.dark .app-footnote {
   color: var(--text-secondary);
 
 }
 
-.dark .settings-group-label,
-
-.dark .app-hub__label {
-
+.dark .settings-group-label{
   color: var(--text-secondary);
-
-}
-
-.dark .app-section-text code {
-
-  background: rgba(84, 84, 88, 0.45);
-
-  color: var(--text-tertiary);
 
 }
 
 .dark .app-error {
-
   color: #ff453a;
-
   background: rgba(255, 69, 58, 0.16);
-
-  border-color: rgba(255, 69, 58, 0.32);
-
-}
-
-.dark .app-msg {
-
-  color: var(--text-tertiary);
-
-  background: rgba(120, 120, 128, 0.24);
-
-  border-color: rgba(84, 84, 88, 0.45);
-
-}
-
-.dark .app-msg--info {
-
-  color: #0a84ff;
-
-  background: rgba(10, 132, 255, 0.18);
-
-  border-color: rgba(10, 132, 255, 0.28);
-
-}
-
-.dark .app-msg--ok {
-
-  color: #30d158;
-
-  background: rgba(48, 209, 88, 0.16);
-
-  border-color: rgba(48, 209, 88, 0.3);
-
-}
-
-.dark .app-msg--warn {
-
-  color: #ffd60a;
-
-  background: rgba(255, 159, 10, 0.16);
-
-  border-color: rgba(255, 159, 10, 0.3);
-
-}
-
-.dark .app-msg--err {
-
-  color: #ff453a;
-
-  background: rgba(255, 69, 58, 0.16);
-
   border-color: rgba(255, 69, 58, 0.32);
 
 }
 
 .dark .app-tabbar {
-
   box-shadow:
     0 -0.5px 0 rgba(255, 255, 255, 0.06) inset,
     0 -10px 28px rgba(0, 0, 0, 0.28);
@@ -1594,21 +929,17 @@ html.theme-dark .app-field input::placeholder {
 .dark .app-search input::placeholder,
 
 .dark .app-field input::placeholder {
-
   color: #636366;
 
 }
 
-/* ?? ????DSN / ???? ?? */
+/* 允许选择文本（复制链接 / 密码） */
 
 .allow-select,
 
 .allow-select * {
-
   -webkit-user-select: text;
-
   user-select: text;
-
   -webkit-touch-callout: default;
 
 }
@@ -1616,65 +947,40 @@ html.theme-dark .app-field input::placeholder {
 input,
 
 textarea {
-
   -webkit-user-select: text;
-
   user-select: text;
 
 }
 
-/* ?? Hub + ?????? ?? */
+/* Settings Hub 与 App Hub 共用容器 */
 
 .settings-hub,
 
 .app-hub {
-
   display: flex;
-
   flex-direction: column;
-
   height: 100%;
-
   overflow: hidden;
-
   background-color: var(--app-bg-solid, #f2f2f7);
-
   background-image: var(--app-bg);
-
   color: var(--ink);
 
 }
-
-.settings-hub__top,
-.makers-hub__top {
-
+.settings-hub__top {
   position: relative;
-
   z-index: 2;
-
   flex-shrink: 0;
-
   display: flex;
-
   flex-direction: column;
-
   align-items: stretch;
-
   justify-content: center;
-
   padding: calc(2px + var(--nav-safe-top)) var(--page-pad-x) 2px;
 
 }
-
-.settings-hub__top .settings-hub__title,
-.makers-hub__top .settings-hub__title {
-
+.settings-hub__top .settings-hub__title {
   display: flex;
-
   align-items: center;
-
   justify-content: center;
-
   min-height: 38px;
 
 }
@@ -1682,47 +988,36 @@ textarea {
 .settings-hub__scroll,
 
 .app-hub__scroll {
-
   flex: 1;
-
   min-height: 0;
-
   overflow-x: hidden;
-
   overflow-y: auto;
-
   -webkit-overflow-scrolling: touch;
-
   padding: 0 var(--page-pad-x) 16px;
 
 }
 
 .settings-hub__scroll {
-
   padding: 0 var(--page-pad-x) 28px;
 
 }
 
 .settings-hub__section {
-
   animation: settings-hub-rise 0.42s cubic-bezier(0.25, 1, 0.5, 1) both;
 
 }
 
 .settings-hub__section:nth-child(2) {
-
   animation-delay: 0.045s;
 
 }
 
 .settings-hub__section:nth-child(3) {
-
   animation-delay: 0.09s;
 
 }
 
 .settings-hub__section:nth-child(4) {
-
   animation-delay: 0.135s;
 
 }
@@ -1730,17 +1025,13 @@ textarea {
 @keyframes settings-hub-rise {
 
   from {
-
     opacity: 0;
-
     transform: translateY(8px);
 
   }
 
   to {
-
     opacity: 1;
-
     transform: none;
 
   }
@@ -1750,7 +1041,6 @@ textarea {
 @media (prefers-reduced-motion: reduce) {
 
   .settings-hub__section {
-
     animation: none;
 
   }
@@ -1758,201 +1048,137 @@ textarea {
 }
 
 .settings-hub__section + .settings-hub__section {
-
   margin-top: 8px;
 
 }
 
 .settings-hub .settings-group-label {
-
   margin: 22px 2px 7px 16px;
-
   font-size: 13px;
-
   font-weight: 400;
-
   letter-spacing: -0.01em;
-
   line-height: 18px;
-
   color: var(--mute);
 
 }
 
 .settings-hub__section:first-child .settings-group-label {
-
   margin-top: 8px;
 
 }
 
 .settings-hub .settings-group {
-
   margin: 0;
-
   border: 0.5px solid color-mix(in srgb, var(--hairline) 70%, transparent);
-
   border-radius: 14px;
-
   background: var(--surface-elevated, rgba(255, 255, 255, 0.94));
-
   box-shadow: none;
-
   overflow: hidden;
 
 }
 
 .settings-hub .settings-group > li + li {
-
   border-top: 0.5px solid color-mix(in srgb, var(--hairline) 85%, transparent);
 
 }
 
 .settings-hub .settings-group > li > .settings-nav {
-
   min-height: 60px;
-
   gap: 14px;
-
   padding: 11px 14px 11px 12px;
-
   transition: background 0.2s cubic-bezier(0.25, 1, 0.5, 1);
 
 }
 
 .settings-hub .settings-group > li > .settings-nav:active {
-
   background: rgba(120, 120, 128, 0.16);
 
 }
 
 .settings-hub .settings-nav__icon {
-
   width: 29px;
-
   height: 29px;
-
   border-radius: 7px;
-
   box-shadow: none;
 
 }
 
 .settings-hub .settings-nav__icon--blue {
-
   background: #007aff;
 
 }
 
 .settings-hub .settings-nav__icon--indigo {
-
   background: #5856d6;
 
 }
 
 .settings-hub .settings-nav__icon--teal {
-
   background: #30b0c7;
 
 }
 
 .settings-hub .settings-nav__icon--orange {
-
   background: #ff9500;
 
 }
 
 .settings-hub .settings-nav__icon--green {
-
   background: #34c759;
 
 }
 
 .settings-hub .settings-nav__main {
-
   display: flex;
-
   flex-direction: column;
-
   gap: 2px;
-
   min-width: 0;
-
   flex: 1;
 
 }
 
 .settings-hub .settings-nav__title {
-
   font-size: 17px;
-
   font-weight: 400;
-
   letter-spacing: -0.022em;
-
   line-height: 22px;
-
   color: var(--ink);
 
 }
 
 .settings-hub .settings-nav__desc {
-
   font-size: 13px;
-
   font-weight: 400;
-
   letter-spacing: -0.01em;
-
   line-height: 18px;
-
   color: var(--mute);
 
 }
 
 .settings-hub .settings-nav__trail {
-
   display: inline-flex;
-
   align-items: center;
-
   justify-content: flex-end;
-
   gap: 4px;
-
   flex-shrink: 0;
-
   max-width: 42%;
-
   min-width: 0;
 
 }
 
 .settings-hub .settings-nav__status {
-
   max-width: 100%;
-
   padding: 0;
-
   border-radius: 0;
-
   font-size: 15px;
-
   font-weight: 400;
-
   letter-spacing: -0.01em;
-
   line-height: 20px;
-
   text-align: right;
-
   background: transparent;
-
   color: var(--mute);
-
   overflow: hidden;
-
   text-overflow: ellipsis;
-
   white-space: nowrap;
 
 }
@@ -1960,45 +1186,33 @@ textarea {
 .settings-hub .settings-nav__status--ok,
 
 .settings-hub .settings-nav__status--mute {
-
   background: transparent;
-
   color: var(--mute);
 
 }
 
 .settings-hub .settings-nav__status--warn {
-
   background: transparent;
-
   color: #ff9500;
 
 }
 
 .settings-hub .settings-nav__chev {
-
   flex-shrink: 0;
-
   margin: 0;
-
   opacity: 0.28;
-
   color: var(--ink);
 
 }
 
 .dark .settings-hub .settings-group {
-
   background: rgba(28, 28, 30, 0.94);
-
   border-color: rgba(84, 84, 88, 0.55);
-
   box-shadow: none;
 
 }
 
 .dark .settings-hub .settings-group > li > .settings-nav:active {
-
   background: rgba(120, 120, 128, 0.28);
 
 }
@@ -2008,26 +1222,19 @@ textarea {
 .dark .settings-hub .settings-nav__status--ok,
 
 .dark .settings-hub .settings-nav__status--mute {
-
   background: transparent;
-
   color: rgba(235, 235, 245, 0.45);
 
 }
 
 .dark .settings-hub .settings-nav__status--warn {
-
   background: transparent;
-
   color: #ff9f0a;
 
 }
 
 .dark .settings-hub .settings-nav__chev {
-
   color: rgba(235, 235, 245, 0.3);
-
   opacity: 1;
 
 }
-

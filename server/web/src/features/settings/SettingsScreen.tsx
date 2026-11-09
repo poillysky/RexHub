@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type ComponentType } from 'react';
+import { startTransition, useEffect, useState, type ComponentType } from 'react';
 import {
   ChevronRight,
   Clapperboard,
@@ -10,7 +10,7 @@ import {
   HardDrive,
   MessagesSquare,
   Package,
-  Boxes,
+  Blocks,
   Search,
   Sparkles,
   Palette,
@@ -77,9 +77,10 @@ const SECTIONS: Section[] = [
       {
         id: 'users',
         title: '用户管理',
-        desc: '登录账号与权限',
+        desc: '账号、密码与权限',
         Icon: UserRound,
         accent: 'blue',
+        logo: '/brand/users.svg',
       },
       {
         id: 'appearance',
@@ -87,6 +88,7 @@ const SECTIONS: Section[] = [
         desc: '浅色 / 深色 / 跟随系统',
         Icon: Palette,
         accent: 'indigo',
+        logo: '/brand/appearance.svg',
       },
     ],
   },
@@ -160,6 +162,7 @@ const SECTIONS: Section[] = [
         tags: ['影视'],
         Icon: Clapperboard,
         accent: 'blue',
+        logo: '/brand/moreplay.png',
       },
     ],
   },
@@ -171,8 +174,9 @@ const SECTIONS: Section[] = [
         id: 'plugin-center',
         title: '插件中心',
         desc: '市场 · 安装 · 更新 · 配置',
-        Icon: Boxes,
+        Icon: Blocks,
         accent: 'blue',
+        logo: '/brand/plugin-center.svg',
       },
       {
         id: 'stremio',
@@ -180,6 +184,7 @@ const SECTIONS: Section[] = [
         desc: '订阅仓库与 addon 详情',
         Icon: Package,
         accent: 'green',
+        logo: '/brand/stremio.svg',
       },
     ],
   },
@@ -193,6 +198,7 @@ const SECTIONS: Section[] = [
         desc: '出站 HTTP 代理 · FlareSolverr',
         Icon: Wifi,
         accent: 'teal',
+        logo: '/brand/network.svg',
       },
     ],
   },
@@ -203,27 +209,30 @@ const SECTIONS: Section[] = [
       {
         id: 'ai',
         title: 'AI 模型',
-        desc: '聊天与向量嵌入',
+        desc: '聊天模型与 Agent',
         Icon: Sparkles,
         accent: 'green',
+        logo: '/brand/ai.svg',
       },
     ],
   },
 ];
 
 export function SettingsScreen() {
-  const { logout } = useAuth();
+  const { logout, isAdmin } = useAuth();
   const tabCtx = useTabNavigation();
+  const activeTab = tabCtx?.activeTab;
+  const tabReselect = tabCtx?.tabReselect ?? 0;
   const [panel, setPanel] = useState<Panel>('hub');
   const hubCover = useStackCover(panel !== 'hub', 'settings-hub', 'settings-hub');
+  // AI 设置接口仅管理员可用，普通用户不展示入口，避免点进去全是 403
+  const sections = isAdmin ? SECTIONS : SECTIONS.filter((s) => s.id !== 'ai');
 
   // 再次点「更多」：回到 Hub（iOS 习惯）；切走不强制清栈
   useEffect(() => {
-    if (!tabCtx || tabCtx.activeTab !== '/settings') return;
-    // 外部 Tab 重选事件驱动的一次栈重置，只能在 effect 里响应，无法在渲染期表达
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (tabCtx.tabReselect > 0) setPanel('hub');
-  }, [tabCtx?.tabReselect]);
+    if (activeTab !== '/settings' || tabReselect === 0) return;
+    startTransition(() => setPanel('hub'));
+  }, [activeTab, tabReselect]);
 
   async function onLogout() {
     await logout();
@@ -237,7 +246,7 @@ export function SettingsScreen() {
           <h1 className="settings-hub__title">更多</h1>
         </div>
         <div className="settings-hub__scroll">
-          {SECTIONS.map((section) => (
+          {sections.map((section) => (
             <section key={section.id} className="settings-hub__section">
               <h2 className="settings-group-label">{section.label}</h2>
               <ul className="settings-group">
@@ -259,7 +268,7 @@ export function SettingsScreen() {
                           aria-hidden
                         >
                           {item.logo ? (
-                            <img src={item.logo} alt="" width={18} height={18} decoding="async" />
+                            <img src={item.logo} alt="" width={26} height={26} decoding="async" />
                           ) : (
                             <Icon size={17} strokeWidth={2.2} />
                           )}
@@ -326,7 +335,7 @@ export function SettingsScreen() {
       {panel === 'stremio' ? (
         <StremioPanel onBack={() => setPanel('hub')} />
       ) : null}
-      {panel === 'ai' ? (
+      {panel === 'ai' && isAdmin ? (
         <AiModelsPanel onBack={() => setPanel('hub')} />
       ) : null}
       {panel === 'appearance' ? (

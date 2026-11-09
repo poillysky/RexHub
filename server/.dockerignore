@@ -1,0 +1,28 @@
+# 构建上下文 = server/。排除本机依赖、构建产物、运行时数据与私有配置。
+
+# Python
+api/.venv
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+
+# Node / Next
+web/node_modules
+web/.next
+web/out
+web/.turbo
+web/coverage
+
+# 运行时数据与备份（容器内由 /app/data 卷提供）
+data
+backups
+**/*.log
+**/.DS_Store
+
+# 本地环境与私有配置
+.env
+api/.env
+config/app.local.json
+docker-compose*.yml

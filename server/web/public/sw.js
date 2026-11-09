@@ -1,7 +1,17 @@
 // Service worker for offline shell only — never cache API / media
-const CACHE_NAME = 'app-v3';
+const CACHE_NAME = 'app-v4';
 
-self.addEventListener('install', (event) => {
+// 只缓存成功的同源响应；重定向后的 404/500 不能写进缓存
+function cachePut(request, response) {
+  if (!response || !response.ok) return;
+  const clone = response.clone();
+  caches
+    .open(CACHE_NAME)
+    .then((cache) => cache.put(request, clone))
+    .catch(() => {}); // 206/不可缓存响应会 reject，忽略即可
+}
+
+self.addEventListener('install', () => {
   self.skipWaiting();
 });
 
@@ -39,8 +49,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          cachePut(event.request, response);
           return response;
         })
         .catch(() => caches.match(event.request).then((c) => c || caches.match('/')))
@@ -52,8 +61,7 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     caches.match(event.request).then((cached) => {
       const fetchPromise = fetch(event.request).then((response) => {
-        const clone = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        cachePut(event.request, response);
         return response;
       });
       return cached || fetchPromise;

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" role="img" aria-label="用户管理">
+  <defs>
+    <linearGradient id="users" x1="4" y1="3" x2="20" y2="21" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5ac8fa" />
+      <stop offset="1" stop-color="#5856d6" />
+    </linearGradient>
+  </defs>
+  <path
+    fill="url(#users)"
+    d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 2c-3.53 0-8 1.77-8 5.29V21h16v-1.71C20 15.77 15.53 14 12 14Z"
+  />
+</svg>

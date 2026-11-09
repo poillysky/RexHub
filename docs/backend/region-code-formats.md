@@ -308,4 +308,4 @@ BrazzersExxtra.26.07.09
 ## 维护
 
 - 前缀级 pad / shape 变更：改 `server/maps/prefixes/` 后同步改本表「规范示例」。  
-- 逐站审计结论仍记在 [source-region-code-audit.md](./source-region-code-audit.md)；测源时**先按本表造输入**。
+- 逐站审计结论见 git 历史；测源时**先按本表造输入**。

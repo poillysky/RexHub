@@ -105,44 +105,6 @@ export function normalizeLinkKind(
   return "other";
 }
 
-const ARCHIVE_EXT_RE = /\.(zip|rar|7z)(?:\?|#|$)/i;
-
-export function isArchiveFilename(name?: string | null): boolean {
-  return ARCHIVE_EXT_RE.test((name || "").trim());
-}
-
-export function isArchiveDownloadLink(link?: string | null): boolean {
-  const raw = (link || "").trim();
-  if (!raw) return false;
-  const ed2k = raw.match(/^ed2k:\/\/\|file\|([^|]+)\|/i);
-  if (ed2k?.[1]) {
-    try {
-      return isArchiveFilename(decodeURIComponent(ed2k[1]));
-    } catch {
-      return isArchiveFilename(ed2k[1]);
-    }
-  }
-  const dn = raw.match(/[?&]dn=([^&]+)/i);
-  if (dn?.[1]) {
-    try {
-      return isArchiveFilename(decodeURIComponent(dn[1].replace(/\+/g, " ")));
-    } catch {
-      return isArchiveFilename(dn[1]);
-    }
-  }
-  return ARCHIVE_EXT_RE.test(raw);
-}
-
-export function hasArchiveEd2k(item: {
-  name?: string | null;
-  hash?: string | null;
-  ed2k_link?: string | null;
-  ed2k_links?: string[] | null;
-}): boolean {
-  if (isArchiveFilename(item.name)) return true;
-  return linksForResource(item).some((link) => isArchiveDownloadLink(link));
-}
-
 export function linkSectionTitle(linkKind?: string | null): string {
   const kind = normalizeLinkKind(linkKind);
   if (kind === "115share") return "115 分享";

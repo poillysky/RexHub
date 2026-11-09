@@ -62,36 +62,12 @@ def data_dir() -> Path:
     return _ensure_dir(DATA_DIR)
 
 
-def mirrors_dir() -> Path:
-    return _ensure_dir(data_dir() / "mirrors")
-
-
 def prefix_runtime_dir() -> Path:
     return _ensure_dir(data_dir() / "prefix")
 
 
 def prefix_code_ranges_cache() -> Path:
-    new = prefix_runtime_dir() / "code-ranges.json"
-    legacy = data_dir() / "prefix-code-ranges.json"
-    if legacy.is_file() and not new.is_file():
-        try:
-            legacy.replace(new)
-        except OSError:
-            return legacy
-    return new
-
-
-def debug_dir() -> Path:
-    """脚本报告 / 探针输出（原 data/_debug）。"""
-    return _ensure_dir(data_dir() / "debug")
-
-
-def site_mirrors_path() -> Path:
-    return mirrors_dir() / "site-mirrors.json"
-
-
-def iqqtv_mirror_legacy_path() -> Path:
-    return mirrors_dir() / "iqqtv-mirror.json"
+    return prefix_runtime_dir() / "code-ranges.json"
 
 
 def meta_db_path() -> Path:
@@ -100,11 +76,6 @@ def meta_db_path() -> Path:
     if raw:
         return Path(raw).expanduser().resolve()
     return data_dir() / META_DB_FILENAME
-
-
-def db_path() -> Path:
-    """兼容旧调用：返回元库 SQLite 文件路径。"""
-    return meta_db_path()
 
 
 def meta_db_label() -> str:

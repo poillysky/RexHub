@@ -152,6 +152,9 @@ const EMPTY_FILTERS: Record<FacetKey, string[]> = {
   team: [],
 };
 
+/** 稳定引用：无数据时 useMemo 依赖不至于每次渲染都变化 */
+const NO_TORRENTS: MpTorrentItem[] = [];
+
 /** MP 只把这两个标签订为字幕维度 */
 const SUBTITLE_LABELS = new Set(['中字', '特效']);
 
@@ -292,7 +295,10 @@ export function MediaPtSearchBody({
     area,
   });
 
-  const items = result.data?.items || [];
+  const items = useMemo(
+    () => result.data?.items ?? NO_TORRENTS,
+    [result.data],
+  );
 
   // 各筛选维度的候选值与命中数（跨站点合并后一条资源可能挂在多个站点）
   const facetOptions = useMemo(() => {
@@ -389,7 +395,7 @@ export function MediaPtSearchBody({
         source: item.source,
         mediaId: item.id,
         mediaType: item.mediaType,
-        title: item.title,
+        title: item.title || defaultKeyword(item),
         originalTitle: item.originalTitle,
         year: item.year,
         posterUrl: item.posterUrl,
@@ -560,15 +566,21 @@ export function MediaPtSearchBody({
                   >
                     <div className="media-pt__row-main">
                     <span className="media-pt__row-head">
-                      <a
-                        className="media-pt__title allow-select"
-                        href={t.pageUrl || undefined}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {title}
-                      </a>
+                      {t.pageUrl ? (
+                        <a
+                          className="media-pt__title allow-select"
+                          href={t.pageUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {title}
+                        </a>
+                      ) : (
+                        <span className="media-pt__title allow-select">
+                          {title}
+                        </span>
+                      )}
                       <span className="media-pt__badges">
                         {t.volumeFactor ? (
                           <span

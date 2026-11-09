@@ -1,6 +1,5 @@
 'use client';
 
-import './app-frame.css';
 
 /**
  * 全屏应用容器：PWA 直接铺满视口，不再在桌面浏览器里套 iPhone 外框。

@@ -28,11 +28,3 @@ export type ShtForumCategory = {
 };
 
 export const SEHUATANG_FORUM = forumJson as ShtForumCategory[];
-
-export function shtForumBoardCount(): number {
-  return SEHUATANG_FORUM.reduce((n, c) => n + c.boards.length, 0);
-}
-
-export function shtForumPreview(): string {
-  return SEHUATANG_FORUM.map((c) => c.category).join(" · ");
-}

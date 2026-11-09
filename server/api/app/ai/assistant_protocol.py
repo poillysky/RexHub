@@ -4,7 +4,7 @@
 import re
 from typing import Any, Literal
 
-AssistantSource = Literal["sehua", "magnet", "media", "web"]
+AssistantSource = Literal["sehua", "magnet", "media", "web", "av", "stream", "cloud"]
 
 DEFAULT_SUGGEST_CHIPS: list[str] = [
     "三上悠亚 有码",
@@ -13,19 +13,28 @@ DEFAULT_SUGGEST_CHIPS: list[str] = [
     "蓝光 磁力",
 ]
 
-SYSTEM_PROMPT = """你是「小花」，用户的智能搜片助手。可查本地仓库(色花)、磁力(Bitmagnet)、影视元数据(TMDB等)、影人作品，以及（若已配置）网络搜索。
+SYSTEM_PROMPT = """你是「小花」，用户的智能搜片助手。可查本地仓库(色花)、磁力(Bitmagnet)、影视元数据(TMDB/豆瓣等)、AV 片库(JavDB)、在线片源、网盘资源(CloudSaver)、115 网盘，以及（若已配置）网络搜索。
 
 ## 意图 → 工具（你必须自己判断，不要瞎调）
-- 先读懂用户要什么：事实问答 / 作品清单 / 找片资源 / 多跳推导（由 A 推到 B）。
-- 事实与片单（谁演的、演过哪些）：优先 media_search、media_person_works、web_search；交叉验证 2～3 次即可，够用就停，不要刷仓库/磁力。
-- 要下载、种子、仓库资源：再开 sehua_* / magnet_*。
-- AV/番号/女优 → sehua；影视剧/影人 → media（+ 需要种子时再 magnet）；网上资料 → web_search。
-- 同一轮可并行多个工具；依赖上一步结果时再分步。
+- 先读懂用户要什么：事实问答 / 作品清单 / 找片资源 / 在线播放 / 转存下载 / 多跳推导（由 A 推到 B）。
+- 影视（电影/剧集）：
+  · 找片、确认片名：media_search；要简介/评分/主演/IMDb ID：media_detail。
+  · 片名 → 演员 → 其作品：media_search → media_detail 取 castPeople → media_person_works。
+  · 在线播放：media_detail 拿 imdbId → media_streams。
+- AV / 番号 / 女优：
+  · 番号、片名：av_search(type=code 或 movie)；片商/系列/片单/导演：av_search 对应 type。
+  · 影片详情与种子：av_movie(movie_id)。
+  · 女优作品：av_search(type=actor) 拿 id → av_actor_works(actor_id)。
+- 本地仓库：色花 sehua_keyword；要看详情/电驴链接：sehua_detail(hash)。
+- 磁力：magnet_search；要文件列表/磁力链接：magnet_detail(hash)。
+- 网盘资源（夸克/阿里/115 分享）：cloudsaver_search。
+- 转存/离线下载到 115：p115_save(urls, password)；调用前先说明要保存的链接。
+- 网上资料：web_search。
 - 多跳示例「给我镜中人女主演电影」：
-  1) web_search / media_search 确认女主姓名（可中英双语检索，如「镜中人 女主」再查英文名）；
-  2) media_person_works（或英文名再搜）列其作品；
+  1) media_search 确认片名，media_detail 取女主姓名与 castPeople；
+  2) media_person_works 列其作品；
   禁止只搜一次片名就把搜索命中当答案。
-- 多轮约束（有码/无码/女优/年份/只要磁力）必须写进后续工具参数。
+- 多轮约束（有码/无码/女优/年份/只要磁力/只要网盘）必须写进后续工具参数。
 
 ## 回答（整合，对标优质助手）
 - 工具结果只是素材。先给结论，再按需列要点；用换行和「· 」条目，不要写成一段糊在一起。
@@ -34,26 +43,41 @@ SYSTEM_PROMPT = """你是「小花」，用户的智能搜片助手。可查本�
   其他主要作品：
   · 《xxx》(English, 年份) — 角色
   · …
+- 找片结果示例：
+  找到 3 条可用资源：
+  · 《xxx》(2024) — 4.2 GB · 蓝光
+  · …
+  需要的话可以点卡片看详情、种子或直接播放。
 - 条目写清中文名/英文名、年份、角色（若有）；必要时点名来源（豆瓣/TMDB/维基），不要提工具名、向量、分数。
-- 篇幅随问题：短问答几十到百余字；片单可到约 300 字。禁止把工具返回的原始标题列表整段复读。
+- 篇幅随问题：短问答几十到百余字；片单可到约 300 字。
 - 没搜到或工具失败：如实说，并提示换问法或去设置里配，不要编造。
 
 ## 资源卡片
-- 卡片由系统按用户意图决定。信息问答与作品清单以文字整合为主；只有用户明确要库内资源/磁力时才依赖卡片。"""
+- 卡片由系统按用户意图决定。信息问答与作品清单以文字整合为主；只有用户明确要库内资源/磁力时才会展示卡片。"""
 
 # 即使聊天预设覆盖了 systemPrompt，也会追加这段，保证行为底线
 BEHAVIOR_APPENDIX = """
 【行为底线】
 1. 按问题主动选择工具（可多工具并行或分步多跳；关键信息中英交叉验证），不要无关乱调。
 2. 拿到工具结果后必须整合成自然语言答复（结论 + 条目），禁止整段复读搜索列表。
-3. 纯问答 / 作品清单以文字为主；用户要找库内资源或磁力时再强调可点条目。"""
+3. 纯问答 / 作品清单以文字为主；用户要找库内资源或磁力时再强调可点条目。
+4. 只有用户明确要求「转存 / 保存到网盘 / 下载」时才调用 p115_save，并先说明要保存的链接。"""
 
 # 小花可配置工具（设置页开关）
 DEFAULT_ASSISTANT_TOOLS: dict[str, bool] = {
     "sehua_keyword": True,
+    "sehua_detail": True,
     "magnet_search": True,
+    "magnet_detail": True,
     "media_search": True,
+    "media_detail": True,
     "media_person_works": True,
+    "av_search": True,
+    "av_movie": True,
+    "av_actor_works": True,
+    "media_streams": True,
+    "cloudsaver_search": True,
+    "p115_save": True,
     "web_search": True,
 }
 
@@ -65,10 +89,22 @@ ASSISTANT_TOOL_META: list[dict[str, str]] = [
         "desc": "色花标题/文件名搜索",
     },
     {
+        "id": "sehua_detail",
+        "group": "warehouse",
+        "label": "仓库详情",
+        "desc": "按 hash 看资源详情/电驴链接",
+    },
+    {
         "id": "magnet_search",
         "group": "magnet",
         "label": "磁力搜索",
         "desc": "Bitmagnet 关键词",
+    },
+    {
+        "id": "magnet_detail",
+        "group": "magnet",
+        "label": "磁力详情",
+        "desc": "按 hash 看文件列表/磁力链接",
     },
     {
         "id": "media_search",
@@ -77,10 +113,52 @@ ASSISTANT_TOOL_META: list[dict[str, str]] = [
         "desc": "TMDB / 豆瓣等",
     },
     {
+        "id": "media_detail",
+        "group": "media",
+        "label": "影视详情",
+        "desc": "简介/评分/主演/IMDb ID",
+    },
+    {
         "id": "media_person_works",
         "group": "media",
         "label": "影人作品",
         "desc": "按演员/导演列作品",
+    },
+    {
+        "id": "av_search",
+        "group": "av",
+        "label": "AV 搜索",
+        "desc": "番号/片名/片商/演员/系列",
+    },
+    {
+        "id": "av_movie",
+        "group": "av",
+        "label": "AV 详情",
+        "desc": "影片资料 + 种子列表",
+    },
+    {
+        "id": "av_actor_works",
+        "group": "av",
+        "label": "女优作品",
+        "desc": "按演员 id 列影片",
+    },
+    {
+        "id": "media_streams",
+        "group": "stream",
+        "label": "在线片源",
+        "desc": "按 IMDb ID 聚合播放源",
+    },
+    {
+        "id": "cloudsaver_search",
+        "group": "cloud",
+        "label": "网盘搜索",
+        "desc": "CloudSaver 夸克/阿里/115",
+    },
+    {
+        "id": "p115_save",
+        "group": "cloud",
+        "label": "115 转存",
+        "desc": "分享链接转存/离线下载",
     },
     {
         "id": "web_search",
@@ -94,6 +172,9 @@ ASSISTANT_SKILL_GROUPS: list[dict[str, str]] = [
     {"id": "warehouse", "label": "仓库", "desc": "色花资源库"},
     {"id": "magnet", "label": "磁力", "desc": "Bitmagnet"},
     {"id": "media", "label": "影视", "desc": "TMDB 等元数据"},
+    {"id": "av", "label": "AV 片库", "desc": "JavDB 番号/女优"},
+    {"id": "stream", "label": "播放", "desc": "聚合在线片源"},
+    {"id": "cloud", "label": "网盘", "desc": "CloudSaver / 115"},
     {"id": "web", "label": "网络", "desc": "公开网页搜索"},
 ]
 
@@ -224,6 +305,4 @@ def select_ui_cards(
         return []
     last_step = max(buckets)
     # 多跳：只展示最后一轮（例如女主作品），避免中间「片名搜索」刷屏
-    if len(buckets) >= 2:
-        return merge_cards(buckets[last_step], limit=limit)
     return merge_cards(buckets[last_step], limit=limit)

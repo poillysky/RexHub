@@ -62,15 +62,4 @@ export function parseHighlight(
   }
   return out;
 }
-export function primaryLink(item: {
-  ed2k_link?: string;
-  link_kind?: string;
-  hash?: string;
-}): string {
-  const link = (item.ed2k_link || "").trim();
-  if (link) return link;
-  if (item.link_kind === "magnet" && item.hash) {
-    return `magnet:?xt=urn:btih:${item.hash}`;
-  }
-  return "";
-}
+

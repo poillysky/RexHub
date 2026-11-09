@@ -59,7 +59,6 @@ export function useUiPreferences(): [
   const [prefs, setPrefs] = useState<UiPreferences>(DEFAULT_UI_PREFERENCES);
 
   useEffect(() => {
-    setPrefs(getUiPreferences());
     const onCustom = (e: Event) => {
       const detail = (e as CustomEvent<UiPreferences>).detail;
       if (detail) setPrefs(detail);

@@ -9,6 +9,7 @@ import asyncio
 import json
 import os
 import re
+import shutil
 import tempfile
 from typing import Any
 
@@ -27,7 +28,6 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 import app.core.settings_store as settings_store
-import app.p115.client as p115_client
 import app.p115.extract_jobs as p115_extract_jobs
 import app.p115.offline as p115_offline
 import app.p115.rename_after_save as p115_rename
@@ -38,6 +38,10 @@ from app.rexhub.auth_guard import require_session
 from app.rexhub.pan_targets import _resolve_p115_folder
 
 router = APIRouter(prefix="/api/pan", tags=["pan"])
+
+# 上传要先落盘再转给 115：限制单文件体积，并给临时目录留出安全余量
+UPLOAD_MAX_BYTES = 20 * 1024 * 1024 * 1024
+UPLOAD_MIN_FREE_BYTES = 1 * 1024 * 1024 * 1024
 
 
 class CloudAddBody(BaseModel):
@@ -121,6 +125,14 @@ class ExtractConfigBody(BaseModel):
 
     model_config = {"populate_by_name": True}
 
+
+
+def _require_admin(request: Request) -> dict:
+    """115 是全服共享的一份账号，目录增删改与解压只允许管理员操作。"""
+    user = require_session(request)
+    if not user.get("is_admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="需要管理员权限")
+    return user
 
 
 def _upstream_error(exc: Exception) -> HTTPException:
@@ -239,7 +251,7 @@ async def cloud_add(
     body: CloudAddBody,
 ) -> dict:
     """添加云下载任务：支持 HTTP / HTTPS / FTP / 磁力 / 电驴链接。"""
-    require_session(request)
+    _require_admin(request)
     try:
         return await asyncio.to_thread(pan115.cloud_add, body.urls, body.cid)
     except pan115.Pan115Error as exc:
@@ -254,7 +266,7 @@ async def save_to_drive(
     request: Request,
 ) -> dict:
     """资源转存：115 分享链接走接收分享，其余链接走云下载。"""
-    require_session(request)
+    _require_admin(request)
     try:
         return await asyncio.to_thread(
             pan115.save_to_drive, body.urls, body.password, body.cid
@@ -270,7 +282,7 @@ async def cloud_retry(
     body: CloudTaskBody,
     request: Request,
 ) -> dict:
-    require_session(request)
+    _require_admin(request)
     try:
         return await asyncio.to_thread(pan115.cloud_retry, body.info_hash)
     except pan115.Pan115Error as exc:
@@ -285,7 +297,7 @@ async def cloud_clear(
     body: CloudClearBody,
 ) -> dict:
     """批量清理离线任务：done（已完成）/ failed（已失败）/ all。"""
-    require_session(request)
+    _require_admin(request)
     result = await asyncio.to_thread(
         p115_offline.clear_offline_tasks, pan115.cookie_string(), body.mode
     )
@@ -295,7 +307,7 @@ async def cloud_clear(
             raise HTTPException(status_code=409, detail=detail)
         raise HTTPException(status_code=502, detail=detail)
     pan115._invalidate_cloud_cache()
-    return result
+    return _p115_public_result(result)
 
 
 @router.post("/cloud/delete")
@@ -303,7 +315,7 @@ async def cloud_delete(
     body: CloudTaskBody,
     request: Request,
 ) -> dict:
-    require_session(request)
+    _require_admin(request)
     try:
         return await asyncio.to_thread(pan115.cloud_delete, body.info_hash)
     except pan115.Pan115Error as exc:
@@ -318,7 +330,7 @@ def post_p115_offline(
     request: Request,
 ) -> JSONResponse:
     """离线转存：搜索 / 影视 / 片商三类都直存各自目标目录（云下载）。"""
-    require_session(request)
+    _require_admin(request)
     try:
         prev = settings_store.get_setting(settings_store.P115_KEY) or {}
         cookie = str(prev.get("cookie") or "").strip()
@@ -410,7 +422,7 @@ def post_p115_share(
     request: Request,
 ) -> JSONResponse:
     """分享转存：搜索/影视/片商三类都直存目标目录。"""
-    require_session(request)
+    _require_admin(request)
     try:
         prev = settings_store.get_setting(settings_store.P115_KEY) or {}
         cookie = str(prev.get("cookie") or "").strip()
@@ -485,7 +497,7 @@ async def folder_create(
     body: FolderBody,
 ) -> dict:
     """在当前目录新建文件夹。"""
-    require_session(request)
+    _require_admin(request)
     try:
         return await asyncio.to_thread(pan115.create_folder, body.cid, body.name)
     except pan115.Pan115Error as exc:
@@ -500,7 +512,7 @@ async def delete(
     request: Request,
 ) -> dict:
     """批量删除（移入 115 回收站）。"""
-    require_session(request)
+    _require_admin(request)
     try:
         return await asyncio.to_thread(pan115.delete_items, body.ids)
     except pan115.Pan115Error as exc:
@@ -515,7 +527,7 @@ async def rename(
     request: Request,
 ) -> dict:
     """重命名单个文件 / 文件夹。"""
-    require_session(request)
+    _require_admin(request)
     try:
         return await asyncio.to_thread(pan115.rename_item, body.id, body.name)
     except pan115.Pan115Error as exc:
@@ -530,7 +542,7 @@ async def rename_batch(
     request: Request,
 ) -> dict:
     """批量重命名，一次请求提交多组新名称。"""
-    require_session(request)
+    _require_admin(request)
     pairs = [(pair.id, pair.name) for pair in body.items]
     try:
         return await asyncio.to_thread(pan115.rename_items, pairs)
@@ -546,7 +558,7 @@ async def move(
     request: Request,
 ) -> dict:
     """批量移动到指定目录。"""
-    require_session(request)
+    _require_admin(request)
     try:
         return await asyncio.to_thread(pan115.move_items, body.ids, body.cid)
     except pan115.Pan115Error as exc:
@@ -561,7 +573,7 @@ async def copy(
     request: Request,
 ) -> dict:
     """批量复制到指定目录。"""
-    require_session(request)
+    _require_admin(request)
     try:
         return await asyncio.to_thread(pan115.copy_items, body.ids, body.cid)
     except pan115.Pan115Error as exc:
@@ -577,14 +589,27 @@ async def upload(
     file: UploadFile = File(...),
 ) -> dict:
     """上传文件：先落到服务端临时文件，再交给 115 上传，完成后立即删除。"""
-    require_session(request)
+    _require_admin(request)
     filename = os.path.basename((file.filename or "").strip()) or "未命名文件"
 
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".upload")
     path = tmp.name
     try:
+        # 上传先落盘再转给 115，必须挡住超大文件与磁盘被写满
+        if shutil.disk_usage(tempfile.gettempdir()).free < UPLOAD_MIN_FREE_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
+                detail="服务端临时空间不足，暂时无法上传",
+            )
+        written = 0
         with tmp:
             while chunk := await file.read(1 << 20):
+                written += len(chunk)
+                if written > UPLOAD_MAX_BYTES:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail=f"文件超过 {UPLOAD_MAX_BYTES // (1 << 30)}GB 上限",
+                    )
                 tmp.write(chunk)
         return await asyncio.to_thread(pan115.upload_file, path, cid, filename)
     except pan115.Pan115Error as exc:
@@ -619,13 +644,13 @@ async def play(
 @router.get("/extract/config")
 async def extract_config(request: Request) -> dict:
     """解压配置：指定目录与解压密码。"""
-    require_session(request)
+    _require_admin(request)
     return await asyncio.to_thread(p115_extract_jobs.get_config)
 
 
 @router.put("/extract/config")
 async def extract_config_save(body: ExtractConfigBody, request: Request) -> dict:
-    require_session(request)
+    _require_admin(request)
     return await asyncio.to_thread(
         p115_extract_jobs.save_config,
         body.folder_cid,
@@ -637,7 +662,7 @@ async def extract_config_save(body: ExtractConfigBody, request: Request) -> dict
 @router.get("/extract/preview")
 async def extract_preview(request: Request, cid: str = "") -> dict:
     """预览指定目录下待解压的压缩包，不启动队列。"""
-    require_session(request)
+    _require_admin(request)
     try:
         return await asyncio.to_thread(p115_extract_jobs.preview, cid)
     except RuntimeError as exc:
@@ -646,14 +671,14 @@ async def extract_preview(request: Request, cid: str = "") -> dict:
 
 @router.get("/extract/status")
 async def extract_status(request: Request) -> dict:
-    require_session(request)
+    _require_admin(request)
     return await asyncio.to_thread(p115_extract_jobs.snapshot)
 
 
 @router.post("/extract/start")
 async def extract_start(request: Request) -> dict:
     """启动解压队列：一次只跑一个任务，完成后自动下一个。"""
-    require_session(request)
+    _require_admin(request)
     try:
         return await asyncio.to_thread(p115_extract_jobs.start)
     except RuntimeError as exc:
@@ -662,15 +687,22 @@ async def extract_start(request: Request) -> dict:
 
 @router.post("/extract/stop")
 async def extract_stop(request: Request) -> dict:
-    require_session(request)
+    _require_admin(request)
     return await asyncio.to_thread(p115_extract_jobs.stop)
 
 
 @router.get("/progress")
 async def progress_list(request: Request) -> dict:
-    """跨设备观看进度：一次返回全部记录，App 拉取后合并到本地缓存。"""
-    require_session(request)
-    return {"items": await asyncio.to_thread(progress_store.all_entries)}
+    """跨设备观看进度：只返回当前用户的记录，App 拉取后合并到本地缓存。"""
+    user = require_session(request)
+    owner = str(user.get("id") or user.get("username") or "")
+    return {
+        "items": await asyncio.to_thread(
+            progress_store.all_entries,
+            owner,
+            include_legacy=bool(user.get("is_admin")),
+        )
+    }
 
 
 @router.put("/progress")
@@ -679,12 +711,13 @@ async def progress_save(
     request: Request,
 ) -> dict:
     """上报单个文件的观看进度；位置过小或已到片尾视为看完，服务端直接删除记录。"""
-    require_session(request)
+    user = require_session(request)
+    owner = str(user.get("id") or user.get("username") or "")
     if not body.pickcode.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="缺少 pickcode")
     try:
         item = await asyncio.to_thread(
-            progress_store.save, body.pickcode, body.position, body.duration
+            progress_store.save, owner, body.pickcode, body.position, body.duration
         )
     except OSError as exc:
         raise HTTPException(

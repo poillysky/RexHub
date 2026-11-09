@@ -12,10 +12,10 @@ from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.auth.routes import router as auth_router
 from app.core.bootstrap import seed_settings_from_config
-from app.core.config_loader import config_paths
 from app.core.db import close_meta_db, init_db, meta_db_label
 from app.core.pg import close_pool
 from app.search.bitmagnet_pg import close_pool as close_bitmagnet_pool
@@ -28,8 +28,8 @@ from app.ai.assistant_routes import router as ai_assistant_router
 from app.ai.chat_preset_routes import router as ai_chat_preset_router
 from app.search.magnet_routes import router as magnet_router
 from app.search.scope_routes import router as scope_router
-from app.search.pansou_routes import router as pansou_router
 from app.search.cloudsaver_routes import router as cloudsaver_router
+from app.search.avdb_client import AvdbError
 from app.search.avdb_routes import router as avdb_router
 from app.core.moviepilot_routes import router as moviepilot_router
 from app.core.moreplay_routes import router as moreplay_router
@@ -45,6 +45,7 @@ from app.core.db_settings_routes import (
 
 import app.core.pg_data_backup as pg_data_backup
 import app.core.settings_store as settings_store
+import app.auth.store as auth_store
 import app.rexhub as rexhub_pkg
 from app.rexhub.routes import include_rexhub
 
@@ -56,6 +57,11 @@ log = logging.getLogger(__name__)
 async def lifespan(_app: FastAPI):
     init_db()
     seed_settings_from_config()
+    invites = auth_store.ensure_invite_codes()
+    auth_store.prune_sessions()
+    if auth_store.admin_count() == 0:
+        # 仅出现在启动日志，不通过任何匿名接口暴露；注册首个管理员后不再打印。
+        log.warning("尚无管理员账号，管理员邀请码：%s", invites["admin"])
     from app.core.outbound_http import start_flare_monitor, stop_flare_monitor
     from app.rexhub import plugin_framework
     from app.rexhub.plugin_framework import runtime as plugin_runtime
@@ -82,6 +88,12 @@ def _cors_origins() -> list[str]:
 
 
 app = FastAPI(title="RexHub API", version=rexhub_pkg.__version__, lifespan=lifespan)
+
+
+@app.exception_handler(AvdbError)
+async def _handle_avdb_error(_request: Any, exc: AvdbError) -> JSONResponse:
+    """AVDB 不可用统一返回 502，避免列表类接口直接抛 500。"""
+    return JSONResponse(status_code=502, content={"detail": str(exc)})
 
 
 app.add_middleware(
@@ -112,7 +124,6 @@ _BUSINESS_ROUTERS = [
     ai_chat_preset_router,
     magnet_router,
     scope_router,
-    pansou_router,
     cloudsaver_router,
     avdb_router,
     moviepilot_router,
@@ -169,6 +180,5 @@ def health() -> dict[str, Any]:
         "service": "rexhub-api",
         "rexhub_version": rexhub_pkg.__version__,
         "meta_db": meta_db_label(),
-        "config": [str(p) for p in config_paths()],
         "phase": "search",
     }

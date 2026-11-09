@@ -1,6 +1,8 @@
 
 import json
+import threading
 import time
+from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
 
@@ -15,15 +17,14 @@ TMDB_KEY = "tmdb"
 FORUM_SEHUATANG_KEY = "forum.sehuatang"
 AI_LLM_KEY = "ai.llm"
 AI_EMBED_KEY = "ai.embed"
-PANSOU_KEY = "pansou"
 CLOUDSAVER_KEY = "cloudsaver"
 
 
 # --- 进程内 TTL 缓存 -------------------------------------------------------
 # `get_setting` 每次裸开池连接查 app_settings（实测 ~9ms）。它恰好落在**热路径**上：
-#   - `resolve_scrape_proxy_url()` / `resolve_flaresolverr_url()` 在每次 HTTP 请求
-#     前都会被调用（outbound_http.py:961/1120），单次 ~10ms；
-#   - `enrich_strategy.get_strategy()` 被 `enabled_enrich_sources()` 每个番号调一次。
+#   - `resolve_proxy_url()` / `resolve_flaresolverr_url()` 在每次 HTTP 请求
+#     前都会被调用，单次 ~10ms；
+#   - 抓取路径上每个番号也会高频读取一次设置。
 # 缓存的是**原始 JSON 文本**，读时再 `json.loads` 返回一个新对象 —— 语义上等于深拷贝，
 # 调用方原地修改不会污染缓存（`_persist_provider_row` 等就有原地写的习惯）。
 # `app_settings` 表在全项目只有本文件 `put_setting` 一个写点，
@@ -31,14 +32,16 @@ CLOUDSAVER_KEY = "cloudsaver"
 _SETTING_TTL_SEC = 3.0
 _SETTING_CACHE_MAX = 128
 _SETTING_CACHE: dict[str, tuple[float, str | None]] = {}
+_SETTING_CACHE_LOCK = threading.RLock()
 
 
 def invalidate_setting_cache(key: str | None = None) -> None:
     """失效缓存；key 为空表示全清（批量改库 / 测试用）。"""
-    if key is None:
-        _SETTING_CACHE.clear()
-    else:
-        _SETTING_CACHE.pop(key, None)
+    with _SETTING_CACHE_LOCK:
+        if key is None:
+            _SETTING_CACHE.clear()
+        else:
+            _SETTING_CACHE.pop(key, None)
 
 
 # 派生缓存失效钩子：各模块把自己的缓存清理函数注册进来，配置一改就同步失效。
@@ -53,13 +56,14 @@ def register_change_hook(fn: Any) -> None:
 
 
 def get_setting(key: str) -> Any | None:
-    cached = _SETTING_CACHE.get(key)
     now = time.monotonic()
-    if cached is not None:
-        if cached[0] > now:
-            payload = cached[1]
-            return json.loads(payload) if payload is not None else None
-        _SETTING_CACHE.pop(key, None)
+    with _SETTING_CACHE_LOCK:
+        cached = _SETTING_CACHE.get(key)
+        if cached is not None:
+            if cached[0] > now:
+                payload = cached[1]
+                return json.loads(payload) if payload is not None else None
+            _SETTING_CACHE.pop(key, None)
 
     with connect() as conn:
         row = conn.execute(
@@ -67,8 +71,14 @@ def get_setting(key: str) -> Any | None:
             (key,),
         ).fetchone()
     payload = str(row["value_json"]) if row else None
-    ttl_cache.enforce_max(_SETTING_CACHE, _SETTING_CACHE_MAX - 1)
-    _SETTING_CACHE[key] = (now + _SETTING_TTL_SEC, payload)
+    with _SETTING_CACHE_LOCK:
+        # 查库期间可能已被 put_setting 失效，写入前再确认一次没有更新的值
+        cached = _SETTING_CACHE.get(key)
+        if cached is not None and cached[0] > now:
+            payload = cached[1]
+        else:
+            ttl_cache.enforce_max(_SETTING_CACHE, _SETTING_CACHE_MAX - 1)
+            _SETTING_CACHE[key] = (now + _SETTING_TTL_SEC, payload)
     if payload is None:
         return None
     return json.loads(payload)
@@ -96,3 +106,19 @@ def put_setting(key: str, value: Any) -> dict[str, Any]:
         except Exception:  # noqa: BLE001
             pass
     return {"key": key, "value": value, "updated_at": now}
+
+
+# 同一份配置有多个写点（转存目录、Cookie、解压配置），读-改-写必须串行，
+# 否则后写会用旧快照覆盖别人刚存进去的字段。
+_MUTATE_LOCK = threading.RLock()
+
+
+def update_setting(
+    key: str,
+    mutate: Callable[[dict[str, Any]], dict[str, Any]],
+) -> dict[str, Any]:
+    """在锁内读-改-写一份配置；非 dict 的旧值按空对象处理。"""
+    with _MUTATE_LOCK:
+        current = get_setting(key)
+        base = dict(current) if isinstance(current, dict) else {}
+        return put_setting(key, mutate(base))

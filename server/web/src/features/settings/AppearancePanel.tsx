@@ -1,17 +1,19 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Check, ChevronRight, ExternalLink, Link2, LayoutGrid, Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  Check,
+  ChevronRight,
+  ExternalLink,
+  LayoutGrid,
+  Link2,
+  RotateCcw,
+  Trash2,
+} from 'lucide-react';
 import { AppPush } from '@/components/ui/AppPush';
 import { AppCenterModal } from '@/components/ui/AppCenterModal';
 import { API_BASE, apiFetch, parseError } from '@/lib/api';
-import {
-  applyTheme,
-  getThemeMode,
-  setThemeMode,
-  watchSystemTheme,
-  type ThemeMode,
-} from '@/lib/theme';
+import { getThemeMode, setThemeMode, subscribeTheme, type ThemeMode } from '@/lib/theme';
 
 const OPTIONS: { id: ThemeMode; title: string; desc: string }[] = [
   { id: 'system', title: '跟随系统', desc: '随设备的深浅色自动切换' },
@@ -52,6 +54,38 @@ function isJsonLibrary(url: string): boolean {
   }
 }
 
+/** 仅忽略协议/主机大小写与末尾斜杠，路径大小写敏感（GitHub 上是不同仓库） */
+function normalizeLibrary(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, '')}${u.search}`;
+  } catch {
+    return url.trim();
+  }
+}
+
+function sameLibraries(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
+/** 仓库/清单自带的介绍，取不到就不占位 */
+function LibraryDescription({ url }: { url: string }) {
+  const [text, setText] = useState('');
+  useEffect(() => {
+    let alive = true;
+    apiFetch(`/settings/icon-libraries/info?url=${encodeURIComponent(url)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { description?: string } | null) => {
+        if (alive && data?.description) setText(String(data.description));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [url]);
+  return text ? <span className="icon-lib-row__desc">{text}</span> : null;
+}
+
 type PreviewIcon = { name: string; repo: string; path: string; src?: string };
 
 type PreviewState = {
@@ -63,11 +97,19 @@ type PreviewState = {
 
 const PAGE_SIZE = 60;
 
+// 封面响应会被浏览器长期缓存，挑选规则变更时递增，避免继续用旧图标
+const COVER_REV = 2;
+
 export function AppearancePanel({ onBack }: { onBack: () => void }) {
-  // 服务端渲染与首帧都用「跟随系统」，挂载后再读本地存储，避免 hydration 不一致
-  const [mode, setMode] = useState<ThemeMode>('system');
+  // 服务端快照固定「跟随系统」，hydration 后再切到本地存储的真实值
+  const mode = useSyncExternalStore(
+    subscribeTheme,
+    getThemeMode,
+    () => 'system' as ThemeMode,
+  );
   const [sub, setSub] = useState<'icons' | null>(null);
   const [libraries, setLibraries] = useState<string[]>([]);
+  const [defaults, setDefaults] = useState<string[]>([]);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,62 +121,57 @@ export function AppearancePanel({ onBack }: { onBack: () => void }) {
     version: 'HEAD',
     icons: [],
   });
+  // 每次请求递增，关闭弹窗或重新预览时丢弃过期响应
+  const previewRequest = useRef(0);
 
-  // 预览走服务端接口：浏览器直连 GitHub 会失败，服务端才能复用面板代理
-  useEffect(() => {
-    if (!preview || (!githubRepo(preview) && !isJsonLibrary(preview))) return;
-    let alive = true;
-    apiFetch(`/settings/icon-libraries/preview?url=${encodeURIComponent(preview)}`)
-      .then(async (res) => {
-        if (!res.ok) throw new Error(await parseError(res));
-        return (await res.json()) as { total: number; version: string; icons: PreviewIcon[] };
-      })
-      .then((data) => {
-        if (!alive) return;
-        setShown(PAGE_SIZE);
-        setPreviewState({
-          loading: false,
-          error: data.icons.length ? null : '该仓库里没有可预览的图标文件',
-          version: data.version,
-          icons: data.icons,
-        });
-      })
-      .catch((e: Error) => {
-        if (alive) {
-          setPreviewState({ loading: false, error: e.message || '预览加载失败', version: 'HEAD', icons: [] });
-        }
+  async function loadPreview(url: string) {
+    const requestId = ++previewRequest.current;
+    setShown(PAGE_SIZE);
+    setPreviewState({ loading: true, error: null, version: 'HEAD', icons: [] });
+    try {
+      const res = await apiFetch(`/settings/icon-libraries/preview?url=${encodeURIComponent(url)}`);
+      if (!res.ok) throw new Error(await parseError(res));
+      const data = (await res.json()) as { total: number; version: string; icons: PreviewIcon[] };
+      if (requestId !== previewRequest.current) return;
+      setPreviewState({
+        loading: false,
+        error: data.icons.length ? null : '该仓库里没有可预览的图标文件',
+        version: data.version,
+        icons: data.icons,
       });
-
-    return () => {
-      alive = false;
-    };
-  }, [preview]);
+    } catch (e) {
+      if (requestId !== previewRequest.current) return;
+      setPreviewState({
+        loading: false,
+        error: (e as Error).message || '预览加载失败',
+        version: 'HEAD',
+        icons: [],
+      });
+    }
+  }
 
   function openPreview(url: string) {
     setPreview(url);
-    setShown(PAGE_SIZE);
-    setPreviewState({ loading: true, error: null, version: 'HEAD', icons: [] });
+    void loadPreview(url);
   }
 
-  useEffect(() => {
-    // 首帧必须用「跟随系统」渲染，否则服务端与客户端本地存储不一致会 hydration 报错，
-    // 挂载后再同步 localStorage 里的真实值只能放在 effect 里
-    const m = getThemeMode();
-    /* eslint-disable react-hooks/set-state-in-effect */
-    setMode(m);
-    /* eslint-enable react-hooks/set-state-in-effect */
-  }, []);
-
-  // 跟随系统时，系统切换深浅色要即时应用
-  useEffect(() => watchSystemTheme(() => applyTheme(getThemeMode())), []);
+  function closePreview() {
+    previewRequest.current += 1;
+    setPreview(null);
+  }
 
   // 图标库配置保存在服务端，所有设备共用一份
   useEffect(() => {
     let alive = true;
     apiFetch('/settings/icon-libraries')
-      .then(async (res) => (res.ok ? ((await res.json()) as { urls: string[] }) : null))
+      .then(
+        async (res) =>
+          res.ok ? ((await res.json()) as { urls: string[]; defaults?: string[] }) : null,
+      )
       .then((data) => {
-        if (alive && data) setLibraries(data.urls ?? []);
+        if (!alive || !data) return;
+        setLibraries(data.urls ?? []);
+        setDefaults(data.defaults ?? []);
       })
       .catch(() => {
         /* 读取失败时保持空列表，不阻塞外观设置 */
@@ -143,11 +180,6 @@ export function AppearancePanel({ onBack }: { onBack: () => void }) {
       alive = false;
     };
   }, []);
-
-  function choose(next: ThemeMode) {
-    setThemeMode(next);
-    setMode(next);
-  }
 
   async function save(next: string[]) {
     const previous = libraries;
@@ -181,7 +213,8 @@ export function AppearancePanel({ onBack }: { onBack: () => void }) {
       setError('请输入以 http 或 https 开头的完整链接');
       return;
     }
-    if (libraries.includes(value)) {
+    const normalized = normalizeLibrary(value);
+    if (libraries.some((url) => normalizeLibrary(url) === normalized)) {
       setError('该链接已在列表中');
       return;
     }
@@ -193,7 +226,24 @@ export function AppearancePanel({ onBack }: { onBack: () => void }) {
 
   if (sub === 'icons') {
     return (
-      <AppPush title="图标库" onBack={() => setSub(null)} scrollMode="top">
+      <AppPush
+        title="图标库"
+        onBack={() => setSub(null)}
+        scrollMode="top"
+        right={
+          defaults.length && !sameLibraries(libraries, defaults) ? (
+            <button
+              type="button"
+              className="icon-lib-reset"
+              disabled={busy}
+              onClick={() => void save(defaults)}
+            >
+              <RotateCcw size={14} strokeWidth={2.2} aria-hidden />
+              恢复推荐
+            </button>
+          ) : null
+        }
+      >
         <div className="appearance-panel">
           <div className="icon-lib-add">
             <Link2 size={17} strokeWidth={2} aria-hidden className="icon-lib-add__icon" />
@@ -206,7 +256,10 @@ export function AppearancePanel({ onBack }: { onBack: () => void }) {
               spellCheck={false}
               placeholder="https://github.com/owner/repo"
               value={draft}
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                setError(null);
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') add();
               }}
@@ -232,9 +285,27 @@ export function AppearancePanel({ onBack }: { onBack: () => void }) {
                   >
                     <span className="icon-lib-row__mark" aria-hidden>
                       <LayoutGrid size={15} strokeWidth={2.2} />
+                      <img
+                        className="icon-lib-row__cover"
+                        src={`${API_BASE}/settings/icon-libraries/cover?url=${encodeURIComponent(url)}&v=${COVER_REV}`}
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                        onError={(event) => {
+                          const img = event.currentTarget;
+                          // 上游偶发超时就重试一次，仍失败才露出兜底图标
+                          if (img.dataset.retried) {
+                            img.remove();
+                            return;
+                          }
+                          img.dataset.retried = '1';
+                          img.src = `${img.src}&retry=1`;
+                        }}
+                      />
                     </span>
                     <span className="icon-lib-row__main">
                       <span className="icon-lib-row__title">{libraryName(url)}</span>
+                      <LibraryDescription url={url} />
                       <span className="icon-lib-row__desc">{url}</span>
                     </span>
                   </button>
@@ -243,7 +314,12 @@ export function AppearancePanel({ onBack }: { onBack: () => void }) {
                     className="icon-lib-row__del"
                     aria-label={`删除 ${url}`}
                     disabled={busy}
-                    onClick={() => void save(libraries.filter((u) => u !== url))}
+                    onClick={() => {
+                      if (!window.confirm(`确定删除 ${libraryName(url)}？该配置所有设备共用。`)) {
+                        return;
+                      }
+                      void save(libraries.filter((u) => u !== url));
+                    }}
                   >
                     <Trash2 size={16} strokeWidth={1.9} aria-hidden />
                   </button>
@@ -255,14 +331,11 @@ export function AppearancePanel({ onBack }: { onBack: () => void }) {
           )}
 
           {error ? <p className="app-hint icon-lib-error">{error}</p> : null}
-          <p className="app-hint">
-            配置保存在服务端，所有设备共用一份；客户端只负责增删。
-          </p>
 
           <AppCenterModal
             open={preview !== null}
             title={preview ? libraryName(preview) : '图标库预览'}
-            onClose={() => setPreview(null)}
+            onClose={closePreview}
             cardClassName="icon-lib-preview"
             footer={
               preview ? (
@@ -285,7 +358,18 @@ export function AppearancePanel({ onBack }: { onBack: () => void }) {
             ) : previewState.loading ? (
               <p className="app-hint icon-lib-preview__note">正在读取仓库内容…</p>
             ) : previewState.error ? (
-              <p className="app-hint icon-lib-preview__note">{previewState.error}</p>
+              <>
+                <p className="app-hint icon-lib-preview__note">{previewState.error}</p>
+                <button
+                  type="button"
+                  className="icon-lib-preview__more"
+                  onClick={() => {
+                    if (preview) void loadPreview(preview);
+                  }}
+                >
+                  重试
+                </button>
+              </>
             ) : (
               <>
                 <p className="app-hint icon-lib-preview__note">
@@ -333,13 +417,15 @@ export function AppearancePanel({ onBack }: { onBack: () => void }) {
     <AppPush title="外观" onBack={onBack}>
       <div className="appearance-panel">
         <p className="settings-group-label">主题</p>
-        <ul className="settings-group">
+        <ul className="settings-group" role="radiogroup" aria-label="主题">
           {OPTIONS.map((opt) => (
             <li key={opt.id}>
               <button
                 type="button"
                 className="settings-nav"
-                onClick={() => choose(opt.id)}
+                role="radio"
+                aria-checked={mode === opt.id}
+                onClick={() => setThemeMode(opt.id)}
               >
                 <span className="settings-nav__main">
                   <span className="settings-nav__title">{opt.title}</span>

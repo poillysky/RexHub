@@ -11,7 +11,7 @@ import { P115FolderBrowser } from './P115FolderBrowser';
 import { P115TasksTab } from './P115TasksTab';
 
 export function P115Panel({ onBack }: { onBack: () => void }) {
-  const p = useP115Panel({ onBack });
+  const p = useP115Panel();
 
   return (
     <AppPush title="115 转存" onBack={onBack}>

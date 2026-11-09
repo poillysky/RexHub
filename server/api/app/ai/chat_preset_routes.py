@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
-from app.auth.routes import get_optional_user, require_user
+from app.auth.routes import require_admin
 import app.ai.chat_preset_store as store
 from app.core.envelope import Envelope
 
@@ -70,7 +70,7 @@ class PromptAddBody(BaseModel):
 
 @router.get("", response_model=Envelope)
 def list_chat_presets(
-    _user: dict[str, Any] | None = Depends(get_optional_user),
+    _user: dict[str, Any] | None = Depends(require_admin),
 ) -> Envelope:
     return Envelope(
         data={
@@ -84,7 +84,7 @@ def list_chat_presets(
 @router.post("/import", response_model=Envelope)
 def import_chat_preset(
     body: ImportBody,
-    _user: dict[str, Any] = Depends(require_user),
+    _user: dict[str, Any] = Depends(require_admin),
 ) -> Envelope:
     try:
         stored = store.import_preset(body.data, body.name or "")
@@ -104,7 +104,7 @@ def import_chat_preset(
 @router.post("/activate", response_model=Envelope)
 def activate_chat_preset(
     body: ActivateBody,
-    _user: dict[str, Any] = Depends(require_user),
+    _user: dict[str, Any] = Depends(require_admin),
 ) -> Envelope:
     try:
         current = store.get_active_preset_id()
@@ -128,7 +128,7 @@ def activate_chat_preset(
 @router.get("/{preset_id}", response_model=Envelope)
 def get_chat_preset(
     preset_id: str,
-    _user: dict[str, Any] | None = Depends(get_optional_user),
+    _user: dict[str, Any] | None = Depends(require_admin),
 ) -> Envelope:
     detail = store.detail_payload(preset_id)
     if not detail:
@@ -139,7 +139,7 @@ def get_chat_preset(
 @router.get("/{preset_id}/export")
 def export_chat_preset(
     preset_id: str,
-    _user: dict[str, Any] | None = Depends(get_optional_user),
+    _user: dict[str, Any] | None = Depends(require_admin),
 ) -> Response:
     exported = store.export_preset_json(preset_id)
     if not exported:
@@ -157,7 +157,7 @@ def export_chat_preset(
 @router.delete("/{preset_id}", response_model=Envelope)
 def delete_chat_preset(
     preset_id: str,
-    _user: dict[str, Any] = Depends(require_user),
+    _user: dict[str, Any] = Depends(require_admin),
 ) -> Envelope:
     if not store.delete_preset(preset_id):
         raise HTTPException(status_code=404, detail="预设不存在")
@@ -171,7 +171,7 @@ def delete_chat_preset(
 def save_chat_preset_params(
     preset_id: str,
     body: SaveParamsBody,
-    _user: dict[str, Any] = Depends(require_user),
+    _user: dict[str, Any] = Depends(require_admin),
 ) -> Envelope:
     patch = body.model_dump(by_alias=True, exclude_none=True)
     saved = store.apply_params_patch(preset_id, patch)
@@ -186,7 +186,7 @@ def save_chat_preset_params(
 def enable_chat_preset_prompt(
     preset_id: str,
     body: PromptEnableBody,
-    _user: dict[str, Any] = Depends(require_user),
+    _user: dict[str, Any] = Depends(require_admin),
 ) -> Envelope:
     saved = store.set_prompt_enabled(preset_id, body.identifier, body.enabled)
     if not saved:
@@ -198,7 +198,7 @@ def enable_chat_preset_prompt(
 def save_chat_preset_prompt(
     preset_id: str,
     body: PromptSaveBody,
-    _user: dict[str, Any] = Depends(require_user),
+    _user: dict[str, Any] = Depends(require_admin),
 ) -> Envelope:
     patch = body.model_dump(exclude_none=True)
     ident = patch.pop("identifier", "")
@@ -212,7 +212,7 @@ def save_chat_preset_prompt(
 def add_chat_preset_prompt(
     preset_id: str,
     body: PromptAddBody,
-    _user: dict[str, Any] = Depends(require_user),
+    _user: dict[str, Any] = Depends(require_admin),
 ) -> Envelope:
     saved = store.add_prompt(
         preset_id,

@@ -1,12 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ChevronRight } from 'lucide-react';
 import {
-  activateChatPreset,
   addChatPresetPrompt,
   chatPresetExportUrl,
-  deleteChatPreset,
   enableChatPresetPrompt,
   getChatPreset,
   importChatPreset,
@@ -15,7 +13,6 @@ import {
   saveChatPresetPrompt,
   type AiSamplingConfig,
   type ChatPresetDetail,
-  type ChatPresetListItem,
   type ChatPresetPrompt,
 } from '@/lib/api';
 import { Switch } from '@/components/ui/switch';
@@ -67,7 +64,6 @@ export function ChatPresetsSection({
 }: {
   onSamplingApplied?: () => void;
 }) {
-  const [list, setList] = useState<ChatPresetListItem[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ChatPresetDetail | null>(null);
@@ -97,21 +93,10 @@ export function ChatPresetsSection({
 
   async function reloadList() {
     const r = await listChatPresets();
-    setList(r.presets || []);
     setActiveId(r.activeId);
   }
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        await reloadList();
-      } catch (e) {
-        setMsg(e instanceof Error ? e.message : '读取预设失败');
-      }
-    })();
-  }, []);
-
-  function applySamplingDraft(s: AiSamplingConfig) {
+  const applySamplingDraft = useCallback((s: AiSamplingConfig) => {
     setTemp(numStr(s.temperature) || PRESET_DEFAULTS.temperature);
     setTopP(numStr(s.topP) || PRESET_DEFAULTS.topP);
     setMaxTokens(numStr(s.maxTokens) || PRESET_DEFAULTS.maxTokens);
@@ -128,24 +113,42 @@ export function ChatPresetsSection({
     setContinuePrefill(Boolean(s.continuePrefill));
     setSquash(Boolean(s.squashSystemMessages));
     setThoughts(Boolean(s.showThoughts));
-  }
+  }, []);
 
-  async function openDetail(id: string) {
-    setBusy(true);
-    setMsg('');
-    try {
-      const d = await getChatPreset(id);
-      setDetail(d);
-      setDetailId(id);
-      setDetailTab('settings');
-      applySamplingDraft(d.sampling || {});
-      setEditPrompt(null);
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : '打开失败');
-    } finally {
-      setBusy(false);
-    }
-  }
+  const openDetail = useCallback(
+    async (id: string) => {
+      setBusy(true);
+      setMsg('');
+      try {
+        const d = await getChatPreset(id);
+        setDetail(d);
+        setDetailId(id);
+        setDetailTab('settings');
+        applySamplingDraft(d.sampling || {});
+        setEditPrompt(null);
+      } catch (e) {
+        setMsg(e instanceof Error ? e.message : '打开失败');
+      } finally {
+        setBusy(false);
+      }
+    },
+    [applySamplingDraft],
+  );
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const r = await listChatPresets();
+        setActiveId(r.activeId);
+        const target =
+          (r.activeId && r.presets.some((p) => p.id === r.activeId) ? r.activeId : '') ||
+          r.presets[0]?.id;
+        if (target) await openDetail(target);
+      } catch (e) {
+        setMsg(e instanceof Error ? e.message : '读取预设失败');
+      }
+    })();
+  }, [openDetail]);
 
   async function onImport(files: FileList | null) {
     if (!files?.length) return;
@@ -165,40 +168,6 @@ export function ChatPresetsSection({
     } finally {
       setBusy(false);
       if (fileRef.current) fileRef.current.value = '';
-    }
-  }
-
-  async function onToggleActive(id: string) {
-    setBusy(true);
-    setMsg('');
-    try {
-      const r = await activateChatPreset(id);
-      setList(r.presets || []);
-      setActiveId(r.activeId);
-      setMsg(r.activeId === id ? '已启用并同步采样到聊天' : '已取消启用');
-      onSamplingApplied?.();
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : '启用失败');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function onDelete(id: string) {
-    if (!window.confirm('删除此预设？不可恢复')) return;
-    setBusy(true);
-    setMsg('');
-    try {
-      const r = await deleteChatPreset(id);
-      setList(r.presets || []);
-      setActiveId(r.activeId);
-      setDetail(null);
-      setDetailId(null);
-      setMsg('已删除');
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : '删除失败');
-    } finally {
-      setBusy(false);
     }
   }
 
@@ -325,26 +294,6 @@ export function ChatPresetsSection({
   if (detailId && detail) {
     return (
       <>
-        <ul className="settings-group">
-          <li>
-            <button
-              type="button"
-              className="settings-nav"
-              onClick={() => {
-                setDetailId(null);
-                setDetail(null);
-                setEditPrompt(null);
-              }}
-            >
-              <span className="settings-nav__main">
-                <span className="settings-nav__title">返回预设列表</span>
-                <span className="settings-nav__desc">{detail.name}</span>
-              </span>
-              <ChevronRight className="settings-nav__chev" size={16} strokeWidth={2.25} />
-            </button>
-          </li>
-        </ul>
-
         <div className="app-seg" role="tablist" aria-label="预设详情">
           {(
             [
@@ -540,14 +489,6 @@ export function ChatPresetsSection({
               >
                 导出 JSON
               </a>
-              <button
-                type="button"
-                className="app-btn-secondary"
-                disabled={busy}
-                onClick={() => void onDelete(detailId)}
-              >
-                删除此预设
-              </button>
             </div>
           </>
         ) : null}
@@ -678,19 +619,6 @@ export function ChatPresetsSection({
 
   return (
     <>
-      <ul className="settings-group">
-        <li>
-          <div className="settings-kv">
-            <span className="settings-kv__key">当前启用</span>
-            <span className="settings-kv__val">
-              {activeId
-                ? list.find((p) => p.id === activeId)?.name || activeId
-                : '未启用'}
-            </span>
-          </div>
-        </li>
-      </ul>
-
       <input
         ref={fileRef}
         type="file"
@@ -699,6 +627,15 @@ export function ChatPresetsSection({
         hidden
         onChange={(e) => void onImport(e.target.files)}
       />
+
+      <ul className="settings-group">
+        <li>
+          <div className="settings-kv">
+            <span className="settings-kv__key">状态</span>
+            <span className="settings-kv__val">尚未导入预设</span>
+          </div>
+        </li>
+      </ul>
 
       <div className="app-actions" style={{ marginBottom: 8 }}>
         <button
@@ -711,48 +648,6 @@ export function ChatPresetsSection({
           导入预设 JSON
         </button>
       </div>
-
-      <p className="settings-group-label">对话预设</p>
-      <ul className="settings-group">
-        {list.length === 0 ? (
-          <li>
-            <div className="settings-kv">
-              <span className="settings-kv__key">列表</span>
-              <span className="settings-kv__val">暂无预设</span>
-            </div>
-          </li>
-        ) : (
-          list.map((p) => (
-            <li key={p.id}>
-              <div className="settings-kv" style={{ gap: 8 }}>
-                <button
-                  type="button"
-                  className="settings-nav"
-                  style={{ flex: 1, minWidth: 0 }}
-                  onClick={() => void openDetail(p.id)}
-                >
-                  <span className="settings-nav__main">
-                    <span className="settings-nav__title">{p.name}</span>
-                    <span className="settings-nav__desc">
-                      {p.promptCount ?? 0} 条提示词
-                    </span>
-                  </span>
-                  <ChevronRight
-                    className="settings-nav__chev"
-                    size={16}
-                    strokeWidth={2.25}
-                  />
-                </button>
-                <Switch
-                  checked={activeId === p.id}
-                  onCheckedChange={() => void onToggleActive(p.id)}
-                  disabled={busy}
-                />
-              </div>
-            </li>
-          ))
-        )}
-      </ul>
 
       <AppMsg allowSelect onDismiss={() => setMsg('')}>
         {msg}

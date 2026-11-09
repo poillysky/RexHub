@@ -9,7 +9,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.auth.routes import get_optional_user
+from app.auth.routes import require_user
 from app.ai.config import (
     chat_completions_url,
     llm_request_headers,
@@ -127,7 +127,10 @@ async def _llm_json(
     timeout = max(8, min(60, int(cfg.get("timeoutSec") or 30)))
     url = chat_completions_url(base_url)
     headers = llm_request_headers(cfg)
-    async with httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=8.0)) as client:
+    proxy = str(cfg.get("proxyUrl") or "").strip() or None
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(timeout, connect=8.0), proxy=proxy
+    ) as client:
         r = await client.post(url, headers=headers, json=payload)
     if r.status_code == 401:
         raise HTTPException(status_code=400, detail="LLM API Key 无效")
@@ -198,7 +201,7 @@ async def _safe_organize(
 @router.post("/chat-search", response_model=Envelope)
 async def ai_chat_search(
     body: AiChatSearchBody,
-    _user: dict[str, Any] | None = Depends(get_optional_user),
+    _user: dict[str, Any] = Depends(require_user),
 ) -> Envelope:
     message = (body.message or "").strip()
     if not message:

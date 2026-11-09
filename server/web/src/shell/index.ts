@@ -7,5 +7,4 @@ export {
   type TabRoute,
 } from './TabContext';
 export { TabPane, useTabPaneVisible } from './TabPane';
-export { TabLink } from './TabLink';
 export { HapticsProvider, useHaptics } from './HapticsProvider';

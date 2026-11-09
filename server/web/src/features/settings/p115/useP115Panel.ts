@@ -41,6 +41,7 @@ import {
   cacheFromP115Config,
 } from '../p115PanelCache';
 import { usePanelAction } from '@/hooks/usePanelAction';
+import { useAuth } from '@/providers/AuthProvider';
 
 import {
   emptyTargets,
@@ -54,12 +55,16 @@ import {
 
 export type P115PanelState = ReturnType<typeof useP115Panel>;
 
+/** 任务列表最多合并 5 页（500 条），避免异常数据导致无限翻页 */
+const MAX_TASK_PAGES = 5;
+
 /** 115 Cookie 失效/未登录：这些错误意味着「已配置但没登录」，应退回登录页 */
 export function isP115AuthError(text: string): boolean {
   return /Cookie|未登录|登录已?失效|401|401401|登录态/i.test(text);
 }
 
-export function useP115Panel({ onBack }: { onBack: () => void }) {
+export function useP115Panel() {
+  const { isAdmin } = useAuth();
   const cached = getP115PanelCache();
   const [tab, setTab] = useState<Tab>(() => cached?.tab ?? 'overview');
   const [configured, setConfigured] = useState(() => Boolean(cached?.configured));
@@ -80,7 +85,6 @@ export function useP115Panel({ onBack }: { onBack: () => void }) {
   const [quotaLoading, setQuotaLoading] = useState(false);
   const [spaceUsedText, setSpaceUsedText] = useState(() => cached?.spaceUsedText ?? '');
   const [spaceTotalText, setSpaceTotalText] = useState(() => cached?.spaceTotalText ?? '');
-  const [spaceRemainText, setSpaceRemainText] = useState(() => cached?.spaceRemainText ?? '');
   const [spaceUsed, setSpaceUsed] = useState<number | null>(() => cached?.spaceUsed ?? null);
   const [spaceTotal, setSpaceTotal] = useState<number | null>(() => cached?.spaceTotal ?? null);
   const [showBrowser, setShowBrowser] = useState(false);
@@ -107,6 +111,9 @@ export function useP115Panel({ onBack }: { onBack: () => void }) {
     { key: 'web', label: '网页版（Cookie）' },
   ]);
   const qrGenRef = useRef(0);
+  /** 并发保护：只接受最后一次请求的响应，旧响应直接丢弃 */
+  const statusSeq = useRef(0);
+  const tasksSeq = useRef(0);
   /** 115 账号卡片：头像 / 用户名 / VIP（与 iOS App 一致） */
   const [account, setAccount] = useState<Pan115Account | null>(null);
   /** 解压配置与队列状态 */
@@ -123,7 +130,9 @@ export function useP115Panel({ onBack }: { onBack: () => void }) {
   const [extractError, setExtractError] = useState('');
   /** 当前目录 CID 的即时值：轮询回调里用来判断扫描结果是否属于这个目录 */
   const extractCidRef = useRef(extractConfig.folderCid);
-  extractCidRef.current = extractConfig.folderCid;
+  useEffect(() => {
+    extractCidRef.current = extractConfig.folderCid;
+  }, [extractConfig.folderCid]);
 
   async function loadAccount() {
     try {
@@ -155,7 +164,6 @@ export function useP115Panel({ onBack }: { onBack: () => void }) {
 
     if (data.spaceUsedText != null) setSpaceUsedText(String(data.spaceUsedText || ''));
     if (data.spaceTotalText != null) setSpaceTotalText(String(data.spaceTotalText || ''));
-    if (data.spaceRemainText != null) setSpaceRemainText(String(data.spaceRemainText || ''));
     if ('spaceUsed' in data) setSpaceUsed(data.spaceUsed ?? null);
     if ('spaceTotal' in data) setSpaceTotal(data.spaceTotal ?? null);
 
@@ -168,9 +176,6 @@ export function useP115Panel({ onBack }: { onBack: () => void }) {
         : {}),
       ...(data.spaceTotalText != null
         ? { spaceTotalText: String(data.spaceTotalText || '') }
-        : {}),
-      ...(data.spaceRemainText != null
-        ? { spaceRemainText: String(data.spaceRemainText || '') }
         : {}),
       ...('spaceUsed' in data ? { spaceUsed: data.spaceUsed ?? null } : {}),
       ...('spaceTotal' in data ? { spaceTotal: data.spaceTotal ?? null } : {}),
@@ -212,7 +217,6 @@ export function useP115Panel({ onBack }: { onBack: () => void }) {
         quotaError: '',
         spaceUsedText: '',
         spaceTotalText: '',
-        spaceRemainText: '',
         spaceUsed: null,
         spaceTotal: null,
         tasks: [],
@@ -233,6 +237,14 @@ export function useP115Panel({ onBack }: { onBack: () => void }) {
     setTasks([]);
     setTasksLoaded(false);
     setShowBrowser(false);
+    // 缓存也要一起退回登录态，否则下次进面板会先显示旧的工作台
+    patchP115PanelCache({
+      configured: false,
+      tab: 'overview',
+      tasks: [],
+      tasksLoaded: false,
+      tasksError: '',
+    });
   }
 
   /** 依据 /p115/status 的 authOk 判定登录态（configured 只代表存过 Cookie） */
@@ -247,6 +259,7 @@ export function useP115Panel({ onBack }: { onBack: () => void }) {
   }
 
   async function refreshStatus(opts?: { quiet?: boolean }) {
+    const seq = ++statusSeq.current;
     const quiet = Boolean(opts?.quiet) && (quota != null || spaceUsed != null);
     if (!quiet) {
       setQuotaLoading(true);
@@ -254,6 +267,8 @@ export function useP115Panel({ onBack }: { onBack: () => void }) {
     }
     try {
       const status = await getP115Status();
+      // 旧请求晚到时不覆盖新状态（保存后刷新与后台静默刷新会撞车）
+      if (seq !== statusSeq.current) return;
       applyQuotaInfo(status);
       if (!status.configured) {
         applyAuth(false, '');
@@ -263,6 +278,7 @@ export function useP115Panel({ onBack }: { onBack: () => void }) {
       // 账号卡（头像/用户名/VIP）来自独立快照接口，刷新状态时一并更新
       void loadAccount();
     } catch (e) {
+      if (seq !== statusSeq.current) return;
       const err = e instanceof Error ? e.message : '状态读取失败';
       if (isP115AuthError(err)) {
         // Cookie 失效：退回登录入口，不进入工作台
@@ -271,19 +287,29 @@ export function useP115Panel({ onBack }: { onBack: () => void }) {
         setQuotaError(err);
       }
     } finally {
-      if (!quiet) setQuotaLoading(false);
+      if (!quiet && seq === statusSeq.current) setQuotaLoading(false);
     }
   }
 
   async function refreshTasks(opts?: { quiet?: boolean }) {
     if (!configured && !opts?.quiet) return;
+    const seq = ++tasksSeq.current;
     if (!opts?.quiet) {
       setTasksLoading(true);
       setTasksError('');
     }
     try {
-      const data = await listP115Tasks(1);
-      const nextTasks = data.tasks || [];
+      const first = await listP115Tasks(1);
+      // 任务列表可能有多页，只取第一页会漏掉较早的离线任务
+      const pages = Math.min(first.pageCount ?? 1, MAX_TASK_PAGES);
+      const rest =
+        pages > 1
+          ? await Promise.all(
+              Array.from({ length: pages - 1 }, (_, i) => listP115Tasks(i + 2)),
+            )
+          : [];
+      if (seq !== tasksSeq.current) return;
+      const nextTasks = [first, ...rest].flatMap((page) => page.tasks || []);
       setTasks(nextTasks);
       setTasksLoaded(true);
       setTasksError('');
@@ -292,19 +318,20 @@ export function useP115Panel({ onBack }: { onBack: () => void }) {
         tasksLoaded: true,
         tasksError: '',
       });
-      if (data.quota != null || data.quotaTotal != null) {
+      if (first.quota != null || first.quotaTotal != null) {
         applyQuotaInfo({
-          quota: data.quota,
-          quotaTotal: data.quotaTotal,
+          quota: first.quota,
+          quotaTotal: first.quotaTotal,
         });
       }
     } catch (e) {
+      if (seq !== tasksSeq.current) return;
       const err = e instanceof Error ? e.message : '获取任务失败';
       setTasksError(err);
       setTasksLoaded(true);
       patchP115PanelCache({ tasksLoaded: true, tasksError: err });
     } finally {
-      if (!opts?.quiet) setTasksLoading(false);
+      if (!opts?.quiet && seq === tasksSeq.current) setTasksLoading(false);
     }
   }
 
@@ -375,10 +402,12 @@ export function useP115Panel({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     if (tab !== 'tasks' || !configured) return;
-    if (tasksLoaded && !tasksError) return;
-    void refreshTasks();
+    if (!tasksLoaded) void refreshTasks();
+    // 离线任务进度只能靠轮询推进，停留在任务页时保持刷新
+    const timer = window.setInterval(() => void refreshTasks({ quiet: true }), 5000);
+    return () => window.clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, configured]);
+  }, [tab, configured, tasksLoaded]);
 
   useEffect(() => {
     return () => {
@@ -398,7 +427,7 @@ export function useP115Panel({ onBack }: { onBack: () => void }) {
     setQrSession(null);
     setMsg('');
     try {
-      const session = await startP115Qrcode(app);
+      let session = await startP115Qrcode(app);
       if (gen !== qrGenRef.current) return;
       setQrSession(session);
       if (session.apps?.length) setQrApps(session.apps);
@@ -407,20 +436,40 @@ export function useP115Panel({ onBack }: { onBack: () => void }) {
       // 二维码已就绪，后续轮询不再阻塞交互（否则客户端下拉框一直是 disabled）
       setQrBusy(false);
 
+      let failures = 0;
+      let expiredCount = 0;
       for (;;) {
         if (gen !== qrGenRef.current) return;
         await new Promise((r) => window.setTimeout(r, 1400));
         if (gen !== qrGenRef.current) return;
-        const st = await pollP115Qrcode({
-          uid: session.uid,
-          time: session.time,
-          sign: session.sign,
-        });
+        let st: Awaited<ReturnType<typeof pollP115Qrcode>>;
+        try {
+          st = await pollP115Qrcode({
+            uid: session.uid,
+            time: session.time,
+            sign: session.sign,
+          });
+          failures = 0;
+        } catch (e) {
+          // 单次网络抖动不该让整个扫码流程停摆，连续失败才放弃
+          if (++failures >= 3) throw e;
+          continue;
+        }
         if (gen !== qrGenRef.current) return;
         setQrStatusLabel(st.statusLabel || '');
         if (st.expired) {
-          setMsg(st.statusLabel || '二维码已失效，请重新扫码');
-          break;
+          expiredCount += 1;
+          if (expiredCount > 2) {
+            setMsg(st.statusLabel || '二维码已失效，请重新扫码');
+            break;
+          }
+          // 二维码过期自动换一张，不用用户重开弹窗
+          setQrStatusLabel('二维码已过期，正在刷新…');
+          session = await startP115Qrcode(session.app || app);
+          if (gen !== qrGenRef.current) return;
+          setQrSession(session);
+          if (session.apps?.length) setQrApps(session.apps);
+          continue;
         }
         if (st.done) {
           setQrStatusLabel('正在获取 Cookie…');
@@ -482,12 +531,11 @@ export function useP115Panel({ onBack }: { onBack: () => void }) {
   function selectFolder(item: P115FolderItem) {
     if (browseSource === 'extract') {
       const patch = { folderCid: item.cid, folderName: item.name };
-      setExtractConfig((prev) => ({ ...prev, ...patch }));
       setShowBrowser(false);
       // 换了目录，旧目录的扫描结果作废，等用户手动「扫描」
       setExtractPreview(null);
-      setMsg(`已选择「${item.name}」作为解压目录`);
-      // 选完立即落库，不再需要额外点保存
+      setMsg(`已选择「${item.name || '根目录'}」作为解压目录`);
+      // 选完立即落库；失败时由 onSaveExtract 保留旧配置并提示
       void onSaveExtract(patch);
       return;
     }
@@ -498,9 +546,8 @@ export function useP115Panel({ onBack }: { onBack: () => void }) {
         folderName: item.name,
       },
     };
-    setTargets(nextTargets);
     setShowBrowser(false);
-    // 选完立即落库，不再需要额外点保存
+    // 选完立即落库，等服务端确认后由 applyConfig 更新本地状态（失败则保持旧值）
     void onSave({ targets: nextTargets, cookie: undefined });
   }
 
@@ -573,8 +620,14 @@ export function useP115Panel({ onBack }: { onBack: () => void }) {
     setMsg('');
     try {
       const data = await clearP115Tasks(mode);
-      if (data.tasks) setTasks(data.tasks);
-      else await refreshTasks({ quiet: true });
+      if (data.tasks) {
+        setTasks(data.tasks);
+        patchP115PanelCache({
+          tasks: data.tasks,
+          tasksLoaded: true,
+          tasksError: '',
+        });
+      } else await refreshTasks({ quiet: true });
       if (data.quota != null || data.quotaTotal != null) {
         applyQuotaInfo({
           quota: data.quota,
@@ -648,8 +701,10 @@ export function useP115Panel({ onBack }: { onBack: () => void }) {
   }
 
   useEffect(() => {
-    if (tab !== 'extract' || !configured) return;
+    if (tab !== 'extract' || !configured || !authOk) return;
     let cancelled = false;
+    /** 上一轮请求未返回时跳过，避免慢响应下定时器越叠越多 */
+    let ticking = false;
     // 配置只在进入页签时读一次，避免轮询覆盖正在编辑的密码
     void (async () => {
       try {
@@ -666,6 +721,8 @@ export function useP115Panel({ onBack }: { onBack: () => void }) {
     })();
 
     const tick = async () => {
+      if (ticking) return;
+      ticking = true;
       try {
         const st = await getP115ExtractStatus();
         if (cancelled) return;
@@ -679,6 +736,8 @@ export function useP115Panel({ onBack }: { onBack: () => void }) {
         if (!cancelled) {
           setExtractError(e instanceof Error ? e.message : '读取解压状态失败');
         }
+      } finally {
+        ticking = false;
       }
     };
     void tick();
@@ -689,8 +748,7 @@ export function useP115Panel({ onBack }: { onBack: () => void }) {
       cancelled = true;
       window.clearInterval(timer);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, configured]);
+  }, [tab, configured, authOk]);
 
   async function onSaveExtract(patch?: Partial<P115ExtractConfig>) {
     setExtractBusy(true);
@@ -745,6 +803,8 @@ export function useP115Panel({ onBack }: { onBack: () => void }) {
   }
 
   const locked = busy || browsing || clearing != null || deletingHash != null;
+  // 登录/转存目录/解压等配置接口仅管理员可写，普通用户只读
+  const settingsLocked = locked || !isAdmin;
   const taskCounts = {
     run: 0,
     failed: 0,
@@ -758,8 +818,6 @@ export function useP115Panel({ onBack }: { onBack: () => void }) {
     quota != null && quotaTotal != null && quotaTotal > 0
       ? Math.max(0, Math.min(1, quota / quotaTotal))
       : null;
-  const quotaLow =
-    quota != null && quotaTotal != null && quotaTotal > 0 && quota / quotaTotal <= 0.2;
   /** 云转存已用任务数（接口给的是剩余额度） */
   const quotaUsed = quota != null && quotaTotal != null ? Math.max(0, quotaTotal - quota) : null;
   /** 云转存占用比例：越满越红 */
@@ -770,7 +828,6 @@ export function useP115Panel({ onBack }: { onBack: () => void }) {
       : null;
 
   return {
-    onBack,
     tab,
     setTab,
     configured: Boolean(configured && authOk),
@@ -784,7 +841,6 @@ export function useP115Panel({ onBack }: { onBack: () => void }) {
     showCookieEdit,
     setShowCookieEdit,
     targets,
-    setTargets,
     browseSource,
     quota,
     quotaTotal,
@@ -792,7 +848,6 @@ export function useP115Panel({ onBack }: { onBack: () => void }) {
     quotaLoading,
     spaceUsedText,
     spaceTotalText,
-    spaceRemainText,
     spaceUsed,
     spaceTotal,
     showBrowser,
@@ -839,10 +894,10 @@ export function useP115Panel({ onBack }: { onBack: () => void }) {
     onClear,
     onDeleteTask,
     locked,
+    settingsLocked,
     taskCounts,
     filteredTasks,
     quotaRatio,
-    quotaLow,
     quotaUsed,
     quotaUsedRatio,
     spaceRatio,

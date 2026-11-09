@@ -1,8 +1,8 @@
 """115 扫码登录 → Cookie（UID/CID/SEID/KID）。
 
-同步自老后端 `reference/legacy-server/app/pan115.py`：
+移植自旧版 115 登录实现：
 - 用 p115client 的 `login_qrcode_token` / `login_qrcode_scan_status` /
-  `login_qrcode_scan_result`，各客户端 app 参数取自老后端 QR_APPS；
+  `login_qrcode_scan_result`，各客户端 app 参数取自旧版 QR_APPS；
 - 电视端 / 桌面端 / 平板端走设备码授权，token 接口不返回 qrcode，手机扫不到，
   因此只列支持手机扫码的客户端；
 - 二维码内容统一用 `https://yun.115.com/scan/dg-{uid}`，token 接口返回的

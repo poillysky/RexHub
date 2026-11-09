@@ -30,7 +30,7 @@ from app.rexhub.plugin_framework import store
 READY_TIMEOUT = 20.0
 LOG_LIMIT = 400
 READY_PREFIX = "REXHUB_MODULE_READY"
-HOST = "0.0.0.0"
+HOST = "127.0.0.1"
 _ISOLATED_HOST = Path(__file__).resolve().parents[1] / "runtime" / "module_host.mjs"
 _WIDGET_HOST = Path(__file__).resolve().parent / "widget_runtime" / "host.mjs"
 _SHARED_HOST = Path(__file__).resolve().parent / "runtime" / "shared_host.mjs"
@@ -500,6 +500,17 @@ def _register_process(row: dict[str, Any], proc: subprocess.Popen, port: int, la
     return status(row)
 
 
+def _resolve_port(row: dict[str, Any], runtime: dict[str, Any]) -> int | None:
+    """分配端口：显式端口被占用时尝试接管，接管成功返回 None（调用方直接返回状态）。"""
+    requested = int(runtime.get("port") or 0)
+    port = requested or _pick_port()
+    if requested and _port_open(port):
+        if _adopted(row, port):
+            return None
+        raise RuntimeError(f"端口 {port} 已被占用")
+    return port
+
+
 def _start_isolated(row: dict[str, Any]) -> dict[str, Any]:
     plugin_id = str(row["id"])
     binary = node_binary()
@@ -511,12 +522,9 @@ def _start_isolated(row: dict[str, Any]) -> dict[str, Any]:
     source = base / entrypoint
     if not source.is_file():
         raise RuntimeError(f"插件入口文件不存在：{entrypoint}")
-    port = int(runtime.get("port") or 0) or _pick_port()
-    if int(runtime.get("port") or 0) and _port_open(port):
-        adopted = _adopted(row, port)
-        if adopted:
-            return status(row)
-        raise RuntimeError(f"端口 {port} 已被占用")
+    port = _resolve_port(row, runtime)
+    if port is None:
+        return status(row)
     env = _plugin_env(row, port)
     proc = _spawn(plugin_id, [binary, str(_ISOLATED_HOST), str(source)], base, env)
     return _register_process(row, proc, port, "isolated")
@@ -532,12 +540,9 @@ def _start_widget(row: dict[str, Any]) -> dict[str, Any]:
     source = base / str(row.get("entrypoint") or runtime.get("entrypoint") or "plugin.js")
     if not source.is_file():
         raise RuntimeError(f"插件 JS 入口不存在：{source.name}")
-    port = int(runtime.get("port") or 0) or _pick_port()
-    if int(runtime.get("port") or 0) and _port_open(port):
-        adopted = _adopted(row, port)
-        if adopted:
-            return status(row)
-        raise RuntimeError(f"端口 {port} 已被占用")
+    port = _resolve_port(row, runtime)
+    if port is None:
+        return status(row)
     env = _plugin_env(row, port)
     env["REXHUB_PLUGIN_FILE"] = str(source)
     proc = _spawn(plugin_id, [binary, str(_WIDGET_HOST)], base, env)
@@ -565,12 +570,9 @@ def _start_process(row: dict[str, Any]) -> dict[str, Any]:
         args = [binary, entrypoint]
     if entrypoint and not (base / entrypoint).is_file():
         raise RuntimeError(f"插件入口文件不存在：{entrypoint}")
-    port = int(runtime.get("port") or 0) or _pick_port()
-    if int(runtime.get("port") or 0) and _port_open(port):
-        adopted = _adopted(row, port)
-        if adopted:
-            return status(row)
-        raise RuntimeError(f"端口 {port} 已被占用")
+    port = _resolve_port(row, runtime)
+    if port is None:
+        return status(row)
     env = _plugin_env(row, port)
     proc = _spawn(plugin_id, args, base, env)
     return _register_process(row, proc, port, f"process/{engine}")
@@ -605,7 +607,12 @@ def _start_shared_host() -> None:
         json.dumps({"port": port, "plugins": plugins}, ensure_ascii=False, indent=2),
         "utf-8",
     )
-    env = os.environ.copy()
+    # 共享宿主会承载第三方插件，只透传运行必需的最小环境，避免泄露数据库密码等密钥
+    env = {
+        key: value
+        for key in ("PATH", "HOME", "LANG", "LC_ALL", "TZ", "TMPDIR", "NODE_PATH")
+        if (value := os.environ.get(key)) is not None
+    }
     env["REXHUB_SHARED_CONFIG"] = str(_SHARED_CONFIG)
     for key in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "REXHUB_PLUGIN_PROXY", "NO_PROXY"):
         env.pop(key, None)
@@ -695,6 +702,15 @@ def start(row: dict[str, Any]) -> dict[str, Any]:
     if mode == "shared":
         return _start_shared(row)
     return _start_isolated(row)
+
+
+def _stop_locked(plugin_id: str) -> None:
+    """停止单个插件进程（不改变期望状态），用于启动失败后的清理。"""
+    with _LOCK:
+        entry = _PROCS.pop(plugin_id, None)
+    if entry is not None:
+        _terminate(entry["proc"])
+        _pid_file(entry.get("row") or {"id": plugin_id}).unlink(missing_ok=True)
 
 
 def _terminate(proc: subprocess.Popen) -> None:

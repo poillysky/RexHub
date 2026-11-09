@@ -12,6 +12,7 @@ import { AddonContent } from './AddonContent';
 import { AppMsg } from '@/components/ui/AppMsg';
 import { Switch } from '@/components/ui/switch';
 import { usePanelAction } from '@/hooks/usePanelAction';
+import { useAuth } from '@/providers/AuthProvider';
 import {
   addStremioAddon,
   addStremioRepository,
@@ -119,23 +120,13 @@ function AddonAvatar({
   );
 }
 
-function RepoAvatar({
-  url,
-  iconSize,
-  className,
-}: {
-  url: string;
-  iconSize: number;
-  className: string;
-}) {
-  const [failed, setFailed] = useState(false);
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => setFailed(false), [url]);
+function RepoAvatar({ url, className }: { url: string; className: string }) {
+  const [failedUrl, setFailedUrl] = useState('');
   const origin = originOf(url);
-  if (!origin || failed) {
+  if (!origin || failedUrl === url) {
     return (
-      <span className={className} aria-hidden>
-        <Boxes size={iconSize} strokeWidth={2.1} />
+      <span className={`${className} stremio-repo__icon--brand`} aria-hidden>
+        <img src="/brand/stremio.svg" alt="" width={24} height={24} decoding="async" />
       </span>
     );
   }
@@ -147,7 +138,7 @@ function RepoAvatar({
         loading="lazy"
         decoding="async"
         referrerPolicy="no-referrer"
-        onError={() => setFailed(true)}
+        onError={() => setFailedUrl(url)}
       />
     </span>
   );
@@ -165,6 +156,7 @@ export function StremioPanel({ onBack }: { onBack: () => void }) {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [typeFilter, setTypeFilter] = useState('');
   const { msg, setMsg, busy, run } = usePanelAction();
+  const { isAdmin } = useAuth();
   const isDirect = repoView === DIRECT_REPO;
 
   useEffect(() => {
@@ -184,7 +176,7 @@ export function StremioPanel({ onBack }: { onBack: () => void }) {
     void run('读取失败', async () => {
       await load();
     });
-  }, [load]);
+  }, [load, run]);
 
   const addons = useMemo(() => {
     if (!catalog) return [];
@@ -391,14 +383,20 @@ export function StremioPanel({ onBack }: { onBack: () => void }) {
           <li>
             <div className="settings-kv">
               <span className="settings-kv__key">启用</span>
-              <Switch
-                checked={detail.enabled !== false}
-                disabled={busy}
-                onCheckedChange={(v) => {
-                  setDetail({ ...detail, enabled: v });
-                  void toggle(detail, v);
-                }}
-              />
+              {isAdmin ? (
+                <Switch
+                  checked={detail.enabled !== false}
+                  disabled={busy}
+                  onCheckedChange={(v) => {
+                    setDetail({ ...detail, enabled: v });
+                    void toggle(detail, v);
+                  }}
+                />
+              ) : (
+                <span className="settings-kv__val">
+                  {detail.enabled !== false ? '已启用' : '已停用'}
+                </span>
+              )}
             </div>
           </li>
           <li>
@@ -436,37 +434,39 @@ export function StremioPanel({ onBack }: { onBack: () => void }) {
           </div>
         </section>
 
-        <div className="app-actions">
-          <button
-            type="button"
-            className="app-btn-secondary"
-            disabled={busy}
-            onClick={() =>
-              void run('测试失败', async () => {
-                const r = await testStremioAddon(detail.slug);
-                setMsg(r.ok ? '连通正常' : r.message || '连接失败');
-              })
-            }
-          >
-            测试连接
-          </button>
-          <button
-            type="button"
-            className="app-btn-secondary stremio-danger-btn"
-            disabled={busy}
-            onClick={() => {
-              if (!window.confirm(`删除 addon「${title}」？`)) return;
-              void run('删除失败', async () => {
-                await deleteStremioAddon(detail.slug);
-                setDetail(null);
-                setMsg('已删除');
-                await load();
-              });
-            }}
-          >
-            删除
-          </button>
-        </div>
+        {isAdmin ? (
+          <div className="app-actions">
+            <button
+              type="button"
+              className="app-btn-secondary"
+              disabled={busy}
+              onClick={() =>
+                void run('测试失败', async () => {
+                  const r = await testStremioAddon(detail.slug);
+                  setMsg(r.ok ? '连通正常' : r.message || '连接失败');
+                })
+              }
+            >
+              测试连接
+            </button>
+            <button
+              type="button"
+              className="app-btn-secondary stremio-danger-btn"
+              disabled={busy}
+              onClick={() => {
+                if (!window.confirm(`删除 addon「${title}」？`)) return;
+                void run('删除失败', async () => {
+                  await deleteStremioAddon(detail.slug);
+                  setDetail(null);
+                  setMsg('已删除');
+                  await load();
+                });
+              }}
+            >
+              删除
+            </button>
+          </div>
+        ) : null}
         {msg ? (
           <AppMsg allowSelect onDismiss={() => setMsg('')}>
             {msg}
@@ -485,11 +485,11 @@ export function StremioPanel({ onBack }: { onBack: () => void }) {
       >
         <div className={`stremio-repo-hero ${isDirect ? 'is-direct' : ''}`}>
           {isDirect ? (
-            <span className="stremio-repo-hero__icon" aria-hidden>
-              <Boxes size={24} strokeWidth={2} />
+            <span className="stremio-repo-hero__icon stremio-repo__icon--brand" aria-hidden>
+              <img src="/brand/stremio.svg" alt="" width={24} height={24} decoding="async" />
             </span>
           ) : (
-            <RepoAvatar url={repoView} iconSize={24} className="stremio-repo-hero__icon" />
+            <RepoAvatar url={repoView} className="stremio-repo-hero__icon" />
           )}
           <div className="stremio-repo-hero__main">
             <h2 className="stremio-hero__title">
@@ -498,16 +498,15 @@ export function StremioPanel({ onBack }: { onBack: () => void }) {
             <p className="stremio-hero__desc allow-select">
               {isDirect ? '不归属任何仓库的 addon' : repoView}
             </p>
-            <div className="stremio-chips">
-              <span className="stremio-chip">{repoAddons.length} 个 addon</span>
-              {currentRepo?.error ? (
+            {currentRepo?.error ? (
+              <div className="stremio-chips">
                 <span className="stremio-chip is-bad">同步异常</span>
-              ) : null}
-            </div>
+              </div>
+            ) : null}
           </div>
         </div>
 
-        {isDirect ? null : (
+        {isDirect || !isAdmin ? null : (
           <div className="stremio-hero-actions">
             <button
               type="button"
@@ -610,8 +609,12 @@ export function StremioPanel({ onBack }: { onBack: () => void }) {
             </p>
             <p className="plugin-empty__desc">
               {isDirect
-                ? '回到 Stremio 插件库首页，点「添加仓库 / 直接安装」粘贴 manifest 地址即可安装。'
-                : '点上方「刷新」重新拉取仓库索引，或检查仓库地址是否可用。'}
+                ? isAdmin
+                  ? '回到 Stremio 插件库首页，点「添加仓库 / 直接安装」粘贴 manifest 地址即可安装。'
+                  : '管理员还没有直接安装的 addon。'
+                : isAdmin
+                  ? '点上方「刷新」重新拉取仓库索引，或检查仓库地址是否可用。'
+                  : '该仓库暂时没有可浏览的 addon。'}
             </p>
           </div>
         )}
@@ -728,7 +731,7 @@ export function StremioPanel({ onBack }: { onBack: () => void }) {
                   setRepoView(repo.url);
                 }}
               >
-                <RepoAvatar url={repo.url} iconSize={17} className="stremio-repo__icon" />
+                <RepoAvatar url={repo.url} className="stremio-repo__icon" />
                 <span className="settings-nav__main">
                   <span className="settings-nav__title">{repo.title || repo.url}</span>
                   <span className="settings-nav__desc allow-select">{repo.url}</span>
@@ -761,8 +764,8 @@ export function StremioPanel({ onBack }: { onBack: () => void }) {
                   setRepoView(DIRECT_REPO);
                 }}
               >
-                <span className="stremio-repo__icon" aria-hidden>
-                  <Package size={17} strokeWidth={2.1} />
+                <span className="stremio-repo__icon stremio-repo__icon--brand" aria-hidden>
+                  <img src="/brand/stremio.svg" alt="" width={24} height={24} decoding="async" />
                 </span>
                 <span className="settings-nav__main">
                   <span className="settings-nav__title">直接安装</span>
@@ -788,24 +791,28 @@ export function StremioPanel({ onBack }: { onBack: () => void }) {
           </span>
           <p className="plugin-empty__title">还没有订阅仓库</p>
           <p className="plugin-empty__desc">
-            点下方「添加仓库 / 直接安装」粘贴索引地址，即可批量导入 addon。
+            {isAdmin
+              ? '点下方「添加仓库 / 直接安装」粘贴索引地址，即可批量导入 addon。'
+              : '管理员还没有添加订阅仓库。'}
           </p>
         </div>
       )}
 
-      <div className="app-actions">
-        <button
-          type="button"
-          className="app-btn-primary"
-          style={{ flex: 1 }}
-          onClick={() => {
-            setMsg('');
-            setShowRepos(true);
-          }}
-        >
-          <Plus size={15} strokeWidth={2.4} /> 添加仓库 / 直接安装
-        </button>
-      </div>
+      {isAdmin ? (
+        <div className="app-actions">
+          <button
+            type="button"
+            className="app-btn-primary"
+            style={{ flex: 1 }}
+            onClick={() => {
+              setMsg('');
+              setShowRepos(true);
+            }}
+          >
+            <Plus size={15} strokeWidth={2.4} /> 添加仓库 / 直接安装
+          </button>
+        </div>
+      ) : null}
       {msg ? (
         <AppMsg allowSelect onDismiss={() => setMsg('')}>
           {msg}

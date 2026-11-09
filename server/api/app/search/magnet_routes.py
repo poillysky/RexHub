@@ -6,9 +6,10 @@ import re
 from typing import Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 import app.search.bitmagnet_client as bitmagnet_client
+from app.auth.routes import require_user
 from app.core.outbound_http import httpx_client
 
 log = logging.getLogger(__name__)
@@ -28,6 +29,7 @@ def magnet_search(
     sortType: str = Query("default", max_length=20),
     filterTime: str = Query("all", max_length=20),
     filterSize: str = Query("all", max_length=20),
+    _user: dict[str, Any] = Depends(require_user),
 ) -> dict[str, Any]:
     """搜 Bitmagnet 库；结果含 magnet URI 与文件列表。"""
     try:
@@ -50,6 +52,7 @@ def magnet_search(
 @router.get("/magnet/detail")
 def magnet_detail(
     hash: str = Query(..., min_length=8, max_length=64),
+    _user: dict[str, Any] = Depends(require_user),
 ) -> dict[str, Any]:
     try:
         data = bitmagnet_client.get(hash)
@@ -66,11 +69,12 @@ def magnet_detail(
 def magnet_resolve(
     path: str = Query(..., min_length=8, max_length=200),
     keyword: str = Query("", max_length=120),
+    _user: dict[str, Any] = Depends(require_user),
 ) -> dict[str, Any]:
     """兼容旧前端：Bitmagnet 列表已带磁力，resolve 不再需要。"""
     del keyword
     h = (path or "").strip().lower().removeprefix("/detail/")
-    if len(h) < 8:
+    if not _HASH_RE.match(h):
         raise HTTPException(status_code=400, detail="无效 infoHash")
     magnet = bitmagnet_client.magnet_uri(info_hash_hex=h, name=h, size=0)
     return _wrap(
@@ -88,6 +92,7 @@ def magnet_resolve(
 @router.get("/magnet/preview")
 def magnet_preview(
     hash: str = Query(..., min_length=8, max_length=64),
+    _user: dict[str, Any] = Depends(require_user),
 ) -> dict[str, Any]:
     """对齐 Bitmagnet-Next-Web：经 WhatsLink 拉内容截图预览。
 
@@ -163,5 +168,5 @@ def magnet_preview(
 
 
 @router.get("/magnet/meta")
-def magnet_meta() -> dict[str, Any]:
+def magnet_meta(_user: dict[str, Any] = Depends(require_user)) -> dict[str, Any]:
     return _wrap(bitmagnet_client.meta(), "success")

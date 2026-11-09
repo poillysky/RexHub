@@ -6,8 +6,11 @@ iOS 只调用这里的接口，不感知插件协议。Widget JS、Stremio、独
 
 
 import re
+import threading
+import time
 import urllib.parse
 import urllib.request
+from collections import OrderedDict
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
@@ -35,6 +38,51 @@ _ASSET_KEYS = {
     "thumbnail",
 }
 MAX_ASSET_BYTES = 12 * 1024 * 1024
+
+# 插件产出的图片（封面为主）按「去掉临时签名」的路径缓存。
+# 上游封面地址带 auth_key，每次拉列表都会变；不归一化就永远命中不了缓存，
+# 表现为每次进短剧页都要重新下载几十张大图。内存占用有上限，超时后自动失效。
+_ASSET_CACHE_TTL = 30 * 60
+_ASSET_CACHE_MAX_BYTES = 48 * 1024 * 1024
+_asset_cache: "OrderedDict[str, tuple[float, bytes, str]]" = OrderedDict()
+_asset_cache_bytes = 0
+_asset_cache_lock = threading.Lock()
+
+
+def _asset_cache_key(plugin_id: str, path: str) -> str:
+    decoded = urllib.parse.unquote(path)
+    decoded = re.sub(r"[?&]auth_key=[^&]*", "", decoded)
+    return f"{plugin_id}\n{decoded}"
+
+
+def _asset_cache_get(key: str) -> tuple[bytes, str] | None:
+    global _asset_cache_bytes
+    now = time.time()
+    with _asset_cache_lock:
+        hit = _asset_cache.get(key)
+        if hit is None:
+            return None
+        if now - hit[0] > _ASSET_CACHE_TTL:
+            _asset_cache.pop(key, None)
+            _asset_cache_bytes -= len(hit[1])
+            return None
+        _asset_cache.move_to_end(key)
+        return hit[1], hit[2]
+
+
+def _asset_cache_put(key: str, body: bytes, content_type: str) -> None:
+    global _asset_cache_bytes
+    if not body or len(body) > _ASSET_CACHE_MAX_BYTES:
+        return
+    with _asset_cache_lock:
+        old = _asset_cache.pop(key, None)
+        if old is not None:
+            _asset_cache_bytes -= len(old[1])
+        _asset_cache[key] = (time.time(), body, content_type)
+        _asset_cache_bytes += len(body)
+        while _asset_cache_bytes > _ASSET_CACHE_MAX_BYTES and _asset_cache:
+            _, evicted = _asset_cache.popitem(last=False)
+            _asset_cache_bytes -= len(evicted[1])
 
 
 def _origin_of(request: Request) -> str:
@@ -167,14 +215,10 @@ def plugin_detail(plugin_id: str, _user: dict = Depends(require_session)) -> dic
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-@router.api_route(
-    "/{plugin_id}/proxy/{capability}", methods=["GET", "POST"], tags=["plugins"]
-)
-async def proxy_plugin(
+async def _proxy_plugin(
     plugin_id: str,
     capability: str,
     request: Request,
-    _user: dict = Depends(require_session),
 ):
     """导出 JS 使用的服务端转发：按插件声明的 capability 直接转发到插件接口。"""
     try:
@@ -218,6 +262,26 @@ async def proxy_plugin(
         return _error(502, "PLUGIN_RUNTIME_ERROR", str(exc))
 
 
+@router.get("/{plugin_id}/proxy/{capability}", tags=["plugins"])
+async def proxy_plugin_get(
+    plugin_id: str,
+    capability: str,
+    request: Request,
+    _user: dict = Depends(require_session),
+):
+    return await _proxy_plugin(plugin_id, capability, request)
+
+
+@router.post("/{plugin_id}/proxy/{capability}", tags=["plugins"])
+async def proxy_plugin_post(
+    plugin_id: str,
+    capability: str,
+    request: Request,
+    _user: dict = Depends(require_session),
+):
+    return await _proxy_plugin(plugin_id, capability, request)
+
+
 @router.get("/{plugin_id}/media")
 def plugin_media(
     plugin_id: str,
@@ -233,13 +297,24 @@ def plugin_media(
             raise ValueError("插件已停用")
         if not path.startswith("/") or "://" in path:
             raise ValueError("资源路径不合法")
-        base = runtime.base_url(row)
-        url = f"{base}{path}"
         extra = {
             key: value
             for key, value in request.query_params.items()
             if key not in ("path", "token")
         }
+        cache_key = _asset_cache_key(plugin_id, path)
+        if extra:
+            cache_key += "\n" + urllib.parse.urlencode(sorted(extra.items()))
+        cached = _asset_cache_get(cache_key)
+        if cached is not None:
+            body, content_type = cached
+            return Response(
+                content=body,
+                media_type=content_type.split(";", 1)[0],
+                headers={"Cache-Control": "public, max-age=600"},
+            )
+        base = runtime.base_url(row)
+        url = f"{base}{path}"
         if extra:
             url += ("&" if "?" in url else "?") + urllib.parse.urlencode(extra)
         upstream = urllib.request.Request(
@@ -250,6 +325,8 @@ def plugin_media(
             content_type = str(resp.headers.get("content-type") or "application/octet-stream")
         if len(body) > MAX_ASSET_BYTES:
             raise ValueError("资源体积过大")
+        if content_type.startswith("image/"):
+            _asset_cache_put(cache_key, body, content_type)
         return Response(
             content=body,
             media_type=content_type.split(";", 1)[0],
@@ -287,9 +364,12 @@ async def playback_url(
         )
         base = runtime.base_url(row)
         parsed = urllib.parse.urlparse(base)
-        host = request.url.hostname or parsed.hostname or "127.0.0.1"
+        req = urllib.parse.urlsplit(str(request.base_url))
+        # 沿用插件端口，但主机/协议取 App 实际访问的外部地址（含反代头）
+        scheme = req.scheme or parsed.scheme or "http"
+        host = req.hostname or parsed.hostname or "127.0.0.1"
         port = parsed.port
-        public = f"http://{host}:{port}" if port else f"{parsed.scheme}://{host}"
+        public = f"{scheme}://{host}:{port}" if port else f"{scheme}://{host}"
         url = f"{public}{path}"
         query = urllib.parse.urlencode(params)
         if query:

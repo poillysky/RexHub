@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Copy } from 'lucide-react';
 import { fetchMagnetDetail, fetchMagnetPreview, proxiedCoverUrl, type MagnetHit } from '@/lib/api';
@@ -16,17 +16,18 @@ function magnetOf(item: MagnetHit) {
 }
 
 function PreviewGrid({ images }: { images: string[] }) {
-  const [failed, setFailed] = useState<Record<number, true>>({});
+  /** 失败标记带上图片指纹：换图后旧标记自然失效，无需 effect 重置 */
+  const [failed, setFailed] = useState<{
+    key: string;
+    map: Record<number, true>;
+  }>({ key: '', map: {} });
   const proxied = images.map((u) => proxiedCoverUrl(u)).filter(Boolean);
-  useEffect(() => {
-    // 切换预览图时重置失败标记
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setFailed({});
-  }, [proxied.join('\0')]);
+  const key = proxied.join('\0');
+  const failedMap = failed.key === key ? failed.map : {};
 
   const visible = proxied
     .map((src, index) => ({ src, index }))
-    .filter(({ index }) => !failed[index]);
+    .filter(({ index }) => !failedMap[index]);
   if (!visible.length) return null;
 
   return (
@@ -41,9 +42,7 @@ function PreviewGrid({ images }: { images: string[] }) {
               loading="lazy"
               className="detail-preview-grid__img"
               onError={() =>
-                setFailed((prev) =>
-                  prev[index] ? prev : { ...prev, [index]: true },
-                )
+                setFailed({ key, map: { ...failedMap, [index]: true } })
               }
             />
           ))}

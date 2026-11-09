@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" role="img" aria-label="网络代理">
+  <defs>
+    <linearGradient id="network" x1="3" y1="3" x2="21" y2="21" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#30b0c7" />
+      <stop offset="1" stop-color="#0a84ff" />
+    </linearGradient>
+    <clipPath id="network-clip">
+      <circle cx="12" cy="12" r="9" />
+    </clipPath>
+  </defs>
+  <circle cx="12" cy="12" r="9" fill="url(#network)" />
+  <g
+    clip-path="url(#network-clip)"
+    fill="none"
+    stroke="#fff"
+    stroke-opacity="0.9"
+    stroke-width="1.3"
+  >
+    <ellipse cx="12" cy="12" rx="4" ry="9" />
+    <path d="M3 12h18M4.4 7.5h15.2M4.4 16.5h15.2" />
+  </g>
+</svg>

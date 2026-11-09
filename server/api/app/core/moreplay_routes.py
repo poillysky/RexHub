@@ -11,13 +11,14 @@
 """
 
 
+import asyncio
 import hashlib
-import ipaddress
+import json
 import re
-import socket
 import time
+from collections.abc import AsyncIterator, Callable
 from typing import Any
-from urllib.parse import parse_qs, quote_plus, urljoin, urlparse
+from urllib.parse import parse_qs, quote_plus, urlparse
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -25,8 +26,10 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 import app.core.settings_store as settings_store
+from app.auth.routes import require_admin
+from app.core.service_config import normalize_base, read_service
+from app.core.stream_proxy import proxy_media_stream
 from app.rexhub.auth_guard import require_session
-from app.search.pansou_client import _normalize_base
 
 router = APIRouter(tags=["moreplay"])
 
@@ -36,58 +39,14 @@ DEFAULT_SEARCH_SITE = ""
 DEFAULT_TIMEOUT_S = 15.0
 
 _PLAY_CACHE_TTL_S = 900.0
-_MAX_PLAY_SOURCES = 4
+# 单站点最多返回的线路数；同一网盘最多保留几条（避免百度把其它网盘挤掉）
+_MAX_SITE_SOURCES = 6
+_MAX_PER_DRIVE = 2
+_DRIVE_KEYS = ("百度", "115", "夸克", "uc", "天翼", "阿里", "迅雷", "123", "移动", "pikpak")
 _SEARCH_BUDGET_S = 30.0
-_REDIRECT_LIMIT = 3
-_ALLOWED_MEDIA_TYPES = (
-    "video/",
-    "audio/",
-    "application/vnd.apple.mpegurl",
-    "application/x-mpegurl",
-    "application/dash+xml",
-    "application/octet-stream",
-    "binary/octet-stream",
-)
 
 _sites_cache: tuple[str, float, list[dict[str, str]]] | None = None
 _play_cache: dict[str, tuple[float, dict[str, Any]]] = {}
-
-
-def _is_public_host(host: str) -> bool:
-    """主机名/IP 必须是公网地址：拦掉内网、回环、链路本地与保留段。"""
-    if not host:
-        return False
-    try:
-        return bool(ipaddress.ip_address(host).is_global)
-    except ValueError:
-        pass
-    if host.lower().endswith(".localhost"):
-        return False
-    try:
-        infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
-    except OSError:
-        return False
-    if not infos:
-        return False
-    for info in infos:
-        ip_text = str(info[4][0]).split("%")[0]
-        try:
-            if not ipaddress.ip_address(ip_text).is_global:
-                return False
-        except ValueError:
-            return False
-    return True
-
-
-def _is_safe_media_url(url: str) -> bool:
-    parsed = urlparse(url)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        return False
-    return _is_public_host(parsed.hostname or "")
-
-
-def _time_left(deadline: float) -> bool:
-    return deadline - time.monotonic() > 0.5
 
 
 def _remaining(deadline: float, cap: float) -> float:
@@ -138,6 +97,13 @@ class MorePlayConfigBody(BaseModel):
     baseUrl: str = Field(default=DEFAULT_BASE_URL, max_length=300)
     timeoutSec: float = Field(default=DEFAULT_TIMEOUT_S, ge=5, le=120)
     searchSite: str = Field(default=DEFAULT_SEARCH_SITE, max_length=80)
+    # 自定义搜索站源顺序（最多 3 个，靠前优先）
+    searchSites: list[str] = Field(default_factory=list)
+
+
+class MorePlayTestBody(BaseModel):
+    baseUrl: str = Field(default="", max_length=300)
+    timeoutSec: float | None = Field(default=None, ge=5, le=120)
 
 
 class MorePlayStreamItem(BaseModel):
@@ -162,21 +128,32 @@ class MorePlayStreamsResponse(BaseModel):
     reason: str = ""
 
 
+def _clean_search_sites(values: Any) -> list[str]:
+    """去重保序，最多保留 3 个站源 ID。"""
+    out: list[str] = []
+    for value in values if isinstance(values, list) else []:
+        sid = str(value or "").strip()
+        if sid and sid not in out:
+            out.append(sid)
+        if len(out) >= 3:
+            break
+    return out
+
+
 def get_config() -> dict[str, Any]:
-    raw = settings_store.get_setting(MOREPLAY_KEY) or {}
-    if not isinstance(raw, dict):
-        raw = {}
-    base = _normalize_base(str(raw.get("baseUrl") or ""))
-    enabled = raw.get("enabled")
-    if enabled is None:
-        enabled = True
-    search_site = str(raw.get("searchSite") or "").strip()
-    return {
-        "enabled": bool(enabled),
-        "baseUrl": base,
-        "timeoutSec": max(5.0, min(float(raw.get("timeoutSec") or DEFAULT_TIMEOUT_S), 120.0)),
-        "searchSite": search_site,
-    }
+    raw, cfg = read_service(
+        MOREPLAY_KEY,
+        default_timeout=DEFAULT_TIMEOUT_S,
+        timeout_min=5.0,
+        timeout_max=120.0,
+    )
+    cfg["baseUrl"] = normalize_base(cfg["baseUrl"])
+    cfg["searchSite"] = str(raw.get("searchSite") or "").strip()
+    # 兼容旧配置：只存了单个 searchSite 时当作唯一站源
+    cfg["searchSites"] = _clean_search_sites(raw.get("searchSites")) or (
+        [cfg["searchSite"]] if cfg["searchSite"] else []
+    )
+    return cfg
 
 
 def _wrap(data: Any, message: str = "ok", status: int = 200) -> dict[str, Any]:
@@ -198,6 +175,8 @@ def _probe(base: str, timeout: float) -> dict[str, Any]:
         payload = health.json()
     except ValueError:
         return {"ok": False, "message": "健康检查响应不是 JSON"}
+    if not isinstance(payload, dict):
+        return {"ok": False, "message": "健康检查响应格式异常"}
     if not payload.get("ok"):
         return {"ok": False, "message": str(payload.get("message") or "服务未就绪")}
     name = str(payload.get("name") or "")
@@ -207,7 +186,7 @@ def _probe(base: str, timeout: float) -> dict[str, Any]:
             raw_sites = sites.json().get("sites")
             if isinstance(raw_sites, list):
                 site_count = len(raw_sites)
-        except ValueError:
+        except (ValueError, AttributeError):
             site_count = 0
     return {
         "ok": True,
@@ -233,7 +212,8 @@ def _load_sites(base: str, timeout: float, *, force: bool = False) -> list[dict[
     with httpx.Client(timeout=timeout, trust_env=False) as client:
         resp = client.get(f"{base}/t4/config.json")
         resp.raise_for_status()
-        raw = resp.json().get("sites")
+        payload = resp.json()
+        raw = payload.get("sites") if isinstance(payload, dict) else None
         allowed: set[str] | None = None
         try:
             catalog = client.get(f"{base}/bridge/catalog").json()
@@ -324,10 +304,24 @@ def _play_tokens(
     return tokens
 
 
+def _drive_of(label: str) -> str:
+    """从线路名里识别网盘（百度/UC/夸克/115…），识别不出时退回整条名。"""
+    low = label.lower()
+    for key in _DRIVE_KEYS:
+        if key in low:
+            return key
+    return re.sub(r"（[^）]*）|\([^)]*\)", "", label).strip()
+
+
 def _pick_tokens(tokens: list[tuple[str, str]]) -> list[tuple[str, str]]:
-    """跳过转码线路，并按网盘去重（同一网盘的「无限」线路只保留一条）。"""
+    """跳过转码线路，按网盘去重，并保证各网盘都有机会出现。
+
+    同一网盘的「无限」线路只保留一条（与普通线路同名）；但百度不能把
+    UC/夸克/115 的名额全占掉，否则用户看到的就只剩百度。
+    """
     picked: list[tuple[str, str]] = []
     seen: set[str] = set()
+    counts: dict[str, int] = {}
     for label, token in tokens:
         low = label.lower()
         if any(mark in low for mark in ("极速", "转码", "m3u8")):
@@ -336,23 +330,29 @@ def _pick_tokens(tokens: list[tuple[str, str]]) -> list[tuple[str, str]]:
         if base in seen:
             continue
         seen.add(base)
+        drive = _drive_of(label)
+        if counts.get(drive, 0) >= _MAX_PER_DRIVE:
+            continue
+        counts[drive] = counts.get(drive, 0) + 1
         picked.append((label, token))
+        if len(picked) >= _MAX_SITE_SOURCES:
+            break
     return picked
 
 
-def _search_site(
-    client: httpx.Client, api: str, keyword: str, timeout: float
+async def _search_site(
+    client: httpx.AsyncClient, api: str, keyword: str, timeout: float
 ) -> list[dict[str, Any]]:
-    resp = client.get(f"{api}&wd={quote_plus(keyword)}", timeout=timeout)
+    resp = await client.get(f"{api}&wd={quote_plus(keyword)}", timeout=timeout)
     resp.raise_for_status()
     rows = resp.json().get("list")
     return [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
 
 
-def _fetch_detail(
-    client: httpx.Client, api: str, vod_id: str, timeout: float
+async def _fetch_detail(
+    client: httpx.AsyncClient, api: str, vod_id: str, timeout: float
 ) -> dict[str, Any]:
-    resp = client.get(f"{api}&ac=detail&ids={quote_plus(vod_id)}", timeout=timeout)
+    resp = await client.get(f"{api}&ac=detail&ids={quote_plus(vod_id)}", timeout=timeout)
     resp.raise_for_status()
     rows = resp.json().get("list")
     return rows[0] if isinstance(rows, list) and rows else {}
@@ -371,12 +371,14 @@ def _cache_play(token: str, url: str, headers: dict[str, str]) -> str:
     return key
 
 
-def _resolve_play(
-    client: httpx.Client, base: str, token: str, timeout: float
+async def _resolve_play(
+    client: httpx.AsyncClient, base: str, token: str, timeout: float
 ) -> tuple[str, dict[str, str]]:
-    resp = client.get(f"{base}/t4/vod?play={quote_plus(token)}", timeout=timeout)
+    resp = await client.get(f"{base}/t4/vod?play={quote_plus(token)}", timeout=timeout)
     resp.raise_for_status()
     payload = resp.json()
+    if not isinstance(payload, dict):
+        return "", {}
     url = str(payload.get("url") or "").strip()
     header = payload.get("header")
     headers = {
@@ -387,6 +389,180 @@ def _resolve_play(
     return url, headers
 
 
+async def _collect_site(
+    client: httpx.AsyncClient,
+    base: str,
+    site: dict[str, str],
+    title: str,
+    year: str,
+    is_tv: bool,
+    season_no: int,
+    ep: int,
+    deadline: float,
+    timeout: float,
+    emit: Callable[[MorePlayStreamItem], None],
+) -> None:
+    """搜索并解析单个站点，每解析出一条线路就立刻 ``emit``。"""
+    api = f"{base}/t4/vod?site={site['id']}"
+    rows = await _search_site(client, api, title, _remaining(deadline, timeout))
+    matched = [
+        row
+        for row in rows
+        if _title_match(row.get("vod_name"), title)
+        and (
+            not year
+            or not str(row.get("vod_year") or "").strip()
+            or str(row.get("vod_year")).strip() == year
+        )
+    ]
+    if not matched:
+        return
+    # 只取最匹配的一条，避免同一部剧重复解析拖慢整站
+    matched.sort(
+        key=lambda row: 0 if _norm_title(row.get("vod_name")) == _norm_title(title) else 1
+    )
+    vod_id = str(matched[0].get("vod_id") or "").strip()
+    if not vod_id:
+        return
+    detail = await _fetch_detail(client, api, vod_id, _remaining(deadline, timeout))
+    vod_name = str(detail.get("vod_name") or matched[0].get("vod_name") or title)
+    tokens = _pick_tokens(_play_tokens(detail, is_tv, season_no, ep))
+    if not tokens:
+        return
+    # 同站多条线路并发解析，谁先解析出来先展示；单条失败不影响其它线路
+    tasks = {
+        asyncio.create_task(
+            _resolve_play(client, base, token, _remaining(deadline, timeout))
+        ): (label, token)
+        for label, token in tokens
+    }
+    pending = set(tasks)
+    try:
+        while pending:
+            done, pending = await asyncio.wait(
+                pending,
+                timeout=max(0.1, deadline - time.monotonic()),
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if not done:
+                break
+            for task in done:
+                label, token = tasks.pop(task)
+                try:
+                    url, headers = task.result()
+                except Exception:
+                    continue
+                # 转码线路是 m3u8，v1 只接原画 MP4（m3u8 需要重写分片地址）
+                if not url or ".m3u8" in url.lower():
+                    continue
+                emit(
+                    MorePlayStreamItem(
+                        addon=site["name"],
+                        addonSlug=site["id"],
+                        name=label,
+                        title=f"{vod_name} · {label}",
+                        url=f"/api/media/moreplay-proxy?key={_cache_play(token, url, headers)}",
+                        filename=vod_name,
+                        kind="moreplay",
+                        playable=True,
+                    )
+                )
+    finally:
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+
+
+async def _site_events(
+    cfg: dict[str, Any],
+    title: str,
+    year: str,
+    is_tv: bool,
+    season_no: int,
+    ep: int,
+) -> AsyncIterator[dict[str, Any]]:
+    """并发搜索多个站点，按完成顺序逐站产出事件（先到先展示）。
+
+    最后一定产出 ``{"type": "done"}``；调用方取消生成器（如客户端断开）
+    时，未完成的站点请求会一并取消。
+    """
+    base = str(cfg["baseUrl"])
+    timeout = min(max(float(cfg["timeoutSec"]), 10.0), 20.0)
+    try:
+        sites = await asyncio.to_thread(_load_sites, base, timeout)
+    except Exception as e:
+        yield {"type": "done", "reason": f"读取猫源站点失败: {e}", "tried": []}
+        return
+    if not sites:
+        yield {"type": "done", "reason": "MorePlay 没有可搜索站点", "tried": []}
+        return
+
+    by_id = {s["id"]: s for s in sites}
+    # 按设置页自定义的顺序匹配，最多 3 个；都没配置时退回列表前 3 个
+    attempts = [by_id[sid] for sid in cfg["searchSites"] if sid in by_id][:3]
+    if not attempts:
+        attempts = sites[:3]
+    tried = [site["name"] for site in attempts]
+    deadline = time.monotonic() + _SEARCH_BUDGET_S
+
+    async with httpx.AsyncClient(
+        timeout=timeout, trust_env=False, follow_redirects=True
+    ) as client:
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+
+        async def worker(site: dict[str, str]) -> None:
+            def emit(item: MorePlayStreamItem) -> None:
+                queue.put_nowait(
+                    {
+                        "type": "site",
+                        "site": site["name"],
+                        "siteId": site["id"],
+                        "streams": [item.model_dump()],
+                    }
+                )
+
+            try:
+                await _collect_site(
+                    client,
+                    base,
+                    site,
+                    title,
+                    year,
+                    is_tv,
+                    season_no,
+                    ep,
+                    deadline,
+                    timeout,
+                    emit,
+                )
+            except Exception:
+                pass
+            finally:
+                queue.put_nowait({"type": "_finished"})
+
+        workers = [asyncio.create_task(worker(site)) for site in attempts]
+        try:
+            remaining = len(workers)
+            while remaining > 0:
+                budget = deadline - time.monotonic()
+                if budget <= 0:
+                    break
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=budget)
+                except asyncio.TimeoutError:
+                    break
+                if event.get("type") == "_finished":
+                    remaining -= 1
+                    continue
+                yield event
+        finally:
+            for task in workers:
+                task.cancel()
+            await asyncio.gather(*workers, return_exceptions=True)
+    yield {"type": "done", "tried": tried}
+
+
 @router.get("/settings/moreplay")
 def get_moreplay_settings(request: Request) -> dict[str, Any]:
     require_session(request)
@@ -395,33 +571,43 @@ def get_moreplay_settings(request: Request) -> dict[str, Any]:
 
 @router.put("/settings/moreplay")
 def put_moreplay_settings(request: Request, body: MorePlayConfigBody) -> dict[str, Any]:
-    require_session(request)
-    base = _normalize_base(body.baseUrl)
+    require_admin(request)
+    base = normalize_base(body.baseUrl)
     if not base:
-        raise HTTPException(status_code=400, detail="baseUrl 不能为空")
-    settings_store.put_setting(
-        MOREPLAY_KEY,
-        {
+        raise HTTPException(status_code=400, detail="地址需为 http(s):// 开头的有效地址")
+
+    def _merge(prev: dict[str, Any]) -> dict[str, Any]:
+        ordered = _clean_search_sites(body.searchSites) or _clean_search_sites(
+            [body.searchSite]
+        )
+        return {
             "enabled": body.enabled,
             "baseUrl": base,
             "timeoutSec": body.timeoutSec,
-            "searchSite": body.searchSite.strip(),
-        },
-    )
+            # searchSite 保留给旧客户端，始终与自定义顺序的第一项一致
+            "searchSite": ordered[0] if ordered else "",
+            "searchSites": ordered,
+        }
+
+    settings_store.update_setting(MOREPLAY_KEY, _merge)
     return _wrap(get_config(), "saved")
 
 
-@router.get("/moreplay/health")
-def moreplay_health(request: Request) -> dict[str, Any]:
-    require_session(request)
-    cfg = get_config()
-    base = str(cfg["baseUrl"])
-    if not cfg["enabled"]:
-        return _wrap({"ok": False, "configured": False, "baseUrl": base, "message": "未启用"})
+@router.post("/moreplay/test")
+def test_moreplay_settings(request: Request, body: MorePlayTestBody) -> dict[str, Any]:
+    """用请求里的草稿配置探测连接，不落库；地址留空时复用已保存的地址。"""
+    require_admin(request)
+    prev = get_config()
+    if body.baseUrl.strip():
+        base = normalize_base(body.baseUrl)
+        if not base:
+            raise HTTPException(status_code=400, detail="地址需为 http(s):// 开头的有效地址")
+    else:
+        base = str(prev["baseUrl"])
     if not base:
-        return _wrap({"ok": False, "configured": False, "baseUrl": "", "message": "未配置服务地址"})
-    result = _probe(base, float(cfg["timeoutSec"]))
-    return _wrap({"configured": True, "baseUrl": base, **result})
+        raise HTTPException(status_code=400, detail="请填写服务地址")
+    timeout = body.timeoutSec or float(prev["timeoutSec"])
+    return _wrap(_probe(base, timeout))
 
 
 @router.get("/moreplay/sites")
@@ -438,7 +624,7 @@ def moreplay_sites(request: Request) -> dict[str, Any]:
 
 
 @router.get("/media/moreplay/streams", response_model=MorePlayStreamsResponse)
-def moreplay_streams(
+async def moreplay_streams(
     request: Request,
     title: str = Query(..., min_length=1, max_length=200),
     year: str = Query("", max_length=10),
@@ -446,154 +632,79 @@ def moreplay_streams(
     season: int = Query(0, ge=0, le=99),
     episode: int = Query(0, ge=0, le=999),
 ) -> MorePlayStreamsResponse:
-    """按标题搜索猫源，解析出可直接播放的网盘原画线路。"""
+    """并发搜索全部站点，合并后一次性返回可直接播放的网盘原画线路。"""
     require_session(request)
     cfg = get_config()
     if not cfg["enabled"]:
         return MorePlayStreamsResponse(streams=[], reason="MorePlay 未启用")
-    base = str(cfg["baseUrl"])
-    if not base:
+    if not str(cfg["baseUrl"]):
         return MorePlayStreamsResponse(streams=[], reason="MorePlay 未配置服务地址")
-    timeout = min(max(float(cfg["timeoutSec"]), 10.0), 20.0)
-    is_tv = mediaType == "tv"
-    season_no = max(1, season if season > 0 else 1)
-    ep = max(1, episode)
-    deadline = time.monotonic() + _SEARCH_BUDGET_S
-    try:
-        sites = _load_sites(base, _remaining(deadline, timeout))
-    except Exception as e:
-        return MorePlayStreamsResponse(streams=[], reason=f"读取猫源站点失败: {e}")
-    if not sites:
-        return MorePlayStreamsResponse(streams=[], reason="MorePlay 没有可搜索站点")
-
-    preferred = next((s for s in sites if s["id"] == cfg["searchSite"]), sites[0])
-    attempts = [preferred]
-    # 首选站源没有可播放线路时，再试两个常见内容站；总时长由 deadline 兜底
-    for fallback_id in ("nodejs_huban", "nodejs_duoduo"):
-        site = next((s for s in sites if s["id"] == fallback_id), None)
-        if site and site["id"] != preferred["id"]:
-            attempts.append(site)
 
     streams: list[MorePlayStreamItem] = []
+    reason = ""
     tried: list[str] = []
-    try:
-        with httpx.Client(timeout=timeout, trust_env=False) as client:
-            for site in attempts:
-                if not _time_left(deadline):
-                    break
-                tried.append(site["name"])
-                api = f"{base}/t4/vod?site={site['id']}"
-                try:
-                    rows = _search_site(
-                        client, api, title, _remaining(deadline, timeout)
-                    )
-                except Exception:
-                    continue
-                matched = [
-                    row
-                    for row in rows
-                    if _title_match(row.get("vod_name"), title)
-                    and (
-                        not year
-                        or not str(row.get("vod_year") or "").strip()
-                        or str(row.get("vod_year")).strip() == year
-                    )
-                ]
-                if not matched:
-                    continue
-                # 只取最匹配的一条，避免重复片源拖慢弹层加载
-                matched.sort(
-                    key=lambda row: 0
-                    if _norm_title(row.get("vod_name")) == _norm_title(title)
-                    else 1
-                )
-                for row in matched[:1]:
-                    if not _time_left(deadline):
-                        break
-                    vod_id = str(row.get("vod_id") or "").strip()
-                    if not vod_id:
-                        continue
-                    try:
-                        detail = _fetch_detail(
-                            client, api, vod_id, _remaining(deadline, timeout)
-                        )
-                    except Exception:
-                        continue
-                    vod_name = str(detail.get("vod_name") or row.get("vod_name") or title)
-                    tokens = _pick_tokens(_play_tokens(detail, is_tv, season_no, ep))
-                    for label, token in tokens:
-                        if len(streams) >= _MAX_PLAY_SOURCES or not _time_left(deadline):
-                            break
-                        try:
-                            url, headers = _resolve_play(
-                                client, base, token, _remaining(deadline, timeout)
-                            )
-                        except Exception:
-                            continue
-                        # 转码线路是 m3u8，v1 只接原画 MP4（m3u8 需要重写分片地址）
-                        if not url or ".m3u8" in url.lower():
-                            continue
-                        key = _cache_play(token, url, headers)
-                        streams.append(
-                            MorePlayStreamItem(
-                                addon=site["name"],
-                                addonSlug=site["id"],
-                                name=label,
-                                title=f"{vod_name} · {label}",
-                                url=f"/api/media/moreplay-proxy?key={key}",
-                                filename=vod_name,
-                                kind="moreplay",
-                                playable=True,
-                            )
-                        )
-                    if len(streams) >= _MAX_PLAY_SOURCES:
-                        break
-                if streams:
-                    break
-    except Exception as e:
-        return MorePlayStreamsResponse(streams=[], reason=f"猫源搜索失败: {e}")
-
-    if streams:
-        return MorePlayStreamsResponse(
-            streams=streams,
-            total=len(streams),
-            addons=1,
-            reason="",
-        )
+    async for event in _site_events(
+        cfg,
+        title,
+        year,
+        mediaType == "tv",
+        max(1, season if season > 0 else 1),
+        max(1, episode),
+    ):
+        if event["type"] == "site":
+            streams.extend(MorePlayStreamItem(**item) for item in event["streams"])
+        else:
+            reason = str(event.get("reason") or "")
+            tried = list(event.get("tried") or [])
     return MorePlayStreamsResponse(
-        streams=[],
-        addons=0,
-        reason=f"已尝试 {'、'.join(tried)}，未找到可播放的原画线路",
+        streams=streams,
+        total=len(streams),
+        addons=len({item.addon for item in streams}),
+        reason=""
+        if streams
+        else (reason or f"已尝试 {'、'.join(tried)}，未找到可播放的原画线路"),
     )
 
 
-def _open_stream(
-    client: httpx.Client, url: str, headers: dict[str, str]
-) -> httpx.Response:
-    """手动逐跳跟随重定向，并校验每一跳都是公网 http(s) 地址。"""
-    current = url
-    for _ in range(_REDIRECT_LIMIT + 1):
-        if not _is_safe_media_url(current):
-            raise HTTPException(status_code=400, detail="片源地址不安全")
-        resp = client.send(
-            client.build_request("GET", current, headers=headers), stream=True
-        )
-        if resp.status_code in (301, 302, 303, 307, 308):
-            location = resp.headers.get("location")
-            resp.close()
-            if not location:
-                raise HTTPException(status_code=502, detail="片源重定向地址缺失")
-            nxt = urljoin(current, location)
-            if not _is_safe_media_url(nxt):
-                raise HTTPException(status_code=400, detail="片源重定向到不安全地址")
-            if urlparse(nxt).hostname != urlparse(current).hostname:
-                # 跨域重定向不把网盘 Cookie 带过去
-                for key in ("Cookie", "cookie", "Referer", "referer"):
-                    headers.pop(key, None)
-            current = nxt
-            continue
-        return resp
-    raise HTTPException(status_code=502, detail="片源重定向次数过多")
+def _ndjson(event: dict[str, Any]) -> bytes:
+    return (json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n").encode(
+        "utf-8"
+    )
+
+
+@router.get("/media/moreplay/streams/live")
+async def moreplay_streams_live(
+    request: Request,
+    title: str = Query(..., min_length=1, max_length=200),
+    year: str = Query("", max_length=10),
+    mediaType: str = Query("movie", max_length=12),
+    season: int = Query(0, ge=0, le=99),
+    episode: int = Query(0, ge=0, le=999),
+) -> StreamingResponse:
+    """流式搜索：每命中一个站点就下发一行 NDJSON，客户端断开即取消剩余请求。"""
+    require_session(request)
+    cfg = get_config()
+    is_tv = mediaType == "tv"
+    season_no = max(1, season if season > 0 else 1)
+    ep = max(1, episode)
+
+    async def body() -> AsyncIterator[bytes]:
+        if not cfg["enabled"]:
+            yield _ndjson({"type": "done", "reason": "MorePlay 未启用", "tried": []})
+            return
+        if not str(cfg["baseUrl"]):
+            yield _ndjson(
+                {"type": "done", "reason": "MorePlay 未配置服务地址", "tried": []}
+            )
+            return
+        async for event in _site_events(cfg, title, year, is_tv, season_no, ep):
+            yield _ndjson(event)
+
+    return StreamingResponse(
+        body(),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/media/moreplay-proxy")
@@ -609,77 +720,10 @@ def moreplay_proxy(
         raise HTTPException(status_code=404, detail="片源已过期，请重新加载")
     info = hit[1]
     url = str(info.get("url") or "")
-    if not _is_safe_media_url(url):
-        raise HTTPException(status_code=400, detail="片源地址不安全")
-
     headers = dict(info.get("headers") or {})
-    range_header = request.headers.get("range")
-    if range_header:
-        headers["Range"] = range_header
-
-    client = httpx.Client(
-        follow_redirects=False,
-        timeout=httpx.Timeout(20.0, read=120.0),
-        trust_env=False,
-    )
-    try:
-        upstream = _open_stream(client, url, headers)
-    except HTTPException:
-        client.close()
-        raise
-    except httpx.HTTPError as exc:
-        client.close()
-        raise HTTPException(status_code=502, detail="片源拉取失败") from exc
-
-    if upstream.status_code >= 400:
-        upstream.close()
-        client.close()
-        raise HTTPException(
-            status_code=502, detail=f"片源直链返回 {upstream.status_code}，可稍后重试"
-        )
-    content_type = (
-        (upstream.headers.get("content-type") or "").split(";")[0].strip().lower()
-    )
-    if content_type and not content_type.startswith(_ALLOWED_MEDIA_TYPES):
-        upstream.close()
-        client.close()
-        raise HTTPException(
-            status_code=502,
-            detail=f"片源返回的不是音视频流（{content_type}）",
-        )
-
-    def body():
-        try:
-            for chunk in upstream.iter_bytes(64 * 1024):
-                yield chunk
-        finally:
-            upstream.close()
-            client.close()
-
-    passthrough = {
-        "Cache-Control": "private, max-age=0",
-        "Accept-Ranges": "bytes",
-        "X-Content-Type-Options": "nosniff",
-    }
-    for name in (
-        "content-type",
-        "content-length",
-        "content-range",
-        "accept-ranges",
-        "etag",
-        "last-modified",
-    ):
-        value = upstream.headers.get(name)
-        if value:
-            passthrough[name] = value
-    # 百度网盘返回 octet-stream / 部分 CDN 不给类型，统一按 MP4 交给浏览器
-    if passthrough.get("content-type") in (
-        None,
-        "",
-        "application/octet-stream",
-        "binary/octet-stream",
-    ):
-        passthrough["content-type"] = "video/mp4"
-    return StreamingResponse(
-        body(), status_code=upstream.status_code, headers=passthrough
+    return proxy_media_stream(
+        request,
+        url,
+        headers=headers,
+        fallback_content_type="video/mp4",
     )

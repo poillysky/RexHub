@@ -5,35 +5,20 @@ url 多为 SRT，浏览器 <track> 只认 WebVTT，因此播放端统一走
 ``/api/media/subtitle-proxy`` 做转发与 SRT→VTT 转换。
 """
 
-import asyncio
 import re
 from typing import Any
 from urllib.parse import urljoin
 
 import httpx
 
+from .collect import addon_names, candidate, gather, text as _text
 from .storage import _read
-from .streams import _UA, _proxy_url, _resource_names, _text
 
 QUERY_TIMEOUT = 6.0
 TOTAL_TIMEOUT = 7.0
 CONCURRENCY = 60
 PER_ADDON_ROWS = 40
 MAX_ROWS = 80
-
-
-def _candidate(row: dict[str, Any], media_type: str, imdb_id: str) -> bool:
-    manifest = row.get("manifest")
-    if not isinstance(manifest, dict) or "subtitles" not in _resource_names(manifest):
-        return False
-    types = [str(item) for item in manifest.get("types") or []]
-    if types and media_type not in types:
-        return False
-    prefixes = manifest.get("idPrefixes")
-    if isinstance(prefixes, list) and prefixes:
-        if not any(imdb_id.startswith(str(prefix)) for prefix in prefixes):
-            return False
-    return True
 
 
 def _subtitle_id(imdb_id: str, season: int, episode: int) -> str:
@@ -120,46 +105,22 @@ async def collect(
     rows = [
         row
         for row in data["addons"]
-        if row.get("enabled", True) and _candidate(row, media_type, imdb_id)
+        if row.get("enabled", True) and candidate(row, media_type, imdb_id, "subtitles")
     ]
     if not rows:
         return {"subtitles": [], "total": 0, "reason": "没有可用的字幕插件"}
 
-    names = {
-        row.get("slug"): (
-            _text((row.get("manifest") or {}).get("name"), 80)
-            or _text(row.get("slug"), 80)
-        )
-        for row in rows
-    }
+    names = addon_names(rows)
     subtitle_id = _subtitle_id(imdb_id, season, episode)
-    client_kwargs: dict[str, Any] = {
-        "headers": {"User-Agent": _UA, "Accept": "application/json, */*"},
-        "follow_redirects": True,
-        "limits": httpx.Limits(max_connections=CONCURRENCY),
-    }
-    proxy = _proxy_url()
-    if proxy:
-        client_kwargs["proxy"] = proxy
-
-    async with httpx.AsyncClient(**client_kwargs) as client:
-        tasks = [
-            asyncio.create_task(
-                _fetch(client, row, media_type, subtitle_id, names[row.get("slug")])
-            )
-            for row in rows
-        ]
-        done, pending = await asyncio.wait(tasks, timeout=TOTAL_TIMEOUT)
-        for task in pending:
-            task.cancel()
-        gathered: list[dict[str, Any]] = []
-        for task in done:
-            if task.cancelled():
-                continue
-            try:
-                gathered.extend(task.result())
-            except (httpx.HTTPError, ValueError, OSError):
-                continue
+    gathered = await gather(
+        rows,
+        names,
+        lambda client, row, name: _fetch(
+            client, row, media_type, subtitle_id, name
+        ),
+        timeout=TOTAL_TIMEOUT,
+        concurrency=CONCURRENCY,
+    )
 
     seen: set[str] = set()
     items: list[dict[str, Any]] = []

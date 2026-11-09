@@ -1,6 +1,6 @@
 'use client';
 
-import { startTransition, useEffect, useState } from 'react';
+import { startTransition, useEffect, useRef, useState } from 'react';
 import { SlidersHorizontal, Clock, Search, Users, ChevronDown } from 'lucide-react';
 import type {
   MakerCategoryId,
@@ -13,8 +13,7 @@ import type {
   MakerPlaybackFilter,
 } from '@/lib/api/makers';
 import { AppPush } from '@/components/ui/AppPush';
-import { SoftImg } from '@/components/SoftImg';
-import { writeSaveSource } from '@/lib/p115Source';
+import { openHomeSearch } from '@/features/media/mediaUi';
 import { useTabNavigation } from '@/shell';
 import { useStackCover } from '@/hooks/useStackCover';
 import {
@@ -44,7 +43,7 @@ import {
 
 type Stack =
   | { kind: 'hub' }
-  | { kind: 'search'; q?: string }
+  | { kind: 'search' }
   | { kind: 'maker'; name: string }
   | {
       kind: 'list';
@@ -73,9 +72,9 @@ type Stack =
     }
   | { kind: 'actors'; category: MakerCategoryId; recommend?: boolean }
   | { kind: 'reviews' }
-  | { kind: 'entity'; entityKind: MakerEntityKind; entityId: string; name: string }
-  | { kind: 'actor-detail'; actorId: string; name: string }
-  | { kind: 'list-detail'; listId: string; name: string }
+  | { kind: 'entity'; entityKind: MakerEntityKind; entityId: string; name: string; back?: Stack }
+  | { kind: 'actor-detail'; actorId: string; name: string; back?: Stack }
+  | { kind: 'list-detail'; listId: string; name: string; back?: Stack }
   | { kind: 'movie'; movie: MakerMovie; back: Stack }
   | { kind: 'movie-reviews'; movieId: string; title: string; back: Stack };
 
@@ -181,8 +180,8 @@ function ListShelf({
   onOpenAll: () => void;
   onOpenMovie: (movie: MakerMovie) => void;
 }) {
-  const latest = useMakerLatest(category, 1);
-  const top = useMakerTop(category, 1);
+  const latest = useMakerLatest(category, 1, 'update', 'all', kind === 'latest');
+  const top = useMakerTop(category, 1, '', kind === 'top');
   const active = kind === 'latest' ? latest : top;
   const items = (active.data?.items || []).slice(0, 12);
   const err = active.error instanceof Error ? active.error.message : '';
@@ -268,6 +267,8 @@ function PlaybackShelf({
 
 export function MakersScreen() {
   const tabCtx = useTabNavigation();
+  const activeTab = tabCtx?.activeTab;
+  const tabReselect = tabCtx?.tabReselect ?? 0;
   const [stack, setStack] = useState<Stack>({ kind: 'hub' });
   const [category, setCategory] = useState<MakerCategoryId>('0');
   /** 顶部 tab：热播 / 类别 / 最近浏览，同层切换内容，不推入新页面 */
@@ -279,12 +280,17 @@ export function MakersScreen() {
     'maker-hub',
     'app-hub media-hub-root',
   );
+  const hubScrollRef = useRef<HTMLDivElement | null>(null);
+
+  // 同层切换 tab / 类别后回到顶部，避免沿用上一个列表的滚动位置
+  useEffect(() => {
+    hubScrollRef.current?.scrollTo({ top: 0 });
+  }, [hubMode, category]);
 
   useEffect(() => {
-    if (!tabCtx || tabCtx.activeTab !== '/makers') return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (tabCtx.tabReselect > 0) setStack({ kind: 'hub' });
-  }, [tabCtx?.tabReselect, tabCtx?.activeTab]);
+    if (activeTab !== '/makers' || tabReselect === 0) return;
+    startTransition(() => setStack({ kind: 'hub' }));
+  }, [activeTab, tabReselect]);
 
   const openMaker = (hit: MakerHit) =>
     startTransition(() => setStack({ kind: 'maker', name: hit.name }));
@@ -306,21 +312,26 @@ export function MakersScreen() {
     );
 
   /** 演员详情页（资料 + 全部作品） */
-  const openActorDetail = (actor: { id: string; name: string }) =>
+  const openActorDetail = (actor: { id: string; name: string }, back?: Stack) =>
     startTransition(() =>
-      setStack({ kind: 'actor-detail', actorId: actor.id, name: actor.name }),
+      setStack({ kind: 'actor-detail', actorId: actor.id, name: actor.name, back }),
     );
 
   /** 片商 / 导演 / 系列 详情页 */
-  const openEntity = (entityKind: MakerEntityKind, id: string, name: string) =>
+  const openEntity = (
+    entityKind: MakerEntityKind,
+    id: string,
+    name: string,
+    back?: Stack,
+  ) =>
     startTransition(() =>
-      setStack({ kind: 'entity', entityKind, entityId: id, name }),
+      setStack({ kind: 'entity', entityKind, entityId: id, name, back }),
     );
 
   /** 片单详情页 */
-  const openList = (list: { id: string; name: string }) =>
+  const openList = (list: { id: string; name: string }, back?: Stack) =>
     startTransition(() =>
-      setStack({ kind: 'list-detail', listId: list.id, name: list.name }),
+      setStack({ kind: 'list-detail', listId: list.id, name: list.name, back }),
     );
 
   const catLabel = CATEGORIES.find((c) => c.id === category)?.label || '';
@@ -411,7 +422,7 @@ export function MakersScreen() {
         </div>
       </div>
 
-      <div className="app-hub__scroll media-hub">
+      <div className="app-hub__scroll media-hub" ref={hubScrollRef}>
         <div className="media-hub__shelves">
           {hubMode === 'playback' ? (
             PLAYBACK_PERIODS.map((p) => (
@@ -504,16 +515,15 @@ export function MakersScreen() {
     push = (
       <AppPush
         title="搜索"
-        scrollKey={stack.q ? `maker-search-${stack.q}` : 'maker-search'}
+        scrollKey="maker-search"
         onBack={() => setStack({ kind: 'hub' })}
       >
         <MakerSearchBody
-          initialQuery={stack.q}
           onOpenMaker={openMaker}
           onOpenMovie={(movie) => openMovie(movie, stack)}
-          onOpenActor={openActorDetail}
-          onOpenEntity={openEntity}
-          onOpenList={openList}
+          onOpenActor={(actor) => openActorDetail(actor, stack)}
+          onOpenEntity={(kind, id, name) => openEntity(kind, id, name, stack)}
+          onOpenList={(list) => openList(list, stack)}
         />
       </AppPush>
     );
@@ -532,18 +542,20 @@ export function MakersScreen() {
       </AppPush>
     );
   } else if (stack.kind === 'list') {
+    const listCatLabel =
+      CATEGORIES.find((c) => c.id === stack.category)?.label || '';
     const title =
       stack.list === 'rank'
-        ? `${PERIODS.find((p) => p.id === stack.period)?.label || ''}·${catLabel}`
+        ? `${PERIODS.find((p) => p.id === stack.period)?.label || ''}·${listCatLabel}`
         : stack.list === 'latest'
-          ? `最新·${catLabel}`
+          ? `最新·${listCatLabel}`
           : stack.list === 'playback'
             ? `${stack.filterBy === 'high_score' ? '热门' : '热播'}·${PLAYBACK_PERIODS.find((p) => p.id === stack.period)?.label || '今日'}`
             : stack.list === 'recommend'
               ? '编辑推荐'
               : stack.year
                 ? `TOP250·${stack.year}`
-                : `TOP250·${catLabel}`;
+                : `TOP250·${listCatLabel}`;
     push = (
       <AppPush
         title={title}
@@ -626,13 +638,6 @@ export function MakersScreen() {
           category={stack.category}
           period={stack.period}
           sortBy={stack.sortBy}
-          onSortByChange={(value) =>
-            startTransition(() =>
-              setStack((prev) =>
-                prev.kind === 'list' ? { ...prev, sortBy: value } : prev,
-              ),
-            )
-          }
           latestFilter={stack.latestFilter}
           playbackFilter={stack.filterBy}
           year={stack.year}
@@ -678,7 +683,7 @@ export function MakersScreen() {
               setStack({ kind: 'actors', ...next }),
             )
           }
-          onOpenActor={openActorDetail}
+          onOpenActor={(actor) => openActorDetail(actor, stack)}
         />
       </AppPush>
     );
@@ -702,7 +707,7 @@ export function MakersScreen() {
         scrollKey={`maker-browse-${stack.category}-${stack.group}-${stack.tagId}-${stack.actorId || ''}-${(stack.tagIds || []).join(',')}`}
         onBack={() =>
           setStack(
-            stack.back ?? { kind: 'tags', category: stack.category },
+            stack.back ?? { kind: 'hub' },
           )
         }
       >
@@ -722,7 +727,7 @@ export function MakersScreen() {
       <AppPush
         title={stack.name}
         scrollKey={`maker-entity-${stack.entityKind}-${stack.entityId}`}
-        onBack={() => setStack({ kind: 'hub' })}
+        onBack={() => setStack(stack.back ?? { kind: 'hub' })}
       >
         <MakerEntityBody
           kind={stack.entityKind}
@@ -736,7 +741,7 @@ export function MakersScreen() {
       <AppPush
         title={stack.name}
         scrollKey={`maker-actor-${stack.actorId}`}
-        onBack={() => setStack({ kind: 'hub' })}
+        onBack={() => setStack(stack.back ?? { kind: 'hub' })}
       >
         <MakerActorDetailBody
           id={stack.actorId}
@@ -749,7 +754,7 @@ export function MakersScreen() {
       <AppPush
         title={stack.name}
         scrollKey={`maker-list-${stack.listId}`}
-        onBack={() => setStack({ kind: 'hub' })}
+        onBack={() => setStack(stack.back ?? { kind: 'hub' })}
       >
         <MakerListDetailBody
           id={stack.listId}
@@ -770,8 +775,8 @@ export function MakersScreen() {
           id={movie.id}
           seed={movie}
           onOpenActor={(actor) => openActor(actor, stack)}
-          onOpenEntity={openEntity}
-          onOpenList={openList}
+          onOpenEntity={(kind, id, name) => openEntity(kind, id, name, stack)}
+          onOpenList={(list) => openList(list, stack)}
           onOpenMovie={(m) => openMovie(m, stack)}
           onOpenReviews={() =>
             startTransition(() =>
@@ -784,9 +789,11 @@ export function MakersScreen() {
             )
           }
           onOpenSearch={(q) => {
-            // 从片商详情进搜索：搜索结果里的转存落点仍记为「片商」
-            writeSaveSource('maker');
-            startTransition(() => setStack({ kind: 'search', q }));
+            // 详情页「搜索」走底栏「搜索」的片商通道；片商模块内的 AVDB 搜索只保留顶栏放大镜
+            openHomeSearch(q, (tab) => tabCtx?.scrollToTab(tab), {
+              source: 'sehua',
+              p115Source: 'maker',
+            });
           }}
         />
       </AppPush>

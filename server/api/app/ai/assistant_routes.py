@@ -10,9 +10,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from app.auth.routes import get_optional_user
+from app.auth.routes import require_user
 from app.ai.assistant_protocol import (
+    ASSISTANT_SKILL_GROUPS,
+    ASSISTANT_TOOL_META,
     BEHAVIOR_APPENDIX,
+    DEFAULT_SUGGEST_CHIPS,
     SYSTEM_PROMPT,
     compact_cards_for_llm,
     user_wants_resource_cards,
@@ -100,7 +103,10 @@ async def _llm_chat(
     timeout = max(12, min(90, int(cfg.get("timeoutSec") or 45)))
     url = chat_completions_url(base_url)
     headers = llm_request_headers(cfg)
-    async with httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=10.0)) as client:
+    proxy = str(cfg.get("proxyUrl") or "").strip() or None
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(timeout, connect=10.0), proxy=proxy
+    ) as client:
         r = await client.post(url, headers=headers, json=payload)
     if r.status_code == 401:
         raise HTTPException(status_code=400, detail="LLM API Key 无效")
@@ -124,7 +130,15 @@ def _mechanical_reply(cards: list[dict[str, Any]]) -> str:
         src = str(c.get("source") or "")
         by_src[src] = by_src.get(src, 0) + 1
     parts = []
-    labels = {"sehua": "仓库", "magnet": "磁力", "media": "影视", "web": "网络"}
+    labels = {
+        "sehua": "仓库",
+        "magnet": "磁力",
+        "media": "影视",
+        "av": "AV",
+        "stream": "在线",
+        "cloud": "网盘",
+        "web": "网络",
+    }
     for k, n in by_src.items():
         parts.append(f"{labels.get(k, k)} {n}")
     top = cards[0]
@@ -159,13 +173,16 @@ async def _dispatch_tool_calls(
 ) -> list[tuple[str, str, dict[str, Any], dict[str, Any]]]:
     """并行执行同一轮多个 tool_calls；返回 (call_id, name, result, step) 且顺序与输入一致。"""
 
-    async def one(call: dict[str, Any]) -> tuple[str, str, dict[str, Any], dict[str, Any]]:
+    async def one(
+        call: dict[str, Any], *, announce: bool
+    ) -> tuple[str, str, dict[str, Any], dict[str, Any]]:
         fn = call.get("function") or {}
         name = str(fn.get("name") or "").strip()
         args_raw = fn.get("arguments") or "{}"
         call_id = str(call.get("id") or name)
-        label = TOOL_STATUS_LABEL.get(name, f"正在调用 {name}…")
-        await emit("status", {"text": label, "tool": name})
+        if announce:
+            label = TOOL_STATUS_LABEL.get(name, f"正在调用 {name}…")
+            await emit("status", {"text": label, "tool": name})
         result = await dispatch_tool(name, args_raw)
         result["_step"] = step_idx
         query = ""
@@ -182,10 +199,11 @@ async def _dispatch_tool_calls(
         return call_id, name, result, step
 
     if len(tool_calls) <= 1:
-        return [await one(tool_calls[0])] if tool_calls else []
+        return [await one(tool_calls[0], announce=True)] if tool_calls else []
 
+    # 并行时不逐个播报，避免状态文案在多个工具间来回跳
     await emit("status", {"text": f"并行检索 {len(tool_calls)} 项…"})
-    return list(await asyncio.gather(*[one(c) for c in tool_calls]))
+    return list(await asyncio.gather(*[one(c, announce=False) for c in tool_calls]))
 
 
 _SYNTH_HINT = (
@@ -301,6 +319,21 @@ def _fallback_reply_from_results(results: list[dict[str, Any]]) -> str:
             names = "、".join(str(x) for x in cast[:5] if str(x).strip())
             if names:
                 return f"《{title}》主要演员包括：{names}。若要作品列表，请再说一下演员名。"
+        rows = f.get("results")
+        if isinstance(rows, list) and rows:
+            lines = ["检索结果："]
+            for row in rows[:8]:
+                if not isinstance(row, dict):
+                    continue
+                code = str(row.get("code") or "").strip()
+                name = str(row.get("title") or row.get("name") or "").strip()
+                date = str(row.get("releaseDate") or "").strip()
+                if not (code or name):
+                    continue
+                head = f"{code} {name}".strip() if code and name else (code or name)
+                lines.append(f"· {head}" + (f"（{date[:10]}）" if date else ""))
+            if len(lines) > 1:
+                return "\n".join(lines)
     evidence = collect_cards_from_results(results)
     if evidence:
         lines = ["找到这些相关结果："]
@@ -330,6 +363,9 @@ async def run_assistant(
 
     llm_cfg = resolve_llm_config(include_secret=True)
     llm_cfg = merge_active_sampling(llm_cfg)
+    agent_model = str(resolve_assistant_config().get("model") or "").strip()
+    if agent_model:
+        llm_cfg["model"] = agent_model
     llm_ok = bool(llm_cfg.get("enabled") and llm_cfg.get("configured"))
     web_cfg = resolve_web_search_config(include_secret=False)
     enabled_tools = enabled_assistant_tool_names()
@@ -343,10 +379,22 @@ async def run_assistant(
     )
     tools = filter_tools_by_prefer(tools, prefer_sources)
 
-    await emit("status", {"text": "小花在想…"})
+    await emit(
+        "status",
+        {"text": "小花在想…" if llm_ok else "未配置模型，改用本地快搜…"},
+    )
 
     if not llm_ok:
-        await emit("status", {"text": "未配置模型，改用本地快搜…"})
+        if not enabled_tools:
+            await emit("status", {"text": "未启用检索技能"})
+            return {
+                "reply": "当前没有启用任何检索技能，请到设置 → 小花里打开需要的来源。",
+                "cards": [],
+                "steps": [],
+                "usedLlm": False,
+                "usedTools": [],
+                "toolSummary": "",
+            }
         # 降级也尊重已启用工具对应的来源
         skill_prefer = prefer_sources[:] if prefer_sources else []
         if not skill_prefer:
@@ -363,7 +411,12 @@ async def run_assistant(
         )
         if not user_wants_resource_cards(message):
             cards = []
-        reply = _mechanical_reply(cards) if cards else "本地快搜未命中可展示资源；配置聊天模型后可整合回答。"
+        if cards:
+            reply = _mechanical_reply(cards)
+        elif any(bool(s.get("ok")) for s in steps):
+            reply = "本地快搜有结果，但未配置聊天模型，暂时无法整合成答复；可在设置里配置模型，或直接说「找资源」查看卡片。"
+        else:
+            reply = "本地快搜没找到；换个番号/片名再试，或到设置里配置聊天模型。"
         await emit("status", {"text": "搜完了"})
         return {
             "reply": reply,
@@ -504,7 +557,7 @@ def _looks_like_raw_dump(text: str, results: list[dict[str, Any]]) -> bool:
 @router.post("/assistant/chat", response_model=Envelope)
 async def assistant_chat(
     body: AssistantChatBody,
-    _user: dict[str, Any] | None = Depends(get_optional_user),
+    _user: dict[str, Any] = Depends(require_user),
 ) -> Envelope | StreamingResponse:
     if body.stream:
         return await assistant_chat_stream(body, _user)
@@ -520,17 +573,15 @@ async def assistant_chat(
 @router.post("/assistant/chat/stream")
 async def assistant_chat_stream(
     body: AssistantChatBody,
-    _user: dict[str, Any] | None = Depends(get_optional_user),
+    _user: dict[str, Any] = Depends(require_user),
 ) -> StreamingResponse:
-    queue: list[dict[str, Any]] = []
+    queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+    end_mark = {"event": "__end__", "data": {}}
 
     async def on_status(event: str, data: dict[str, Any]) -> None:
-        queue.append({"event": event, "data": data})
+        await queue.put({"event": event, "data": data})
 
     async def gen() -> AsyncIterator[bytes]:
-        # drain pattern: run assistant while yielding queued events
-        import asyncio
-
         result_holder: dict[str, Any] = {}
         error_holder: dict[str, str] = {}
 
@@ -546,15 +597,28 @@ async def assistant_chat_stream(
                 error_holder["detail"] = str(e.detail)
             except Exception as e:  # noqa: BLE001
                 error_holder["detail"] = str(e)
+            finally:
+                await queue.put(end_mark)
 
         task = asyncio.create_task(runner())
-        while not task.done() or queue:
-            while queue:
-                item = queue.pop(0)
+        # 队列驱动 + 心跳：空闲时发注释行，避免代理/网关按超时断开长任务
+        try:
+            while True:
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=15.0)
+                except asyncio.TimeoutError:
+                    yield b": ping\n\n"
+                    continue
+                if item is end_mark:
+                    break
                 payload = json.dumps(item, ensure_ascii=False)
                 yield f"data: {payload}\n\n".encode("utf-8")
+        finally:
+            # 客户端断开时一并取消后台任务，避免空转
             if not task.done():
-                await asyncio.sleep(0.05)
+                task.cancel()
+
+        await task
 
         if error_holder.get("detail"):
             err = json.dumps(
@@ -569,12 +633,20 @@ async def assistant_chat_stream(
             )
             yield f"data: {done}\n\n".encode("utf-8")
 
-    return StreamingResponse(gen(), media_type="text/event-stream")
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @router.get("/assistant/meta", response_model=Envelope)
 def assistant_meta(
-    _user: dict[str, Any] | None = Depends(get_optional_user),
+    _user: dict[str, Any] = Depends(require_user),
 ) -> Envelope:
     cfg = resolve_assistant_config()
     web = resolve_web_search_config(include_secret=False)
@@ -586,16 +658,22 @@ def assistant_meta(
         sources.append("magnet")
     if tools.get("media_search") or tools.get("media_person_works"):
         sources.append("media")
+    if tools.get("av_search") or tools.get("av_movie") or tools.get("av_actor_works"):
+        sources.append("av")
+    if tools.get("media_streams"):
+        sources.append("stream")
+    if tools.get("cloudsaver_search") or tools.get("p115_save"):
+        sources.append("cloud")
     if tools.get("web_search") and web.get("enabled") and web.get("configured"):
         sources.append("web")
     return Envelope(
         data={
-            "suggestChips": cfg.get("suggestChips") or [],
+            "suggestChips": cfg.get("suggestChips") or DEFAULT_SUGGEST_CHIPS,
             "webSearchEnabled": bool(web.get("enabled") and web.get("configured")),
             "sources": sources or ["sehua", "magnet", "media"],
             "tools": tools,
-            "skillGroups": cfg.get("skillGroups") or [],
-            "toolMeta": cfg.get("toolMeta") or [],
+            "skillGroups": cfg.get("skillGroups") or ASSISTANT_SKILL_GROUPS,
+            "toolMeta": cfg.get("toolMeta") or ASSISTANT_TOOL_META,
         },
         message="ok",
     )

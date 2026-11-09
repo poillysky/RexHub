@@ -77,21 +77,41 @@ def _entry(pickcode: str, raw: object) -> dict | None:
     }
 
 
-def all_entries() -> list[dict]:
-    """全部有效记录，按更新时间倒序，App 一次拉取即可补齐列表。"""
+def _key(owner: str, pickcode: str) -> str:
+    return f"{owner}:{pickcode}"
+
+
+def all_entries(owner: str, *, include_legacy: bool = False) -> list[dict]:
+    """某个用户的有效记录，按更新时间倒序。
+
+    历史版本没有用户维度，``include_legacy`` 为真时一并返回（仅管理员，避免进度丢失）。
+    """
     with _LOCK:
         items = _read()
-        entries = [entry for code, raw in items.items() if (entry := _entry(code, raw))]
+        entries = []
+        for key, raw in items.items():
+            if ":" in key:
+                prefix, _, code = key.partition(":")
+                if prefix != owner:
+                    continue
+            elif include_legacy:
+                code = key
+            else:
+                continue
+            entry = _entry(code, raw)
+            if entry:
+                entries.append(entry)
 
     entries.sort(key=lambda entry: entry["updated_at"], reverse=True)
     return entries
 
 
-def save(pickcode: str, position: float, duration: float) -> dict | None:
-    """写入单条进度；位置过小或已到片尾时删除记录并返回 None。"""
+def save(owner: str, pickcode: str, position: float, duration: float) -> dict | None:
+    """写入某个用户的单条进度；位置过小或已到片尾时删除记录并返回 None。"""
     code = pickcode.strip()
     if not code:
         return None
+    key = _key(owner, code)
     try:
         pos = float(position)
         dur = float(duration)
@@ -109,7 +129,7 @@ def save(pickcode: str, position: float, duration: float) -> dict | None:
     with _LOCK:
         items = _read()
         if finished:
-            if items.pop(code, None) is None:
+            if items.pop(key, None) is None:
                 return None
             _write(items)
             return None
@@ -117,7 +137,7 @@ def save(pickcode: str, position: float, duration: float) -> dict | None:
         if not math.isfinite(dur) or dur <= 0:
             return None
 
-        items[code] = {"position": pos, "duration": dur, "updated_at": now}
+        items[key] = {"position": pos, "duration": dur, "updated_at": now}
         if len(items) > MAX_ENTRIES:
             newest = sorted(items.items(), key=lambda pair: _updated_at(pair[1]), reverse=True)
             items = dict(newest[:MAX_ENTRIES])

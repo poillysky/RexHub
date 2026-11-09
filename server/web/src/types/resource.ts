@@ -36,16 +36,6 @@ export type BrowseResult = {
   has_more: boolean;
 };
 
-export type SearchResult = {
-  keywords: string[];
-  resources: ResourceItem[];
-  total_count: number;
-  has_more: boolean;
-  page: number;
-  page_size: number;
-  match_mode?: MatchMode;
-};
-
 export type SortType = 'relevance' | 'date' | 'size';
 export type MatchMode = 'exact' | 'fuzzy';
 export type FilterTime =

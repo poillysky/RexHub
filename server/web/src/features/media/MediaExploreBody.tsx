@@ -364,6 +364,7 @@ export function MediaExploreBody({
 }) {
   const [source, setSource] = useState<MpSource>('tmdb');
   const [page, setPage] = useState(1);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   // TheMovieDb
   const [tmdbKind, setTmdbKind] = useState('movies');
@@ -427,7 +428,7 @@ export function MediaExploreBody({
         .join(',');
       return {
         path: `discover/douban_${dbKind}`,
-        params: { page, sort: dbSort, tags },
+        params: { page, count: 30, sort: dbSort, tags },
         pageSize: 30,
         category: (isMovie ? 'movie' : 'tv') as MediaCategoryId,
         summary: [
@@ -446,6 +447,7 @@ export function MediaExploreBody({
         path: 'discover/bangumi',
         params: {
           page,
+          count: 30,
           type: 2,
           cat: bgmCat,
           sort: bgmSort,
@@ -526,8 +528,14 @@ export function MediaExploreBody({
 
   const reset = () => setPage(1);
 
+  function goPage(next: number) {
+    setPage(next);
+    // 翻页后回到列表顶部，否则新一页从视口下方开始
+    rootRef.current?.closest('.app-hub__scroll')?.scrollTo({ top: 0 });
+  }
+
   return (
-    <div className="media-explore">
+    <div className="media-explore" ref={rootRef}>
       <div className="media-explore__tabs" role="tablist" aria-label="数据源">
         {SOURCES.map((s) => (
           <button
@@ -868,13 +876,13 @@ export function MediaExploreBody({
         </>
       ) : null}
 
-      {!loading && !err && (page > 1 || hasNext) ? (
+      {!loading && (page > 1 || (!err && hasNext)) ? (
         <div className="media-chart__pager">
           <button
             type="button"
             className="media-chart__page-btn"
             disabled={page <= 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            onClick={() => goPage(Math.max(1, page - 1))}
           >
             上一页
           </button>
@@ -882,8 +890,8 @@ export function MediaExploreBody({
           <button
             type="button"
             className="media-chart__page-btn"
-            disabled={!hasNext}
-            onClick={() => setPage((p) => p + 1)}
+            disabled={!hasNext || Boolean(err)}
+            onClick={() => goPage(page + 1)}
           >
             下一页
           </button>

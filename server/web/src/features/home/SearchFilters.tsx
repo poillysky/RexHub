@@ -2,7 +2,6 @@
 
 import {
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -36,6 +35,22 @@ const MAKER_SOURCES: (ScopeSearchSource | "all")[] = [
 ];
 
 type FilterKey = "source" | "sort" | "time" | "size";
+
+/** 菜单固定定位在触发器下方，按视口左右边界收敛 */
+function menuBoxFor(btn: HTMLButtonElement): CSSProperties {
+  const r = btn.getBoundingClientRect();
+  const width = Math.min(120, Math.max(88, r.width * 0.92));
+  return {
+    position: "fixed",
+    top: r.bottom + 4,
+    left: Math.max(
+      8,
+      Math.min(r.left + (r.width - width) / 2, window.innerWidth - width - 8),
+    ),
+    width,
+    zIndex: 1100,
+  };
+}
 
 type MenuState = {
   title: string;
@@ -178,29 +193,8 @@ export function SearchFilters({
 
   const placeMenu = (key: FilterKey) => {
     const btn = triggerRefs.current[key];
-    if (!btn) return;
-    const r = btn.getBoundingClientRect();
-    const width = Math.min(120, Math.max(88, r.width * 0.92));
-    const left = Math.max(
-      8,
-      Math.min(r.left + (r.width - width) / 2, window.innerWidth - width - 8),
-    );
-    setMenuBox({
-      position: "fixed",
-      top: r.bottom + 4,
-      left,
-      width,
-      zIndex: 1100,
-    });
+    if (btn) setMenuBox(menuBoxFor(btn));
   };
-
-  useLayoutEffect(() => {
-    if (!open) {
-      setMenuBox(null);
-      return;
-    }
-    placeMenu(open);
-  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -231,7 +225,14 @@ export function SearchFilters({
   }, [open]);
 
   function toggle(key: FilterKey) {
-    setOpen((cur) => (cur === key ? null : key));
+    if (open === key) {
+      setOpen(null);
+      return;
+    }
+    const btn = triggerRefs.current[key];
+    if (!btn) return;
+    setMenuBox(menuBoxFor(btn));
+    setOpen(key);
   }
 
   const portal =

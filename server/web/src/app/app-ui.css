@@ -1,10 +1,35 @@
-/* 全局样式入口：实现按功能拆到 ./styles/，@import 顺序即级联顺序（勿调换）。 */
+/* 全局样式入口：@import 顺序即级联顺序（勿调换）。
+ *
+ * 01-base        reset / 变量 / 外壳骨架
+ * 02-settings    设置主页与通用表单
+ * 03-push-115    Push 子页、115 网盘
+ * 04-common      跨页面通用组件（分组 / 导航行 / 状态 / Toast / 主按钮）
+ * 05a-media      影视：发现 / 榜单 / 搜索 / 详情
+ * 05b-pt-search  影视：PT 站点聚合搜索
+ * 05c-media-streams 影视：社区片源与播放器
+ * 06-catalog-ai  片商目录 / AI
+ * 07b-settings-switches 设置：iOS 开关与表单控件
+ * 07c-plugin-center 设置：插件中心 / Stremio
+ * 08-misc        全局细化与长按菜单
+ * 09-drama       短剧
+ * 10-auth        登录注册
+ * 11-home-search 首页 / 搜索 / 列表 / 详情
+ * 12-shell       外壳与顶栏
+ * 13-ai-chat     小花对话搜
+ */
 @import "./styles/01-base.css";
 @import "./styles/02-settings.css";
 @import "./styles/03-push-115.css";
-@import "./styles/04-scrape.css";
-@import "./styles/05-media.css";
+@import "./styles/04-common.css";
+@import "./styles/05a-media.css";
+@import "./styles/05b-pt-search.css";
+@import "./styles/05c-media-streams.css";
 @import "./styles/06-catalog-ai.css";
-@import "./styles/07-settings-panels.css";
+@import "./styles/07b-settings-switches.css";
+@import "./styles/07c-plugin-center.css";
 @import "./styles/08-misc.css";
 @import "./styles/09-drama.css";
+@import "./styles/10-auth.css";
+@import "./styles/11-home-search.css";
+@import "./styles/12-shell.css";
+@import "./styles/13-ai-chat.css";

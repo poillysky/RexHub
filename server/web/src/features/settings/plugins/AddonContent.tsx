@@ -105,6 +105,7 @@ export function AddonContent({
   const [episodeLoading, setEpisodeLoading] = useState(false);
   const [season, setSeason] = useState(1);
   const requestSeq = useRef(0);
+  const catalogSeq = useRef(0);
 
   const active = catalogs.find((entry) => entry.key === activeKey) || null;
   const hasStream = resources.includes('stream');
@@ -116,10 +117,12 @@ export function AddonContent({
       opts?: { genre?: string; search?: string; skip?: number; append?: boolean },
     ) => {
       const append = Boolean(opts?.append);
+      const seq = append ? catalogSeq.current : ++catalogSeq.current;
       if (append) {
         setLoadingMore(true);
       } else {
         setLoading(true);
+        setLoadingMore(false);
         setError('');
         setItems([]);
         setHasMore(false);
@@ -132,6 +135,7 @@ export function AddonContent({
           search: opts?.search || undefined,
           skip: opts?.skip || undefined,
         });
+        if (seq !== catalogSeq.current) return;
         setItems((prev) => {
           if (!append) return page.items;
           const seen = new Set(prev.map((item) => item.id));
@@ -139,10 +143,13 @@ export function AddonContent({
         });
         setHasMore(Boolean(page.hasMore));
       } catch (exc) {
+        if (seq !== catalogSeq.current) return;
         if (!append) setError((exc as Error)?.message || '目录读取失败');
       } finally {
-        if (append) setLoadingMore(false);
-        else setLoading(false);
+        if (seq === catalogSeq.current) {
+          if (append) setLoadingMore(false);
+          else setLoading(false);
+        }
       }
     },
     [addon.slug],
@@ -195,6 +202,7 @@ export function AddonContent({
 
   function pickCatalog(entry: AddonCatalogEntry) {
     if (entry.key === activeKey) return;
+    catalogSeq.current += 1;
     setActiveKey(entry.key);
     setQuery('');
     const nextGenre = entry.extraRequired.includes('genre') ? entry.genres[0] || '' : '';
@@ -204,6 +212,7 @@ export function AddonContent({
     } else {
       setItems([]);
       setHasMore(false);
+      setLoadingMore(false);
       setError('');
       setLoading(false);
     }
@@ -220,6 +229,7 @@ export function AddonContent({
   }
 
   const loadAggregate = useCallback(async (target: PlayTarget) => {
+    const seq = requestSeq.current;
     setAggregated(true);
     setStreamLoading(true);
     setStreamError('');
@@ -242,13 +252,15 @@ export function AddonContent({
         season: seasonNo,
         episode: episodeNo,
       });
+      if (seq !== requestSeq.current) return;
       setStreams(data.streams);
       setStreamTotal(data.total);
       setStreamReason(data.reason);
     } catch (exc) {
+      if (seq !== requestSeq.current) return;
       setStreamError((exc as Error)?.message || '片源拉取失败');
     } finally {
-      setStreamLoading(false);
+      if (seq === requestSeq.current) setStreamLoading(false);
     }
   }, []);
 

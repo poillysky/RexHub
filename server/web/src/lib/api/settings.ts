@@ -1,21 +1,10 @@
 /**
- * 论坛 / TMDB / 字幕 / 网络设置
+ * 论坛 / 字幕 / 网络设置
  *
  * 由 lib/api.ts 拆分而来；对外统一从 `@/lib/api` 导入，请不要直接引用本文件。
  */
-import { API_BASE, apiFetch, parseError } from './client';
+import { apiFetch, parseError } from './client';
 import type { Envelope } from './client';
-import type {
-  AuthUser,
-  BrowseResult,
-  FilterSize,
-  FilterTime,
-  MatchMode,
-  ResourceDbConfig,
-  ResourceItem,
-  SearchResult,
-  SortType,
-} from '@/types/resource';
 
 export type ForumRegionId = 'japan' | 'china' | 'western' | 'mixed' | 'other';
 
@@ -49,54 +38,15 @@ export async function putSehuatangForumSettings(body: {
   };
 }
 
-export type TmdbConfig = {
-  configured?: boolean;
-  fromEnv?: boolean;
-  apiKeyHint?: string;
-  apiKey?: string;
-  updated_at?: string;
-};
-
-export async function getTmdb(): Promise<TmdbConfig> {
-  const res = await apiFetch('/settings/tmdb');
-  if (!res.ok) throw new Error(await parseError(res));
-  return ((await res.json()) as Envelope<TmdbConfig>).data;
-}
-
-export async function putTmdb(body: { apiKey: string }): Promise<TmdbConfig> {
-  const res = await apiFetch('/settings/tmdb', {
-    method: 'PUT',
-    body: JSON.stringify({ apiKey: body.apiKey }),
-  });
-  if (!res.ok) throw new Error(await parseError(res));
-  return ((await res.json()) as Envelope<TmdbConfig>).data;
-}
-
-export async function testTmdb(body: {
-  apiKey?: string;
-}): Promise<{ ok: boolean; message: string }> {
-  const res = await apiFetch('/settings/tmdb/test', {
-    method: 'POST',
-    body: JSON.stringify({ apiKey: body.apiKey || '' }),
-  });
-  if (!res.ok) throw new Error(await parseError(res));
-  const json = (await res.json()) as Envelope<{ ok: boolean }> & { message: string };
-  return { ok: Boolean(json.data?.ok), message: json.message || '' };
-}
-
 export type NetworkConfig = {
   proxyUrl?: string;
   proxyEnabled?: boolean;
   configured?: boolean;
-  fromEnv?: boolean;
-  effectiveProxyUrl?: string;
   flareSolverrUrl?: string;
   flareSolverrEnabled?: boolean;
   flareSolverrConfigured?: boolean;
-  effectiveFlareSolverrUrl?: string;
   githubApiUrl?: string;
   githubTokenSet?: boolean;
-  githubTokenHint?: string;
   githubMirror?: string;
   githubMirrorPresets?: { url: string; label: string }[];
   updated_at?: string;
@@ -109,7 +59,8 @@ export async function getNetwork(): Promise<NetworkConfig> {
 }
 
 export async function putNetwork(body: {
-  proxyUrl: string;
+  /** 省略表示不改动该字段；空串表示清空 */
+  proxyUrl?: string;
   proxyEnabled?: boolean;
   flareSolverrUrl?: string;
   flareSolverrEnabled?: boolean;
@@ -183,7 +134,6 @@ export async function putAvdbSettings(body: {
   baseUrl: string;
   apiKey?: string;
   timeoutSec?: number;
-  note?: string;
 }): Promise<AvdbSettings> {
   const res = await apiFetch('/settings/avdb', {
     method: 'PUT',
@@ -192,15 +142,26 @@ export async function putAvdbSettings(body: {
       baseUrl: body.baseUrl,
       apiKey: body.apiKey || '',
       timeoutSec: body.timeoutSec ?? 15,
-      note: body.note || '',
     }),
   });
   if (!res.ok) throw new Error(await parseError(res));
   return ((await res.json()) as Envelope<AvdbSettings>).data;
 }
 
-export async function testAvdb(): Promise<{ ok: boolean; message: string }> {
-  const res = await apiFetch('/avdb/health');
+/** 用未保存的草稿测试连接；令牌留空时后端复用已保存的令牌。 */
+export async function testAvdb(body: {
+  baseUrl: string;
+  apiKey?: string;
+  timeoutSec?: number;
+}): Promise<{ ok: boolean; message: string }> {
+  const res = await apiFetch('/avdb/test', {
+    method: 'POST',
+    body: JSON.stringify({
+      baseUrl: body.baseUrl,
+      apiKey: body.apiKey || '',
+      timeoutSec: body.timeoutSec,
+    }),
+  });
   if (!res.ok) throw new Error(await parseError(res));
   const json = (await res.json()) as Envelope<{
     ok: boolean;
@@ -234,7 +195,6 @@ export async function putMoviePilotSettings(body: {
   baseUrl: string;
   apiKey?: string;
   timeoutSec?: number;
-  note?: string;
 }): Promise<MoviePilotSettings> {
   const res = await apiFetch('/settings/moviepilot', {
     method: 'PUT',
@@ -243,23 +203,32 @@ export async function putMoviePilotSettings(body: {
       baseUrl: body.baseUrl,
       apiKey: body.apiKey || '',
       timeoutSec: body.timeoutSec ?? 15,
-      note: body.note || '',
     }),
   });
   if (!res.ok) throw new Error(await parseError(res));
   return ((await res.json()) as Envelope<MoviePilotSettings>).data;
 }
 
-export async function testMoviePilot(): Promise<{
+/** 用未保存的草稿测试连接；令牌留空时后端复用已保存的令牌。 */
+export async function testMoviePilot(body: {
+  baseUrl: string;
+  apiKey?: string;
+  timeoutSec?: number;
+}): Promise<{
   ok: boolean;
   message: string;
 }> {
-  const res = await apiFetch('/moviepilot/health');
+  const res = await apiFetch('/moviepilot/test', {
+    method: 'POST',
+    body: JSON.stringify({
+      baseUrl: body.baseUrl,
+      apiKey: body.apiKey || '',
+      timeoutSec: body.timeoutSec,
+    }),
+  });
   if (!res.ok) throw new Error(await parseError(res));
   const json = (await res.json()) as Envelope<{
     ok: boolean;
-    configured: boolean;
-    baseUrl: string;
     message: string;
   }>;
   return {
@@ -273,6 +242,8 @@ export type MorePlaySettings = {
   baseUrl: string;
   timeoutSec: number;
   searchSite: string;
+  /** 自定义搜索站源顺序（最多 3 个，靠前优先） */
+  searchSites?: string[];
 };
 
 export type MorePlaySite = {
@@ -292,6 +263,7 @@ export async function putMorePlaySettings(body: {
   baseUrl: string;
   timeoutSec?: number;
   searchSite?: string;
+  searchSites?: string[];
 }): Promise<MorePlaySettings> {
   const res = await apiFetch('/settings/moreplay', {
     method: 'PUT',
@@ -299,7 +271,8 @@ export async function putMorePlaySettings(body: {
       enabled: body.enabled,
       baseUrl: body.baseUrl,
       timeoutSec: body.timeoutSec ?? 15,
-      searchSite: body.searchSite || 'nodejs_wogg',
+      searchSite: body.searchSite || body.searchSites?.[0] || '',
+      searchSites: body.searchSites || (body.searchSite ? [body.searchSite] : []),
     }),
   });
   if (!res.ok) throw new Error(await parseError(res));
@@ -313,18 +286,26 @@ export async function getMorePlaySites(): Promise<MorePlaySite[]> {
   return Array.isArray(json.data?.sites) ? json.data.sites : [];
 }
 
-export async function testMorePlay(): Promise<{
+/** 用未保存的草稿测试连接；地址留空时后端复用已保存的地址。 */
+export async function testMorePlay(body: {
+  baseUrl: string;
+  timeoutSec?: number;
+}): Promise<{
   ok: boolean;
   message: string;
   serviceName?: string;
   siteCount?: number;
 }> {
-  const res = await apiFetch('/moreplay/health');
+  const res = await apiFetch('/moreplay/test', {
+    method: 'POST',
+    body: JSON.stringify({
+      baseUrl: body.baseUrl,
+      timeoutSec: body.timeoutSec,
+    }),
+  });
   if (!res.ok) throw new Error(await parseError(res));
   const json = (await res.json()) as Envelope<{
     ok: boolean;
-    configured: boolean;
-    baseUrl: string;
     message: string;
     serviceName?: string;
     siteCount?: number;

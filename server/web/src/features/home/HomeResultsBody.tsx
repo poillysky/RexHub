@@ -1,5 +1,6 @@
 'use client';
 
+import type { RefObject } from 'react';
 import { AppMsg } from '@/components/ui/AppMsg';
 import { ResourceCard } from './ResourceCard';
 import { SearchFilters } from './SearchFilters';
@@ -9,6 +10,8 @@ import type { HomeScreenState } from './useHomeScreen';
 
 type Props = {
   h: HomeScreenState;
+  scrollBodyRef: RefObject<HTMLDivElement | null>;
+  sentinelRef: RefObject<HTMLDivElement | null>;
 };
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -19,18 +22,18 @@ const SOURCE_LABELS: Record<string, string> = {
 };
 
 /** 结果列表区：筛选、提示、错误/空态、卡片列表、无限滚动 / 分页 */
-export function HomeResultsBody({ h }: Props) {
+export function HomeResultsBody({ h, scrollBodyRef, sentinelRef }: Props) {
   const sourceErrorText = Object.entries(h.scopeSourceErrors)
     .map(([key, value]) => `${SOURCE_LABELS[key] ?? key}：${value}`)
     .join('；');
 
   function goScopePage(next: number) {
     h.setScopePage(Math.max(1, next));
-    h.scrollBodyRef.current?.scrollTo({ top: 0 });
+    scrollBodyRef.current?.scrollTo({ top: 0 });
   }
 
   return (
-    <div className="app-body home-search-body" ref={h.scrollBodyRef}>
+    <div className="app-body home-search-body" ref={scrollBodyRef}>
       {h.msg ? <AppMsg onDismiss={() => h.setMsg('')}>{h.msg}</AppMsg> : null}
 
       {h.isKeywordSearch ? (
@@ -127,7 +130,7 @@ export function HomeResultsBody({ h }: Props) {
           </div>
           <div className="home-infinite">
             <div
-              ref={h.sentinelRef}
+              ref={sentinelRef}
               className="home-infinite__sentinel"
               aria-hidden
             />

@@ -10,7 +10,6 @@ from typing import Any
 
 from app.rexhub import addons_store
 from app.rexhub.addons_store import browse
-from app.rexhub.addons_store import streams as addon_streams
 from app.rexhub.addons_store import subtitles as addon_subtitles
 
 PREFIX = "stremio:"

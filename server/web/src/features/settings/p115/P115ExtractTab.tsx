@@ -56,7 +56,7 @@ function stateLine(item: P115ExtractItem): string {
 
 export function P115ExtractTab({ p }: { p: P115PanelState }) {
   const {
-    locked,
+    settingsLocked,
     extractConfig,
     extractStatus,
     extractPreview,
@@ -111,7 +111,7 @@ export function P115ExtractTab({ p }: { p: P115PanelState }) {
               <button
                 type="button"
                 className="settings-inline-action"
-                disabled={locked || running}
+                disabled={settingsLocked || running}
                 onClick={() => void browseFolders('extract', extractConfig.folderCid || '0')}
               >
                 浏览
@@ -132,7 +132,7 @@ export function P115ExtractTab({ p }: { p: P115PanelState }) {
               <button
                 type="button"
                 className="settings-inline-action"
-                disabled={locked || running}
+                disabled={settingsLocked || running}
                 onClick={() => {
                   setPwdDraft(extractConfig.password);
                   setPwdOpen(true);
@@ -166,7 +166,7 @@ export function P115ExtractTab({ p }: { p: P115PanelState }) {
           <button
             type="button"
             className="app-btn-secondary"
-            disabled={locked || extractBusy || extractPreviewBusy || running}
+            disabled={settingsLocked || extractBusy || extractPreviewBusy || running}
             onClick={() => void refreshExtractPreview(extractConfig.folderCid)}
           >
             {extractPreviewBusy ? (
@@ -180,7 +180,7 @@ export function P115ExtractTab({ p }: { p: P115PanelState }) {
             <button
               type="button"
               className="app-btn-secondary"
-              disabled={locked || extractBusy}
+              disabled={settingsLocked || extractBusy}
               onClick={() => void onStopExtract()}
             >
               <Square size={14} strokeWidth={2.25} aria-hidden />
@@ -191,7 +191,7 @@ export function P115ExtractTab({ p }: { p: P115PanelState }) {
               type="button"
               className="app-btn-primary"
               style={{ flex: 1 }}
-              disabled={locked || extractBusy}
+              disabled={settingsLocked || extractBusy}
               onClick={() => void onStartExtract()}
             >
               <Play size={14} strokeWidth={2.25} aria-hidden />
@@ -314,7 +314,7 @@ export function P115ExtractTab({ p }: { p: P115PanelState }) {
               type="button"
               className="app-btn-primary"
               style={{ flex: 1 }}
-              disabled={locked || extractBusy}
+              disabled={settingsLocked || extractBusy}
               onClick={() => void savePassword()}
             >
               确定
@@ -330,7 +330,7 @@ export function P115ExtractTab({ p }: { p: P115PanelState }) {
             autoCapitalize="off"
             autoCorrect="off"
             spellCheck={false}
-            disabled={locked || running}
+            disabled={settingsLocked || running}
             onChange={(e) => setPwdDraft(e.target.value)}
             aria-label="解压密码"
             autoFocus

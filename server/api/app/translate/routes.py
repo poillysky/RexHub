@@ -7,10 +7,11 @@ from typing import Any
 from urllib.parse import quote
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 import app.core.settings_store as settings_store
+from app.auth.routes import require_user
 
 logger = logging.getLogger(__name__)
 
@@ -36,9 +37,9 @@ _HTTPX_KW: dict[str, Any] = {
 
 def _get_network_proxy_url() -> str:
     """仅使用设置面板配置的 HTTP 代理。"""
-    from app.core.outbound_http import resolve_scrape_proxy_url
+    from app.core.outbound_http import resolve_proxy_url
 
-    return resolve_scrape_proxy_url()
+    return resolve_proxy_url()
 
 
 class TranslateBody(BaseModel):
@@ -542,7 +543,10 @@ async def translate_mymemory(text: str, source: str, *, target: str = "en") -> s
 
 
 @router.post("/translate")
-async def translate(body: TranslateBody) -> dict[str, Any]:
+async def translate(
+    body: TranslateBody,
+    _user: dict[str, Any] = Depends(require_user),
+) -> dict[str, Any]:
     text = _normalize_plot_text(body.text)
     if len(text) < 2:
         raise HTTPException(status_code=400, detail="请输入至少 2 个字符")

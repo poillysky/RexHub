@@ -7,7 +7,13 @@ import asyncpg
 
 from .cloudsaver import _CloudSaverAuthError, _search_cloudsaver
 from .constants import CANDIDATE_GROWTH, MAX_CANDIDATES, PAGE_CANDIDATES, RESULT_LIMIT
-from .db_source import _db_pool_get, _db_pool_put, _search_bitmagnet, _search_sehuatang
+from .db_source import (
+    _db_pool_get,
+    _db_pool_put,
+    _search_bitmagnet,
+    _search_sehuatang,
+    cache_key,
+)
 from .links import _link_identity
 from .metadata import _merge_metadata, _metadata_rich, _password_from_text
 from .relevance import _rerank
@@ -68,10 +74,7 @@ async def search(
                 rows = _ensure_password(rows)
                 return item, rows[offset : offset + limit], "", has_more, False
 
-            key = (
-                str(item.get("id") or item.get("database") or ""),
-                keyword.lower().strip(),
-            )
+            key = cache_key(item, keyword)
             needed = offset + limit
             entry = _db_pool_get(key)
             if entry is None:

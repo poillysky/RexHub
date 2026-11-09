@@ -7,43 +7,15 @@ import { API_BASE, apiFetch, parseError } from './client';
 import type { Envelope } from './client';
 import type { AiSamplingConfig } from './ai';
 import type { MediaItem } from './media';
-import type {
-  AuthUser,
-  BrowseResult,
-  FilterSize,
-  FilterTime,
-  MatchMode,
-  ResourceDbConfig,
-  ResourceItem,
-  SearchResult,
-  SortType,
-} from '@/types/resource';
 
-export type AiChatSearchResult = {
-  reply: string;
-  keyword: string;
-  usedLlm?: boolean;
-  searchMode?: 'semantic' | 'keyword';
-  resources: ResourceItem[];
-  total_count: number;
-};
-
-export async function aiChatSearch(opts: {
-  message: string;
-  history?: Array<{ role: 'user' | 'assistant'; content: string }>;
-}): Promise<AiChatSearchResult> {
-  const res = await apiFetch('/ai/chat-search', {
-    method: 'POST',
-    body: JSON.stringify({
-      message: opts.message,
-      history: opts.history || [],
-    }),
-  });
-  if (!res.ok) throw new Error(await parseError(res));
-  return ((await res.json()) as Envelope<AiChatSearchResult>).data;
-}
-
-export type AssistantSource = 'sehua' | 'magnet' | 'media' | 'web';
+export type AssistantSource =
+  | 'sehua'
+  | 'magnet'
+  | 'media'
+  | 'av'
+  | 'stream'
+  | 'cloud'
+  | 'web';
 
 export type AssistantCard = {
   id: string;
@@ -80,12 +52,6 @@ export type AssistantChatResult = {
   toolSummary?: string;
 };
 
-export type AssistantMeta = {
-  suggestChips: string[];
-  webSearchEnabled?: boolean;
-  sources?: string[];
-};
-
 export type AiWebSearchConfig = {
   enabled?: boolean;
   provider?: 'serper' | 'brave' | 'searxng' | string;
@@ -110,6 +76,7 @@ export type AiAssistantSkillGroup = {
 };
 
 export type AiAssistantConfig = {
+  model?: string;
   systemPrompt?: string;
   suggestChips?: string[];
   tools?: Record<string, boolean>;
@@ -118,27 +85,19 @@ export type AiAssistantConfig = {
   updated_at?: string;
 };
 
-export async function getAssistantMeta(): Promise<AssistantMeta> {
+export type AiAssistantMeta = {
+  suggestChips: string[];
+  webSearchEnabled: boolean;
+  sources: string[];
+  tools: Record<string, boolean>;
+  skillGroups: AiAssistantSkillGroup[];
+  toolMeta: AiAssistantToolMeta[];
+};
+
+export async function getAiAssistantMeta(): Promise<AiAssistantMeta> {
   const res = await apiFetch('/ai/assistant/meta');
   if (!res.ok) throw new Error(await parseError(res));
-  return ((await res.json()) as Envelope<AssistantMeta>).data;
-}
-
-export async function assistantChat(opts: {
-  message: string;
-  history?: Array<{ role: 'user' | 'assistant'; content: string; summary?: string }>;
-  preferSources?: string[];
-}): Promise<AssistantChatResult> {
-  const res = await apiFetch('/ai/assistant/chat', {
-    method: 'POST',
-    body: JSON.stringify({
-      message: opts.message,
-      history: opts.history || [],
-      preferSources: opts.preferSources || [],
-    }),
-  });
-  if (!res.ok) throw new Error(await parseError(res));
-  return ((await res.json()) as Envelope<AssistantChatResult>).data;
+  return ((await res.json()) as Envelope<AiAssistantMeta>).data;
 }
 
 export async function assistantChatStream(
@@ -179,6 +138,7 @@ export async function assistantChatStream(
   const decoder = new TextDecoder();
   let buffer = '';
   let finalResult: AssistantChatResult | null = null;
+  let streamError = '';
 
   const onAbort = () => {
     void reader.cancel().catch(() => undefined);
@@ -213,7 +173,9 @@ export async function assistantChatStream(
           } else if (evt.event === 'cards_partial') {
             handlers.onCardsPartial?.((data.cards as AssistantCard[]) || []);
           } else if (evt.event === 'error') {
-            handlers.onError?.(String(data.message || '失败'));
+            const msg = String(data.message || '失败');
+            streamError = msg;
+            handlers.onError?.(msg);
           } else if (evt.event === 'done') {
             finalResult = data as unknown as AssistantChatResult;
             handlers.onDone?.(finalResult);
@@ -233,6 +195,7 @@ export async function assistantChatStream(
   }
 
   if (signal?.aborted) abortError();
+  if (streamError) throw new Error(streamError);
   if (!finalResult) throw new Error('流式结束但无结果');
   return finalResult;
 }
@@ -264,6 +227,7 @@ export async function getAiAssistant(): Promise<AiAssistantConfig> {
 }
 
 export async function putAiAssistant(body: {
+  model?: string;
   suggestChips?: string[];
   systemPrompt?: string;
   tools?: Record<string, boolean>;

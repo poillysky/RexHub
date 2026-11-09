@@ -7,6 +7,7 @@
 """
 
 
+from threading import RLock
 from typing import Any, Iterator
 
 from psycopg.rows import dict_row
@@ -51,6 +52,8 @@ class DbPool:
         self._cursor_name = cursor_name
         self._pool: ConnectionPool | None = None
         self._pool_dsn: str | None = None
+        # 建池/关池加锁：并发请求同时命中 DSN 变更时避免建出两个池泄漏一个
+        self._lock = RLock()
 
     # ---- DSN ---------------------------------------------------------------
 
@@ -70,30 +73,32 @@ class DbPool:
 
     def get_pool(self) -> ConnectionPool:
         dsn = self.load_dsn()
-        if self._pool is None or self._pool_dsn != dsn:
-            self.close_pool()
-            extra: dict[str, Any] = {}
-            if self._pool_timeout is not None:
-                extra["timeout"] = self._pool_timeout
-            self._pool = ConnectionPool(
-                conninfo=dsn,
-                min_size=self._min_size,
-                max_size=self._max_size,
-                kwargs={"row_factory": dict_row},
-                open=True,
-                **extra,
-            )
-            self._pool_dsn = dsn
-        return self._pool
+        with self._lock:
+            if self._pool is None or self._pool_dsn != dsn:
+                self.close_pool()
+                extra: dict[str, Any] = {}
+                if self._pool_timeout is not None:
+                    extra["timeout"] = self._pool_timeout
+                self._pool = ConnectionPool(
+                    conninfo=dsn,
+                    min_size=self._min_size,
+                    max_size=self._max_size,
+                    kwargs={"row_factory": dict_row, "connect_timeout": 5},
+                    open=True,
+                    **extra,
+                )
+                self._pool_dsn = dsn
+            return self._pool
 
     def close_pool(self) -> None:
-        if self._pool is not None:
-            try:
-                self._pool.close()
-            except Exception:
-                pass
-        self._pool = None
-        self._pool_dsn = None
+        with self._lock:
+            if self._pool is not None:
+                try:
+                    self._pool.close()
+                except Exception:
+                    pass
+            self._pool = None
+            self._pool_dsn = None
 
     # ---- queries -----------------------------------------------------------
 

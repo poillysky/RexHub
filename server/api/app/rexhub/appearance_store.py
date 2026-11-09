@@ -61,6 +61,11 @@ def icon_libraries() -> list[str]:
     return urls
 
 
+def default_icon_libraries() -> list[str]:
+    """推荐图标库：前端「恢复推荐」直接复用，不再自己抄一份默认值。"""
+    return list(DEFAULT_ICON_LIBRARIES)
+
+
 def save_icon_libraries(urls: list[str]) -> list[str]:
     cleaned: list[str] = []
     for item in urls:

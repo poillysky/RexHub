@@ -10,16 +10,17 @@ from __future__ import annotations
 
 import logging
 import re
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 import app.search.bitmagnet_client as bitmagnet_client
 import app.search.cloudsaver_client as cloudsaver_client
 import app.search.resource_service as resource_service
-from app.makers.router import TORRENT_LIMIT_MAX, makers_torrents
+from app.auth.routes import require_user
+from app.makers.service import TORRENT_LIMIT_MAX, fetch_torrents
 
 log = logging.getLogger(__name__)
 
@@ -39,6 +40,8 @@ SOURCE_LABELS: dict[str, str] = {
 
 # 深翻页保护：单次最多为每个源取这么多条，避免 page 很大时打爆上游
 _MAX_FETCH = 200
+# 多源聚合总预算：到点未完成的源标记超时，保证请求按时返回
+_SCOPE_BUDGET_S = 25.0
 
 _TIME_CUTOFF_SECONDS = {
     "gt-1day": 86400,
@@ -230,14 +233,18 @@ def _cloudsaver_items(
     filter_time: str,
     filter_size: str,
 ) -> list[dict[str, Any]]:
+    # 有筛选条件时提前多取一些，避免「先截断再过滤」把有效结果漏掉
+    fetch_want = want if filter_time == "all" and filter_size == "all" else min(200, want * 3)
     # 「中文，English」拆词分别搜再合并（CloudSaver 自身不支持多词 OR）；
     # 多词并行请求，总耗时按最慢的一路算。
     terms = _keyword_terms(keyword)
     if len(terms) <= 1:
-        datasets = [cloudsaver_client.search(t) for t in terms]
+        datasets = [cloudsaver_client.search(t, min_items=fetch_want) for t in terms]
     else:
         with ThreadPoolExecutor(max_workers=min(len(terms), 4)) as pool:
-            datasets = list(pool.map(cloudsaver_client.search, terms))
+            datasets = list(
+                pool.map(lambda t: cloudsaver_client.search(t, min_items=fetch_want), terms)
+            )
     items: list[dict[str, Any]] = []
     seen_rows: set[str] = set()
     rows: list[dict[str, Any]] = []
@@ -312,41 +319,50 @@ def _sehuatang_items(
 ) -> list[dict[str, Any]]:
     if len(keyword) < 2:
         return []
-    data = resource_service.search_resources(
-        keyword=keyword,
-        p=1,
-        ps=min(max(want, 1), 80),
-        sort_type=sort_type,
-        filter_time=filter_time,
-        filter_size=filter_size,
-        match_mode="exact",
-        with_total_count=False,
-    )
+    # 合并前各源都要给出「从头到 want」的连续前缀，深页才能正确切片；
+    # 单次最多 80 条，因此按页累积，避免第 5 页起该源静默返回空。
     items: list[dict[str, Any]] = []
-    for row in data.get("resources") or []:
-        if not isinstance(row, dict):
-            continue
-        link = str(row.get("ed2k_link") or "").strip()
-        magnets = row.get("ed2k_links") or []
-        magnet = next(
-            (str(x) for x in magnets if str(x).startswith("magnet:")), ""
+    page = 1
+    while len(items) < want and page <= 4:
+        page_size = min(max(want - len(items), 1), 80)
+        data = resource_service.search_resources(
+            keyword=keyword,
+            p=page,
+            ps=page_size,
+            sort_type=sort_type,
+            filter_time=filter_time,
+            filter_size=filter_size,
+            match_mode="exact",
+            with_total_count=False,
         )
-        hard_id = str(row.get("hash") or "").strip() or link or str(row.get("name") or "")
-        previews = row.get("preview_images") or []
-        items.append(
-            _make_item(
-                source="sehuatang",
-                category="torrent",
-                item_id=hard_id,
-                title=str(row.get("title") or row.get("name") or hard_id),
-                size_bytes=row.get("size"),
-                published=_parse_datetime(row.get("created_at")),
-                magnet=magnet or (link if link.startswith("magnet:") else None),
-                ed2k=link if link.startswith("ed2k://") else None,
-                thumb_url=str(previews[0]) if previews else None,
-                info_hash=str(row.get("hash") or "").strip(),
+        rows = data.get("resources") or []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            link = str(row.get("ed2k_link") or "").strip()
+            magnets = row.get("ed2k_links") or []
+            magnet = next(
+                (str(x) for x in magnets if str(x).startswith("magnet:")), ""
             )
-        )
+            hard_id = str(row.get("hash") or "").strip() or link or str(row.get("name") or "")
+            previews = row.get("preview_images") or []
+            items.append(
+                _make_item(
+                    source="sehuatang",
+                    category="torrent",
+                    item_id=hard_id,
+                    title=str(row.get("title") or row.get("name") or hard_id),
+                    size_bytes=row.get("size"),
+                    published=_parse_datetime(row.get("created_at")),
+                    magnet=magnet or (link if link.startswith("magnet:") else None),
+                    ed2k=link if link.startswith("ed2k://") else None,
+                    thumb_url=str(previews[0]) if previews else None,
+                    info_hash=str(row.get("hash") or "").strip(),
+                )
+            )
+        if len(rows) < page_size:
+            break
+        page += 1
     return items[:want]
 
 
@@ -361,7 +377,7 @@ def _avdb_items(
     items: list[dict[str, Any]] = []
     page = 1
     while len(items) < want and page <= 20:
-        data = makers_torrents(
+        data = fetch_torrents(
             keyword=keyword,
             page=page,
             limit=min(TORRENT_LIMIT_MAX, max(want - len(items), 1)),
@@ -377,32 +393,29 @@ def _avdb_items(
                 if download and not download.startswith(("magnet:", "ed2k://"))
                 else []
             )
-            items.append(
-                _make_item(
-                    source="avdb",
-                    category="torrent",
-                    item_id=f"{row.get('id') or download or row.get('number') or 'item'}#{len(items)}",
-                    title=str(row.get("title") or row.get("number") or "未命名资源"),
-                    size_bytes=row.get("sizeBytes"),
-                    published=_parse_datetime(row.get("postTime")),
-                    magnet=download if download.startswith("magnet:") else None,
-                    ed2k=download if download.startswith("ed2k://") else None,
-                    links=links,
-                    thumb_url=row.get("previewImage"),
-                )
+            item = _make_item(
+                source="avdb",
+                category="torrent",
+                item_id=f"{row.get('id') or download or row.get('number') or 'item'}#{len(items)}",
+                title=str(row.get("title") or row.get("number") or "未命名资源"),
+                size_bytes=row.get("sizeBytes"),
+                published=_parse_datetime(row.get("postTime")),
+                magnet=download if download.startswith("magnet:") else None,
+                ed2k=download if download.startswith("ed2k://") else None,
+                links=links,
+                thumb_url=row.get("previewImage"),
             )
+            # 先过滤再计数，否则带筛选条件时会在凑满 want 后停止翻页，漏掉后续有效结果
+            if not _passes_filters(
+                item, filter_time=filter_time, filter_size=filter_size
+            ):
+                continue
+            items.append(item)
             if len(items) >= want:
                 break
         if not data.get("hasMore") or not rows:
             break
         page += 1
-    items = [
-        it
-        for it in items
-        if _passes_filters(
-            it, filter_time=filter_time, filter_size=filter_size
-        )
-    ]
     return items[:want]
 
 
@@ -429,6 +442,7 @@ def search_scope(
     filter_time: str = Query("all"),
     filter_size: str = Query("all"),
     source: str = Query("all"),
+    _user: dict[str, Any] = Depends(require_user),
 ) -> dict[str, Any]:
     """按范围聚合多源搜索；返回裸 JSON（不包 Envelope）。"""
     scope_key = scope if scope in SCOPE_SOURCES else "movie"
@@ -442,24 +456,36 @@ def search_scope(
 
     results: dict[str, list[dict[str, Any]]] = {}
     source_errors: dict[str, str] = {}
-    with ThreadPoolExecutor(max_workers=len(sources)) as pool:
-        futures = {
-            pool.submit(
-                _FETCHERS[name],
-                kw,
-                want,
-                sort_type=sort_key,
-                filter_time=filter_time,
-                filter_size=filter_size,
-            ): name
-            for name in sources
-        }
-        for future, name in futures.items():
+    offset = (page - 1) * page_size
+    pool = ThreadPoolExecutor(max_workers=len(sources))
+    futures = {
+        pool.submit(
+            _FETCHERS[name],
+            kw,
+            want,
+            sort_type=sort_key,
+            filter_time=filter_time,
+            filter_size=filter_size,
+        ): name
+        for name in sources
+    }
+    try:
+        done, pending = wait(futures, timeout=_SCOPE_BUDGET_S)
+        for future in done:
+            name = futures[future]
             try:
                 results[name] = future.result()
             except Exception as exc:  # 单源失败隔离
                 log.warning("scope search %s failed: %s", name, exc)
                 source_errors[name] = _error_text(exc)
+        for future in pending:
+            name = futures[future]
+            future.cancel()
+            log.warning("scope search %s timed out after %.0fs", name, _SCOPE_BUDGET_S)
+            source_errors[name] = "搜索超时"
+    finally:
+        # 不等未完成线程：到预算就返回，后端线程自行收尾
+        pool.shutdown(wait=False, cancel_futures=True)
 
     merged: list[dict[str, Any]] = []
     for name in sources:
@@ -489,8 +515,7 @@ def search_scope(
             reverse=True,
         )
 
-    start = (page - 1) * page_size
-    page_items = deduped[start : start + page_size]
+    page_items = deduped[offset : offset + page_size]
     for item in page_items:
         item.pop("_published", None)
 
@@ -500,5 +525,5 @@ def search_scope(
         "page": page,
         "sourceErrors": source_errors,
         "items": page_items,
-        "hasMore": len(deduped) > start + len(page_items),
+        "hasMore": len(deduped) > offset + len(page_items),
     }

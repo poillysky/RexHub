@@ -29,7 +29,6 @@ REGION_ALIASES: dict[str, SearchRegion] = {
     for k, v in dict(regions_doc().get("aliases") or {}).items()
 }
 
-GLOBAL_EXCLUDE: list[str] = []
 REGION_BOARD_ALLOWLIST: dict[str, dict[str, Any]] = {
     "japan": {"label": "日本", "primary": [], "optional": [], "exclude": []},
     "japan_censored": {

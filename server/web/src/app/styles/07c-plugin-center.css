@@ -1,0 +1,1404 @@
+/* 设置面板：插件中心 / Stremio / 插件内容浏览。 */
+
+/* —— 插件内容浏览（进入单个 addon 看目录 / 播放） —— */
+
+/* 目录切换：多目录时横向滚动；每个 tab 按内容取宽，
+   不再被 flex:1 压窄导致文字溢出压到相邻标签上 */
+.stremio-page .addon-cat-tabs {
+  align-self: stretch;
+  margin: 2px 0 14px;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 12px;
+}
+
+.stremio-page .addon-cat-tabs .media-source-switch__btn {
+  flex: 0 0 auto;
+  max-width: 172px;
+  padding: 0 12px;
+  border-radius: 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.addon-content__hint {
+  margin: 0 2px 12px;
+  font-size: 12px;
+  line-height: 1.4;
+  letter-spacing: -0.005em;
+  color: var(--mute, rgba(60, 60, 67, 0.6));
+}
+
+.addon-content__state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 48px 20px 56px;
+  text-align: center;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--mute, rgba(60, 60, 67, 0.6));
+}
+
+.addon-content-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(102px, 1fr));
+  gap: 18px 12px;
+  padding-bottom: 28px;
+}
+
+.addon-content-card {
+  min-width: 0;
+  width: 100%;
+}
+
+/* 条目名最多两行：长标题省略而不是撑破格子 */
+.addon-content-card .media-poster__caption {
+  padding: 1px 1px 0;
+}
+
+.addon-content-card .media-poster__title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  max-height: 2.56em;
+  white-space: normal;
+  font-size: 12.5px;
+  line-height: 1.28;
+}
+
+/* —— Stremio 多级页面整体视觉（仓库 → addon → 内容 → 添加） —— */
+
+/* 分组标题节奏统一：首块贴顶，其余之间留出呼吸 */
+.stremio-page > .settings-group-label {
+  margin: 18px 2px 7px;
+}
+
+.stremio-page > .settings-group-label:first-child {
+  margin-top: 2px;
+}
+
+/* 行首图标：统一的立体感 */
+.stremio-page .stremio-repo__icon,
+.stremio-page .stremio-addon-icon {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+html.theme-dark .stremio-page .stremio-repo__icon,
+html.theme-dark .stremio-page .stremio-addon-icon {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+/* 列表行 hover / 按下反馈（触屏不保留 hover） */
+@media (hover: hover) {
+  .stremio-page .stremio-repo.settings-nav:hover,
+  .stremio-page .stremio-addon.settings-nav:hover {
+    background: color-mix(in srgb, var(--hairline) 26%, transparent);
+  }
+}
+
+.stremio-page .stremio-repo.settings-nav:active,
+.stremio-page .stremio-addon.settings-nav:active {
+  background: color-mix(in srgb, var(--hairline) 40%, transparent);
+}
+
+/* 顶部信息卡：边界更轻，阴影收敛 */
+.stremio-page .stremio-addon-hero,
+.stremio-page .stremio-repo-hero {
+  overflow: hidden;
+  border-radius: 18px;
+  border: 0.5px solid color-mix(in srgb, var(--hairline) 75%, transparent);
+  box-shadow:
+    0 1px 2px rgba(var(--shadow-color), 0.04),
+    0 12px 28px -16px rgba(var(--shadow-color), 0.28);
+}
+
+.stremio-page .stremio-addon-hero__icon,
+.stremio-page .stremio-repo-hero__icon {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.stremio-page .stremio-chip {
+  border: 0.5px solid color-mix(in srgb, var(--hairline) 85%, transparent);
+}
+
+/* 「浏览插件内容」入口：轻量图标块，和播放语义呼应 */
+.stremio-page .stremio-entry-icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  color: #5e5ce6;
+  background: rgba(94, 92, 230, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+html.theme-dark .stremio-page .stremio-entry-icon {
+  color: #b3b1ff;
+  background: rgba(94, 92, 230, 0.24);
+}
+
+/* 添加表单：与设置卡材质统一 */
+.stremio-page .app-section {
+  margin: 0 0 14px;
+  border-radius: 14px;
+  border-color: color-mix(in srgb, var(--hairline) 80%, transparent);
+  background: var(--surface-elevated);
+  box-shadow: 0 1px 2px rgba(var(--shadow-color), 0.03);
+}
+
+.stremio-page .app-section .app-field {
+  min-height: 46px;
+}
+
+/* 内容页：空态图标做底，与列表页的空态呼应 */
+.stremio-page .addon-content__state > svg {
+  box-sizing: content-box;
+  padding: 10px;
+  border-radius: 14px;
+  color: var(--mute);
+  background: color-mix(in srgb, var(--hairline) 42%, transparent);
+}
+
+.stremio-page .addon-content__state .stream-modal__error {
+  max-width: 280px;
+}
+
+/* 目录搜索 / 题材筛选 / 分页 */
+.addon-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  margin: 0 0 12px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 0.5px solid var(--hairline);
+  background: var(--surface-elevated);
+}
+
+.addon-filter > svg {
+  flex: 0 0 auto;
+  color: var(--mute);
+}
+
+.addon-filter input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  letter-spacing: -0.005em;
+  outline: none;
+}
+
+.addon-filter input::placeholder {
+  color: var(--mute);
+}
+
+.addon-filter__clear {
+  flex: 0 0 auto;
+  border: 0;
+  padding: 4px 2px;
+  background: transparent;
+  color: var(--mute);
+  font-size: 12.5px;
+}
+
+.addon-chip-row {
+  display: flex;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding-bottom: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.addon-chip-row::-webkit-scrollbar {
+  display: none;
+}
+
+.addon-chip {
+  flex: 0 0 auto;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 0.5px solid var(--hairline);
+  background: var(--surface-elevated);
+  color: var(--mute);
+  font-size: 12.5px;
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+}
+
+.addon-chip.is-active {
+  border-color: transparent;
+  background: var(--brand, #0a84ff);
+  color: #fff;
+}
+
+.addon-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  height: 42px;
+  margin: 4px 0 24px;
+  border-radius: 12px;
+  border: 0.5px solid var(--hairline);
+  background: var(--surface-elevated);
+  color: var(--ink);
+  font-size: 13.5px;
+}
+
+.addon-more:disabled {
+  opacity: 0.6;
+}
+
+/* 选集弹层（portal 在 app-content 下，样式不能挂在 .stremio-page） */
+.addon-episode-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 8px;
+}
+
+.addon-episode {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 0.5px solid var(--hairline);
+  background: var(--surface-elevated);
+  text-align: left;
+}
+
+.addon-episode:active {
+  opacity: 0.7;
+}
+
+.addon-episode__no {
+  color: var(--mute);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.addon-episode__name {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* —— 插件中心 —— */
+
+.settings-screen-root .plugin-fw-page .plugin-fw-logs {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-elevated) 78%, transparent);
+  border: 1px solid color-mix(in srgb, var(--hairline) 70%, transparent);
+  color: var(--mute);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11.5px;
+  line-height: 18px;
+  max-height: 52vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+html.theme-dark .settings-screen-root .plugin-fw-page .plugin-fw-logs {
+  background: color-mix(in srgb, #0b0d12 72%, transparent);
+  border-color: color-mix(in srgb, #ffffff 10%, transparent);
+  color: #9aa3b2;
+}
+
+.settings-screen-root .plugin-fw-repo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 12px;
+}
+
+.settings-screen-root .plugin-fw-repo .settings-nav__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-screen-root .plugin-fw-repo button {
+  flex: 0 0 auto;
+  padding: 0 12px;
+  height: 30px;
+  font-size: 12px;
+}
+
+.settings-screen-root .plugin-fw-page .app-hint {
+  margin-top: 4px;
+  color: var(--mute);
+  font-size: 11.5px;
+  line-height: 16px;
+}
+
+/* —— 插件中心：仓库页美化 —— */
+
+.settings-screen-root .plugin-fw-page {
+  padding-bottom: 26px;
+}
+
+.settings-screen-root .plugin-fw-repo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 12px;
+}
+
+.settings-screen-root .plugin-fw-repo__icon {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  color: #ff9f0a;
+  background: color-mix(in srgb, #ff9f0a 13%, transparent);
+  border: 1px solid color-mix(in srgb, #ff9f0a 26%, transparent);
+}
+
+.settings-screen-root .plugin-fw-repo .settings-nav__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-screen-root .plugin-fw-repo .settings-nav__title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-screen-root .plugin-fw-repo .settings-nav__desc {
+  font-size: 11.5px;
+  line-height: 16px;
+  color: var(--mute);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-screen-root .plugin-fw-repo__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.settings-screen-root .plugin-fw-repo__meta .stremio-chip {
+  height: 20px;
+  padding: 0 8px;
+  font-size: 10.5px;
+  line-height: 20px;
+}
+
+.settings-screen-root .plugin-fw-repo__actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-screen-root .plugin-fw-icon-btn {
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+html.theme-dark .settings-screen-root .plugin-fw-repo__icon {
+  color: #ffb340;
+  background: color-mix(in srgb, #ff9f0a 18%, transparent);
+  border-color: color-mix(in srgb, #ffb340 30%, transparent);
+}
+
+@media (max-width: 420px) {
+
+  .settings-screen-root .plugin-fw-repo {
+    flex-wrap: wrap;
+  }
+
+  .settings-screen-root .plugin-fw-repo__actions {
+    width: 100%;
+    justify-content: flex-end;
+    padding-left: 46px;
+  }
+}
+
+.settings-screen-root .plugin-fw-update-btn {
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  white-space: nowrap;
+  color: #0a84ff;
+  background: color-mix(in srgb, #0a84ff 12%, transparent);
+  border: 1px solid color-mix(in srgb, #0a84ff 24%, transparent);
+}
+
+html.theme-dark .settings-screen-root .plugin-fw-update-btn {
+  color: #7ab8ff;
+  background: color-mix(in srgb, #0a84ff 20%, transparent);
+  border-color: color-mix(in srgb, #7ab8ff 26%, transparent);
+}
+
+/* 插件行：状态、箭头、更新按钮保持同一行 */
+.settings-screen-root .plugin-fw-page .settings-nav__trail {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+.settings-screen-root .plugin-fw-page .settings-nav__status {
+  flex: 0 0 auto;
+  max-width: none;
+}
+
+/* —— 插件中心：插件卡片（一行两个） —— */
+
+.settings-screen-root .plugin-fw-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+}
+
+.settings-screen-root .plugin-fw-card {
+  position: relative;
+  min-width: 0;
+
+}
+
+.settings-screen-root .plugin-fw-card__main {
+  width: 100%;
+  min-height: 68px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 11px;
+  border: 0.5px solid color-mix(in srgb, var(--hairline) 68%, transparent);
+  border-radius: 13px;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-elevated) 96%, white),
+      color-mix(in srgb, var(--surface-elevated) 82%, transparent)
+    );
+  box-shadow: 0 1px 2px rgba(var(--shadow-color), 0.05);
+  color: var(--ink);
+  font-family: inherit;
+  text-align: left;
+  transition: background 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+
+}
+
+.settings-screen-root .plugin-fw-card__main:active {
+  transform: scale(0.985);
+  background: rgba(120, 120, 128, 0.12);
+
+}
+
+.settings-screen-root .plugin-fw-card.has-action .plugin-fw-card__name {
+  padding-right: 34px;
+
+}
+
+.settings-screen-root .plugin-fw-card__icon {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+
+}
+
+.settings-screen-root .plugin-fw-card__icon .settings-nav__icon {
+  width: 27px;
+  height: 27px;
+  border-radius: 8px;
+
+}
+
+/* 插件品牌 logo：有图时去掉分类底色/阴影，尺寸随容器等比放大 */
+.settings-screen-root .settings-nav__icon.plugin-fw-logo,
+.settings-screen-root .stremio-addon-hero__icon.plugin-fw-logo {
+  display: grid;
+  place-items: center;
+  line-height: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.settings-screen-root .plugin-fw-card__icon .settings-nav__icon.plugin-fw-logo {
+  width: 34px;
+  height: 34px;
+}
+
+.plugin-fw-logo__img {
+  display: block;
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  border-radius: 0;
+}
+
+.settings-screen-root .stremio-addon-hero__icon.plugin-fw-logo {
+  width: 56px;
+  height: 56px;
+}
+
+.settings-screen-root .stremio-addon-hero__icon.plugin-fw-logo .plugin-fw-logo__img {
+  width: 50px;
+  height: 50px;
+}
+
+.settings-screen-root .plugin-fw-card__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+
+}
+
+.settings-screen-root .plugin-fw-card__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+
+}
+
+.settings-screen-root .plugin-fw-card__dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mute);
+
+}
+
+.settings-screen-root .plugin-fw-card__dot.is-ok {
+  background: #34c759;
+
+}
+
+.settings-screen-root .plugin-fw-card__dot.is-warn {
+  background: #ff9500;
+
+}
+
+.settings-screen-root .plugin-fw-card__dot.is-error {
+  background: #ff3b30;
+
+}
+
+.settings-screen-root .plugin-fw-card__dot.is-mute {
+  background: var(--mute);
+
+}
+
+.settings-screen-root .plugin-fw-card__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+}
+
+.settings-screen-root .plugin-fw-card__desc {
+  overflow: hidden;
+  font-size: 10.5px;
+  line-height: 14px;
+  color: var(--mute);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+}
+
+.settings-screen-root .plugin-fw-card__action {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+
+}
+
+.settings-screen-root .plugin-fw-card__action .plugin-fw-update-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  color: #fff;
+  background: linear-gradient(180deg, #4da3ff 0%, #0a84ff 100%);
+  border: 0;
+  box-shadow: 0 2px 6px rgba(10, 132, 255, 0.28);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+
+}
+
+.settings-screen-root .plugin-fw-card__action .plugin-fw-update-btn:active {
+  transform: scale(0.95);
+  box-shadow: 0 1px 3px rgba(10, 132, 255, 0.22);
+
+}
+
+html.theme-dark .settings-screen-root .plugin-fw-card__action .plugin-fw-update-btn {
+  background: linear-gradient(180deg, #409cff 0%, #0071e3 100%);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+
+}
+
+html.theme-dark .settings-screen-root .plugin-fw-card__main {
+  background: linear-gradient(180deg, rgba(44, 44, 46, 0.94), rgba(28, 28, 30, 0.92));
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+
+}
+
+html.theme-dark .settings-screen-root .plugin-fw-card__dot.is-ok {
+  background: #30d158;
+
+}
+
+html.theme-dark .settings-screen-root .plugin-fw-card__dot.is-warn {
+  background: #ff9f0a;
+
+}
+
+html.theme-dark .settings-screen-root .plugin-fw-card__dot.is-error {
+  background: #ff453a;
+
+}
+
+html.theme-dark .settings-screen-root .plugin-fw-card__dot.is-mute {
+  background: rgba(255, 255, 255, 0.42);
+
+}
+
+/* —— 插件中心：顶栏仓库入口 —— */
+
+.settings-screen-root .plugin-fw-repo-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, #007aff 22%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, #007aff 10%, transparent);
+  color: #007aff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  justify-self: end;
+  transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+
+.settings-screen-root .plugin-fw-repo-trigger:active {
+  transform: scale(0.96);
+  background: color-mix(in srgb, #007aff 18%, transparent);
+}
+
+html.theme-dark .settings-screen-root .plugin-fw-repo-trigger {
+  color: #7ab8ff;
+  background: color-mix(in srgb, #0a84ff 18%, transparent);
+  border-color: color-mix(in srgb, #7ab8ff 26%, transparent);
+}
+
+.settings-screen-root .plugin-fw-top-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  justify-self: end;
+}
+
+.settings-screen-root .plugin-fw-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--hairline) 72%, transparent);
+  border-radius: 10px;
+  background: rgba(120, 120, 128, 0.08);
+  color: var(--mute);
+  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.settings-screen-root .plugin-fw-icon-btn:active {
+  transform: scale(0.94);
+  background: rgba(120, 120, 128, 0.16);
+}
+
+.settings-screen-root .plugin-fw-icon-btn:disabled {
+  opacity: 0.5;
+}
+
+.settings-screen-root .plugin-fw-icon-btn .is-spinning {
+  animation: plugin-fw-refresh-spin 0.85s linear infinite;
+}
+
+@keyframes plugin-fw-refresh-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+html.theme-dark .settings-screen-root .plugin-fw-icon-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.62);
+}
+
+html.theme-dark .settings-screen-root .plugin-fw-icon-btn:active {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+/* —— 插件中心：市场顶部搜索（右上角紧凑搜索条） —— */
+
+.settings-screen-root .plugin-fw-market-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 2px 0 12px;
+}
+
+.settings-screen-root .plugin-fw-market-head .stremio-filters {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+.settings-screen-root .plugin-fw-market-head__lead {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--mute);
+}
+
+.settings-screen-root .plugin-fw-search {
+  flex: 0 1 200px;
+  min-width: 132px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  margin-left: auto;
+  padding: 0 8px 0 10px;
+  border-radius: 11px;
+  border: 1px solid color-mix(in srgb, var(--hairline) 82%, transparent);
+  background: color-mix(in srgb, var(--surface-elevated) 86%, transparent);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.settings-screen-root .plugin-fw-search > svg {
+  flex: 0 0 auto;
+  color: var(--mute);
+}
+
+.settings-screen-root .plugin-fw-search input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 34px;
+}
+
+.settings-screen-root .plugin-fw-search input::placeholder {
+  color: var(--placeholder, var(--mute));
+}
+
+.settings-screen-root .plugin-fw-search:focus-within {
+  border-color: color-mix(in srgb, #007aff 52%, transparent);
+  background: color-mix(in srgb, var(--surface-elevated) 96%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, #007aff 12%, transparent);
+}
+
+.settings-screen-root .plugin-fw-search__clear {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: var(--mute);
+  background: rgba(120, 120, 128, 0.14);
+  transition: background 0.18s ease, transform 0.18s ease;
+}
+
+.settings-screen-root .plugin-fw-search__clear:active {
+  transform: scale(0.9);
+  background: rgba(120, 120, 128, 0.24);
+}
+
+html.theme-dark .settings-screen-root .plugin-fw-search {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+html.theme-dark .settings-screen-root .plugin-fw-search:focus-within {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: color-mix(in srgb, #0a84ff 62%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, #0a84ff 18%, transparent);
+}
+
+@media (max-width: 560px) {
+  .settings-screen-root .plugin-fw-market-head {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .settings-screen-root .plugin-fw-market-head__tabs {
+    order: 2;
+    flex: 1 0 100%;
+  }
+}
+
+/* —— 插件中心：按类型分组（已安装 / 市场共用） —— */
+
+.settings-screen-root .plugin-fw-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settings-screen-root .plugin-fw-group__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 4px 6px 14px;
+}
+
+.settings-screen-root .plugin-fw-group__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--mute);
+}
+
+.settings-screen-root .plugin-fw-group__title::before {
+  content: '';
+  width: 3px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--login-blue, #007aff);
+}
+
+.settings-screen-root .plugin-fw-group__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--mute);
+  background: color-mix(in srgb, var(--hairline) 38%, transparent);
+}
+
+/* —— 插件中心：仓库弹窗（portal 到 .app-content） —— */
+
+.plugin-fw-repo-modal.app-modal-card {
+  width: min(100%, 460px);
+  border-radius: 22px;
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.26);
+}
+
+.plugin-fw-repo-modal .app-modal-card__head {
+  min-height: 52px;
+  padding: 10px 10px 10px 18px;
+}
+
+.plugin-fw-repo-modal .app-modal-card__title {
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.plugin-fw-repo-modal .app-modal-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  max-height: min(62vh, 560px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.plugin-fw-repo-modal .app-modal-card__foot {
+  display: flex;
+  padding: 12px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+}
+
+.plugin-fw-repo-modal .plugin-fw-modal__done {
+  flex: 1;
+  min-height: 44px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.plugin-fw-modal__summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 14px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--hairline) 70%, transparent);
+  background:
+    radial-gradient(
+      120% 140% at 0% 0%,
+      color-mix(in srgb, #ff9f0a 10%, transparent),
+      transparent 68%
+    ),
+    color-mix(in srgb, var(--surface-elevated) 82%, transparent);
+}
+
+.plugin-fw-modal__summary-icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  color: #fff;
+  background: linear-gradient(135deg, #ffcc66, #ff9500);
+  box-shadow: 0 8px 18px color-mix(in srgb, #ff9500 26%, transparent);
+}
+
+.plugin-fw-modal__summary-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.plugin-fw-modal__eyebrow {
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.plugin-fw-modal__count {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #ff9500;
+  background: color-mix(in srgb, #ff9500 12%, transparent);
+  border: 1px solid color-mix(in srgb, #ff9500 26%, transparent);
+}
+
+.plugin-fw-modal__tabs {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 12px;
+  background: rgba(120, 120, 128, 0.12);
+}
+
+.plugin-fw-modal__tab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-secondary, var(--mute));
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.plugin-fw-modal__tab.is-on {
+  color: var(--ink);
+  background: var(--surface-elevated, #fff);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+.plugin-fw-modal__tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--mute);
+  background: rgba(120, 120, 128, 0.14);
+}
+
+.plugin-fw-modal__tab.is-on .plugin-fw-modal__tab-count {
+  color: #0a84ff;
+  background: color-mix(in srgb, #0a84ff 12%, transparent);
+}
+
+html.theme-dark .plugin-fw-modal__tabs {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+html.theme-dark .plugin-fw-modal__tab {
+  color: rgba(255, 255, 255, 0.66);
+}
+
+html.theme-dark .plugin-fw-modal__tab.is-on {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: none;
+}
+
+html.theme-dark .plugin-fw-modal__tab-count {
+  color: rgba(255, 255, 255, 0.66);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+html.theme-dark .plugin-fw-modal__tab.is-on .plugin-fw-modal__tab-count {
+  color: #7ab8ff;
+  background: color-mix(in srgb, #0a84ff 22%, transparent);
+}
+
+.plugin-fw-modal__form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--hairline) 70%, transparent);
+  background: color-mix(in srgb, var(--surface-elevated) 74%, transparent);
+}
+
+.plugin-fw-modal__form-row {
+  display: flex;
+  gap: 10px;
+}
+
+.plugin-fw-modal__form-row > .plugin-fw-modal__field {
+  flex: 1;
+  min-width: 0;
+}
+
+.plugin-fw-modal__field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.plugin-fw-modal__label {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--mute);
+}
+
+.plugin-fw-modal__field input {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 11px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--hairline) 82%, transparent);
+  background: rgba(120, 120, 128, 0.06);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 14px;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.plugin-fw-modal__field input::placeholder {
+  color: var(--placeholder, var(--mute));
+}
+
+.plugin-fw-modal__field input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, #007aff 52%, transparent);
+  background: rgba(120, 120, 128, 0.03);
+  box-shadow: 0 0 0 3.5px color-mix(in srgb, #007aff 13%, transparent);
+}
+
+.plugin-fw-modal__save {
+  align-self: stretch;
+  min-height: 42px;
+  margin-top: 2px;
+  border-radius: 11px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.plugin-fw-modal__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plugin-fw-modal__repo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--hairline) 66%, transparent);
+  background: color-mix(in srgb, var(--surface-elevated) 80%, transparent);
+}
+
+.plugin-fw-modal__repo-icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  color: #ff9f0a;
+  background: color-mix(in srgb, #ff9f0a 13%, transparent);
+  border: 1px solid color-mix(in srgb, #ff9f0a 26%, transparent);
+}
+
+.plugin-fw-modal__repo-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.plugin-fw-modal__repo-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugin-fw-modal__repo-url {
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--mute);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugin-fw-modal__repo-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 3px;
+}
+
+.plugin-fw-modal__chip {
+  display: inline-flex;
+  align-items: center;
+  height: 19px;
+  padding: 0 7px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--mute);
+  background: rgba(120, 120, 128, 0.1);
+  border: 0.5px solid color-mix(in srgb, var(--hairline) 72%, transparent);
+}
+
+.plugin-fw-modal__repo-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.plugin-fw-modal__icon-btn {
+  display: grid;
+  place-items: center;
+  width: 31px;
+  height: 31px;
+  padding: 0;
+  border-radius: 9px;
+  border: 1px solid color-mix(in srgb, var(--hairline) 78%, transparent);
+  background: rgba(120, 120, 128, 0.08);
+  color: var(--text-secondary, var(--mute));
+  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.plugin-fw-modal__icon-btn:active {
+  transform: scale(0.94);
+  background: rgba(120, 120, 128, 0.16);
+}
+
+.plugin-fw-modal__icon-btn--danger {
+  color: #ff3b30;
+  background: color-mix(in srgb, #ff3b30 8%, transparent);
+  border-color: color-mix(in srgb, #ff3b30 20%, transparent);
+}
+
+.plugin-fw-modal__icon-btn--danger:active {
+  background: color-mix(in srgb, #ff3b30 16%, transparent);
+}
+
+.plugin-fw-modal__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 26px 18px 22px;
+  text-align: center;
+  border-radius: 14px;
+  border: 0.5px solid color-mix(in srgb, var(--hairline) 74%, transparent);
+  background: color-mix(in srgb, var(--surface-elevated) 68%, transparent);
+}
+
+.plugin-fw-modal__empty-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 13px;
+  color: var(--mute);
+  background: rgba(120, 120, 128, 0.1);
+}
+
+.plugin-fw-modal__empty p {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.plugin-fw-modal__empty span:last-child {
+  max-width: 280px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--mute);
+}
+
+html.theme-dark .plugin-fw-repo-modal.app-modal-card {
+  background: rgba(28, 28, 30, 0.97);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+html.theme-dark .plugin-fw-repo-modal .app-modal-card__head,
+html.theme-dark .plugin-fw-repo-modal .app-modal-card__foot {
+  background: rgba(44, 44, 46, 0.72);
+}
+
+html.theme-dark .plugin-fw-modal__summary {
+  background:
+    radial-gradient(
+      120% 140% at 0% 0%,
+      color-mix(in srgb, #ff9f0a 16%, transparent),
+      transparent 68%
+    ),
+    rgba(255, 255, 255, 0.04);
+}
+
+html.theme-dark .plugin-fw-modal__repo,
+html.theme-dark .plugin-fw-modal__form,
+html.theme-dark .plugin-fw-modal__empty {
+  background: rgba(255, 255, 255, 0.045);
+}
+
+@media (max-width: 420px) {
+  .plugin-fw-repo-modal .app-modal-card__body {
+    max-height: 68vh;
+  }
+
+  .plugin-fw-modal__form-row {
+    flex-direction: column;
+  }
+}

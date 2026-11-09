@@ -101,7 +101,7 @@ services:
       start_period: 90s
     environment:
       TZ: Asia/Shanghai
-      SNS_COOKIE_SECURE: "0"
+      # Cookie Secure 默认按请求协议自动判断（HTTPS 开启）；如需强制可设为 0/1
       # 元库改为容器内 SQLite（挂载卷 /app/data/meta.db）
       SNS_META_DB: /app/data/meta.db
       APP_ROLE: worker
@@ -135,11 +135,10 @@ services:
       - "3020:3020"
     environment:
       TZ: Asia/Shanghai
-      SNS_COOKIE_SECURE: "0"
+      # Cookie Secure 默认按请求协议自动判断（HTTPS 开启）；如需强制可设为 0/1
       # 元库改为容器内 SQLite（挂载卷 /app/data/meta.db）
       SNS_META_DB: /app/data/meta.db
       APP_ROLE: ui
-      SCRAPE_WORKER_URL: http://scrape-worker:8020
       API_INTERNAL_BASE: http://127.0.0.1:8020
       WEB_PORT: "3020"
     volumes:

@@ -1,43 +1,15 @@
 'use client';
 
-import type {
-  AiAssistantSkillGroup,
-  AiAssistantToolMeta,
-  AiEmbedDevice,
-  AiEmbedDeviceOption,
-  AiPresetOption,
-  AiPresets,
-} from '@/lib/api';
+import type { AiAssistantSkillGroup, AiAssistantToolMeta, AiPresetOption } from '@/lib/api';
 
 export const LLM_BASE_DEFAULT = 'https://api.openai.com/v1';
 export const LLM_MODEL_DEFAULT = 'gpt-4o-mini';
-export const EMBED_MODEL_DEFAULT = 'intfloat/multilingual-e5-large';
-export const EMBED_DEVICE_DEFAULT: AiEmbedDevice = 'directml';
 
-export const EMBED_DEVICE_FALLBACK: AiEmbedDeviceOption[] = [
-  { value: 'cpu', label: 'CPU', hint: '兼容最好，速度慢' },
-  { value: 'cuda', label: 'N卡 (CUDA)', hint: '需 NVIDIA 驱动 + onnxruntime-gpu' },
-  { value: 'directml', label: 'A卡 (DirectML)', hint: 'Windows AMD/Intel；需 onnxruntime-directml' },
-];
-
-export function normalizeEmbedDevice(raw: string | undefined | null): AiEmbedDevice {
-  const v = String(raw || '').trim().toLowerCase();
-  if (v === 'cuda' || v === 'nvidia' || v === 'n') return 'cuda';
-  if (v === 'directml' || v === 'amd' || v === 'a' || v === 'dml') return 'directml';
-  if (v === 'cpu') return 'cpu';
-  return EMBED_DEVICE_DEFAULT;
-}
-
-export function deviceLabel(device: AiEmbedDevice, list: AiEmbedDeviceOption[]): string {
-  return list.find((d) => d.value === device)?.label || device;
-}
-export type AiTab = 'llm' | 'preset' | 'embed' | 'xiaohua';
+export type AiTab = 'model' | 'agent';
 
 export const TABS: { key: AiTab; label: string }[] = [
-  { key: 'llm', label: '聊天' },
-  { key: 'preset', label: '聊天预设' },
-  { key: 'embed', label: '向量' },
-  { key: 'xiaohua', label: '小花' },
+  { key: 'model', label: '模型' },
+  { key: 'agent', label: 'Agent' },
 ];
 
 export const DEFAULT_ASSISTANT_TOOLS: Record<string, boolean> = {
@@ -62,44 +34,6 @@ export const DEFAULT_TOOL_META: AiAssistantToolMeta[] = [
   { id: 'media_person_works', group: 'media', label: '影人作品', desc: '按演员/导演列作品' },
   { id: 'web_search', group: 'web', label: '网络搜索', desc: 'SearXNG / Serper / Brave' },
 ];
-
-/** 对齐 BrewStory 对话预设默认值 */
-export const PRESET_DEFAULTS = {
-  temperature: '1',
-  topP: '1',
-  maxTokens: '2048',
-  maxContext: '8192',
-  frequencyPenalty: '0',
-  presencePenalty: '0',
-  topK: '',
-  minP: '',
-  repetitionPenalty: '',
-  seed: '-1',
-  n: '1',
-  streamOpenai: true,
-  maxContextUnlocked: false,
-  continuePrefill: false,
-  squashSystemMessages: false,
-  showThoughts: false,
-};
-
-export function numStr(v: number | null | undefined): string {
-  if (v == null || Number.isNaN(v)) return '';
-  return String(v);
-}
-
-export function presetDim(model: string, presets: AiPresets | null): string {
-  if (!presets) return '';
-  const all = [...presets.localEmbedModels, ...presets.openaiEmbedModels];
-  const hit = all.find((m) => m.value === model);
-  if (hit?.dim) return hit.dim;
-  const lower = model.toLowerCase();
-  if (lower.includes('large')) return '3072';
-  if (lower.includes('small') || lower.includes('ada')) return '1536';
-  if (lower.includes('base')) return '768';
-  return '';
-}
-
 
 export function renderSourceOptions(list: AiPresetOption[], start: number, end?: number) {
   return list.slice(start, end).map((o) => (

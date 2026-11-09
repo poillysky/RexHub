@@ -5,10 +5,12 @@ import json
 import logging
 import re
 import time
+import uuid
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import RLock
 from typing import Any
 
 import psycopg
@@ -65,6 +67,35 @@ TABLES_BY_KIND: dict[str, tuple[str, ...]] = {
 
 _SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,180}$")
 _WORKERS = 3
+# 导出/导入/上传串行执行：避免临时目录互相覆盖，也避免并发 TRUNCATE 同一批表
+_OP_LOCK = RLock()
+
+# 进度按 kind 单槽上报：_OP_LOCK 已保证同类操作串行，无需 jobId / 任务系统
+_PROGRESS_LOCK = RLock()
+_progress: dict[str, dict[str, Any]] = {}
+
+
+def _set_progress(kind: str, *, action: str, percent: int, message: str) -> None:
+    with _PROGRESS_LOCK:
+        _progress[kind] = {
+            "action": action,
+            "percent": max(0, min(100, int(percent))),
+            "message": message,
+            "running": True,
+        }
+
+
+def _clear_progress(kind: str) -> None:
+    with _PROGRESS_LOCK:
+        _progress.pop(kind, None)
+
+
+def get_progress(kind: str) -> dict[str, Any]:
+    with _PROGRESS_LOCK:
+        item = _progress.get(kind)
+    if not item:
+        return {"action": None, "percent": 0, "message": "", "running": False}
+    return dict(item)
 
 
 def _wanted_tables(kind: str) -> tuple[str, ...]:
@@ -78,10 +109,6 @@ def backups_root(kind: str) -> Path:
     d = ROOT / "backups" / kind
     d.mkdir(parents=True, exist_ok=True)
     return d
-
-
-def _now_stamp() -> str:
-    return datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
 def _iso_now() -> str:
@@ -158,20 +185,27 @@ def _cleanup_other_zips(kind: str, keep: Path) -> None:
 
 
 def export_resource_zip(dsn: str, *, kind: str = KIND_RESOURCE) -> dict[str, Any]:
+    with _OP_LOCK:
+        # 拿到锁再上报进度，避免排队请求把正在运行的那次进度重置
+        _set_progress(kind, action="export", percent=0, message="准备导出")
+        try:
+            return _export_resource_zip(dsn, kind=kind)
+        finally:
+            _clear_progress(kind)
+
+
+def _export_resource_zip(dsn: str, *, kind: str) -> dict[str, Any]:
     """Export resource tables to backups/<kind>/<kind>.zip（覆盖旧文件）。"""
     dsn = (dsn or "").strip()
     if not dsn:
         raise ValueError("DSN 未配置")
 
     root = backups_root(kind)
-    stamp = _now_stamp()
-    work = root / f".tmp_{stamp}"
-    if work.exists():
-        _rmtree(work)
+    work = root / f".tmp_{uuid.uuid4().hex}"
     work.mkdir(parents=True, exist_ok=True)
     zip_name = canonical_zip_name(kind)
     zip_path = root / zip_name
-    partial = root / f".{kind}_{stamp}.partial.zip"
+    partial = root / f".{kind}_{uuid.uuid4().hex}.partial.zip"
 
     t0 = time.perf_counter()
     try:
@@ -180,6 +214,8 @@ def export_resource_zip(dsn: str, *, kind: str = KIND_RESOURCE) -> dict[str, Any
             tables = _list_existing_tables(conn, _wanted_tables(kind))
             if not tables:
                 raise ValueError("未找到可导出的资源表")
+
+        _set_progress(kind, action="export", percent=5, message=f"准备导出 {len(tables)} 张表")
 
         data_dir = work / "data"
         data_dir.mkdir(parents=True, exist_ok=True)
@@ -192,6 +228,13 @@ def export_resource_zip(dsn: str, *, kind: str = KIND_RESOURCE) -> dict[str, Any
             }
             for fut in as_completed(futs):
                 table_meta.append(fut.result())
+                done = len(table_meta)
+                _set_progress(
+                    kind,
+                    action="export",
+                    percent=5 + 55 * done // len(tables),
+                    message=f"导出表 {done}/{len(tables)}",
+                )
 
         table_meta.sort(key=lambda m: tables.index(m["name"]) if m["name"] in tables else 999)
 
@@ -239,12 +282,17 @@ def export_resource_zip(dsn: str, *, kind: str = KIND_RESOURCE) -> dict[str, Any
             encoding="utf-8",
         )
 
-        if partial.exists():
-            partial.unlink()
+        _set_progress(kind, action="export", percent=62, message="写入 zip")
         with zipfile.ZipFile(partial, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as zf:
             zf.write(work / "manifest.json", arcname="manifest.json")
-            for m in table_meta:
+            for i, m in enumerate(table_meta, 1):
                 _zip_add_file(zf, f"data/{m['name']}.bin", data_dir / f"{m['name']}.bin")
+                _set_progress(
+                    kind,
+                    action="export",
+                    percent=62 + 34 * i // len(table_meta),
+                    message=f"写入 zip {i}/{len(table_meta)}",
+                )
             if sequences:
                 seq_path = work / "sequences.json"
                 seq_path.write_text(
@@ -253,9 +301,8 @@ def export_resource_zip(dsn: str, *, kind: str = KIND_RESOURCE) -> dict[str, Any
                 )
                 zf.write(seq_path, arcname="sequences.json")
 
-        # 覆盖固定文件名，并清掉其它历史 zip
-        if zip_path.exists():
-            zip_path.unlink()
+        _set_progress(kind, action="export", percent=98, message="整理文件")
+        # 覆盖固定文件名（同盘 replace 原子生效），并清掉其它历史 zip
         partial.replace(zip_path)
         _cleanup_other_zips(kind, zip_path)
 
@@ -320,58 +367,90 @@ def _safe_backup_path(kind: str, filename: str) -> Path:
 
 
 def _peek_manifest_kind(zip_path: Path) -> str:
-    with zipfile.ZipFile(zip_path, "r") as zf:
-        try:
-            manifest = json.loads(zf.read("manifest.json").decode("utf-8"))
-        except KeyError as e:
-            raise ValueError("备份缺少 manifest.json") from e
-        if str(manifest.get("format") or "") != "copy-binary-zip-v1":
-            raise ValueError("不支持的备份格式")
-        return str(manifest.get("kind") or "")
+    try:
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            try:
+                manifest = json.loads(zf.read("manifest.json").decode("utf-8"))
+            except KeyError as e:
+                raise ValueError("备份缺少 manifest.json") from e
+            if str(manifest.get("format") or "") != "copy-binary-zip-v1":
+                raise ValueError("不支持的备份格式")
+            return str(manifest.get("kind") or "")
+    except zipfile.BadZipFile as e:
+        raise ValueError("不是有效的 zip 备份") from e
 
 
-def save_uploaded_zip(kind: str, *, source, original_name: str = "") -> dict[str, Any]:
-    """Save uploaded zip as backups/<kind>/<kind>.zip（覆盖旧文件）。"""
+def import_uploaded_zip(
+    kind: str,
+    dsn: str,
+    *,
+    source,
+    original_name: str = "",
+    expected_bytes: int | None = None,
+) -> dict[str, Any]:
+    """上传 → 校验 → 导入 → 成功后才替换正式备份。
+
+    旧实现先把上传文件覆盖到正式 zip、再导入；一旦导入失败，原备份已被覆盖丢失。
+    这里先落到临时文件并完成导入，成功后再原子替换正式文件名。
+    """
     _ = original_name
+    dsn = (dsn or "").strip()
+    if not dsn:
+        raise ValueError("DSN 未配置")
+    _wanted_tables(kind)
     root = backups_root(kind)
     dest = root / canonical_zip_name(kind)
-    tmp = root / f".upload_{_now_stamp()}.partial"
-    try:
-        written = 0
-        with open(tmp, "wb", buffering=8 * 1024 * 1024) as out:
-            while True:
-                chunk = source.read(8 * 1024 * 1024)
-                if not chunk:
-                    break
-                written += len(chunk)
-                if written > _MAX_UPLOAD_BYTES:
-                    raise ValueError(
-                        f"上传文件超过上限 {_MAX_UPLOAD_BYTES // (1024 * 1024)}MB，已中断"
-                    )
-                out.write(chunk)
-        if tmp.stat().st_size < 64:
-            raise ValueError("上传文件过小，不是有效备份")
-        peeked = _peek_manifest_kind(tmp)
-        if peeked != kind:
-            raise ValueError(
-                f"备份类型不匹配：文件是 {peeked or '未知'}，当前是 {kind}"
+    tmp = root / f".upload_{uuid.uuid4().hex}.partial.zip"
+    with _OP_LOCK:
+        _set_progress(kind, action="import", percent=0, message="接收上传文件")
+        try:
+            written = 0
+            with open(tmp, "wb", buffering=8 * 1024 * 1024) as out:
+                while True:
+                    chunk = source.read(8 * 1024 * 1024)
+                    if not chunk:
+                        break
+                    written += len(chunk)
+                    if written > _MAX_UPLOAD_BYTES:
+                        raise ValueError(
+                            f"上传文件超过上限 {_MAX_UPLOAD_BYTES // (1024 * 1024)}MB，已中断"
+                        )
+                    out.write(chunk)
+                    if expected_bytes:
+                        # 上传只占导入进度前 10%
+                        pct = min(10, 10 * written // expected_bytes)
+                        _set_progress(
+                            kind,
+                            action="import",
+                            percent=pct,
+                            message=f"接收上传文件 {written * 100 // expected_bytes}%",
+                        )
+            _set_progress(kind, action="import", percent=10, message="校验备份文件")
+            if tmp.stat().st_size < 64:
+                raise ValueError("上传文件过小，不是有效备份")
+            peeked = _peek_manifest_kind(tmp)
+            if peeked != kind:
+                raise ValueError(
+                    f"备份类型不匹配：文件是 {peeked or '未知'}，当前是 {kind}"
+                )
+            restored = _import_zip_path(
+                dsn, tmp, kind=kind, filename=canonical_zip_name(kind)
             )
-        if dest.exists():
-            dest.unlink()
-        tmp.replace(dest)
-        _cleanup_other_zips(kind, dest)
-        return {
-            "filename": dest.name,
-            "relPath": f"backups/{kind}/{dest.name}",
-            "bytes": dest.stat().st_size,
-        }
-    except Exception:
-        if tmp.exists():
-            try:
-                tmp.unlink()
-            except OSError:
-                pass
-        raise
+            tmp.replace(dest)
+            _cleanup_other_zips(kind, dest)
+            return {
+                **restored,
+                "filename": dest.name,
+                "relPath": f"backups/{kind}/{dest.name}",
+                "bytes": dest.stat().st_size,
+            }
+        finally:
+            _clear_progress(kind)
+            if tmp.exists():
+                try:
+                    tmp.unlink()
+                except OSError:
+                    pass
 
 
 def import_resource_zip(dsn: str, filename: str, *, kind: str = KIND_RESOURCE) -> dict[str, Any]:
@@ -380,9 +459,25 @@ def import_resource_zip(dsn: str, filename: str, *, kind: str = KIND_RESOURCE) -
     if not dsn:
         raise ValueError("DSN 未配置")
     zip_path = _safe_backup_path(kind, filename)
+    with _OP_LOCK:
+        _set_progress(kind, action="import", percent=0, message="准备导入")
+        try:
+            return _import_zip_path(dsn, zip_path, kind=kind, filename=zip_path.name)
+        finally:
+            _clear_progress(kind)
+
+
+def _import_zip_path(
+    dsn: str, zip_path: Path, *, kind: str, filename: str
+) -> dict[str, Any]:
     t0 = time.perf_counter()
 
-    with zipfile.ZipFile(zip_path, "r") as zf:
+    try:
+        zf_handle = zipfile.ZipFile(zip_path, "r")
+    except zipfile.BadZipFile as e:
+        raise ValueError("不是有效的 zip 备份") from e
+
+    with zf_handle as zf:
         try:
             manifest = json.loads(zf.read("manifest.json").decode("utf-8"))
         except KeyError as e:
@@ -394,18 +489,21 @@ def import_resource_zip(dsn: str, filename: str, *, kind: str = KIND_RESOURCE) -
         tables = [str(t.get("name") or "") for t in (manifest.get("tables") or []) if t.get("name")]
         if not tables:
             raise ValueError("备份没有表")
-        # 表名白名单校验：防止恶意 name 携带路径穿越到备份根目录之外
-        bad = [n for n in tables if not re.fullmatch(r"[A-Za-z0-9_]{1,120}", n)]
+        # 表白名单：只允许本类型固定的表，杜绝备份里夹带任意表名去 TRUNCATE
+        allowed = set(_wanted_tables(kind))
+        bad = [n for n in tables if n not in allowed]
         if bad:
-            raise ValueError(f"备份含非法表名: {bad[:3]}")
+            raise ValueError(f"备份含不支持的表: {bad[:3]}")
+
+        _set_progress(kind, action="import", percent=10, message="解压备份文件")
 
         # 抽出到临时目录再 COPY（大文件流式进 psycopg 更稳）
-        work = backups_root(kind) / f".restore_{_now_stamp()}"
+        work = backups_root(kind) / f".restore_{uuid.uuid4().hex}"
         try:
             work.mkdir(parents=True, exist_ok=True)
             data_dir = work / "data"
             data_dir.mkdir(parents=True, exist_ok=True)
-            for name in tables:
+            for i, name in enumerate(tables, 1):
                 arc = f"data/{name}.bin"
                 if arc not in zf.namelist():
                     raise ValueError(f"备份缺少 {arc}")
@@ -416,15 +514,31 @@ def import_resource_zip(dsn: str, filename: str, *, kind: str = KIND_RESOURCE) -
                         if not chunk:
                             break
                         dst.write(chunk)
+                _set_progress(
+                    kind,
+                    action="import",
+                    percent=10 + 10 * i // len(tables),
+                    message=f"解压 {i}/{len(tables)}",
+                )
 
             sequences: list[dict[str, Any]] = []
             if "sequences.json" in zf.namelist():
                 sequences = json.loads(zf.read("sequences.json").decode("utf-8"))
 
             restored: list[dict[str, Any]] = []
+            replica = False
+            _set_progress(kind, action="import", percent=22, message="连接目标库")
             with psycopg.connect(dsn, connect_timeout=15) as conn:
                 conn.execute("SET statement_timeout = 0")
-                conn.execute("SET session_replication_role = replica")
+                # 该开关需要超级用户；普通账号降级为常规导入（TRUNCATE ... CASCADE 兜底）
+                try:
+                    conn.execute("SET session_replication_role = replica")
+                    replica = True
+                except psycopg.Error as e:
+                    conn.rollback()
+                    logger.warning(
+                        "session_replication_role 不可用，按常规方式导入: %s", e
+                    )
                 # 只清空将恢复的表
                 existing = _list_existing_tables(conn, tuple(tables))
                 missing = [t for t in tables if t not in existing]
@@ -438,7 +552,8 @@ def import_resource_zip(dsn: str, filename: str, *, kind: str = KIND_RESOURCE) -
                                 sql.SQL(", ").join(sql.Identifier(t) for t in existing)
                             )
                         )
-                    for name in tables:
+                    _set_progress(kind, action="import", percent=28, message="清空目标表")
+                    for i, name in enumerate(tables, 1):
                         path = data_dir / f"{name}.bin"
                         with conn.cursor() as cur:
                             with open(path, "rb", buffering=8 * 1024 * 1024) as f:
@@ -456,6 +571,14 @@ def import_resource_zip(dsn: str, filename: str, *, kind: str = KIND_RESOURCE) -
                             sql.SQL("SELECT count(*)::bigint FROM {}").format(sql.Identifier(name))
                         ).fetchone()[0]
                         restored.append({"name": name, "rows": int(cnt)})
+                        _set_progress(
+                            kind,
+                            action="import",
+                            percent=28 + 70 * i // len(tables),
+                            message=f"导入表 {i}/{len(tables)}",
+                        )
+
+                    _set_progress(kind, action="import", percent=99, message="恢复序列")
 
                     for seq in sequences:
                         sname = str(seq.get("name") or "")
@@ -477,11 +600,12 @@ def import_resource_zip(dsn: str, filename: str, *, kind: str = KIND_RESOURCE) -
                             "SELECT setval(%s::regclass, %s, %s)",
                             (sname, last, is_called),
                         )
-                conn.execute("SET session_replication_role = DEFAULT")
+                if replica:
+                    conn.execute("SET session_replication_role = DEFAULT")
 
             elapsed_ms = int((time.perf_counter() - t0) * 1000)
             return {
-                "filename": zip_path.name,
+                "filename": filename,
                 "elapsedMs": elapsed_ms,
                 "tables": restored,
             }

@@ -47,8 +47,6 @@ CODE_RE = re.compile(
 
 _lock = threading.Lock()
 _doc: dict[str, Any] | None = None
-_stop = threading.Event()
-_thread: threading.Thread | None = None
 
 
 def cache_path() -> Path:

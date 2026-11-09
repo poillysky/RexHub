@@ -53,17 +53,11 @@ def build_prefer_filter_sql(
     *,
     prefer_chinese: bool,
     prefer_crack: bool,
-    japan_censored: bool = False,
-    exclude_uncensored: bool | None = None,
-    region: str | None = None,
-    include_optional_boards: bool = True,
 ) -> str:
     """仅中文/破解倾向进 SQL。
 
-    ``region`` / ``japan_censored`` 参数保留兼容，但不拼入 SQL
-   （由 search_resources 应用层白名单过滤）。
+    地区白名单由 search_resources 应用层过滤，不拼入 SQL。
     """
-    del japan_censored, exclude_uncensored, region, include_optional_boards
     parts: list[str] = []
     if prefer_chinese:
         parts.append(f"AND {chinese_prefer_predicate_sql()}")

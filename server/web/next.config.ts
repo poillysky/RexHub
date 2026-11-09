@@ -4,7 +4,7 @@ import type { NextConfig } from 'next';
 
 const webDir = path.dirname(fileURLToPath(import.meta.url));
 const apiProxy =
-  process.env.API_INTERNAL_BASE?.replace(/\/$/, '') || 'http://127.0.0.1:8787';
+  process.env.API_INTERNAL_BASE?.replace(/\/$/, '') || 'http://127.0.0.1:8020';
 
 const nextConfig: NextConfig = {
   output: 'standalone',

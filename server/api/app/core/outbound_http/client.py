@@ -12,7 +12,7 @@ from . import flare
 from .classify import extract_safeid, is_r18_safe_shell, looks_blocked_html, normalize_access
 from .clearance import get_cached_clearance, mark_prefer_flare
 from .flare import flaresolverr_request_full
-from .proxy import resolve_flaresolverr_url, resolve_scrape_proxy_url
+from .proxy import resolve_flaresolverr_url, resolve_proxy_url
 from .shared import (
     _cached_soft_cookies,
     _host_key,
@@ -322,7 +322,7 @@ def _fetch_page_unlocked(
     if merged_cookie:
         headers["Cookie"] = merged_cookie
 
-    proxy = resolve_scrape_proxy_url()
+    proxy = resolve_proxy_url()
     # 对齐 MDCS download.fetchPage：
     # - 全源优先 impersonate curl（含 proxy_flare），失败再 Flare
     # - 勿因 proxy_flare / preferFlare 跳过 curl（否则「全部走 Flare」）

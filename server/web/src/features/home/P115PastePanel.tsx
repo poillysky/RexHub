@@ -49,19 +49,24 @@ export function P115PastePanel({ onBack }: { onBack: () => void }) {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [folder, setFolder] = useState<FolderHint | null>(null);
+  const [configFailed, setConfigFailed] = useState(false);
   const [msg, setMsg] = useState('');
   // 首页粘贴页只进搜索目录；影视/片商走详情页「转存 115」
   const source: P115SaveSource = 'search';
 
   useEffect(() => {
     let cancelled = false;
+    setConfigFailed(false);
     void getP115()
       .then((data) => {
         if (cancelled) return;
         setFolder(folderFor(data, source));
       })
       .catch(() => {
-        if (!cancelled) setFolder(null);
+        if (cancelled) return;
+        // 请求失败不等于「未配置」，分开提示
+        setFolder(null);
+        setConfigFailed(true);
       });
     return () => {
       cancelled = true;
@@ -80,8 +85,10 @@ export function P115PastePanel({ onBack }: { onBack: () => void }) {
   const folderLabel = hasCookie
     ? folder?.folderName ||
       (folder?.folderCid === '0' ? '根目录' : `CID ${folder?.folderCid}`)
-    : '未配置';
-  const destTitle = folderLabel === '未配置' ? '云下载' : folderLabel;
+    : configFailed
+      ? '读取失败'
+      : '未配置';
+  const destTitle = hasCookie ? folderLabel : '云下载';
 
   const onSubmit = useCallback(async () => {
     if (!links.length) {
@@ -101,12 +108,12 @@ export function P115PastePanel({ onBack }: { onBack: () => void }) {
           window.setTimeout(() => {
             onBack();
             tabCtx?.scrollToTab('/settings');
-          }, 400);
+          }, 1200);
         }
         return;
       }
       setMsg(result.message || '转存成功');
-      window.setTimeout(() => onBack(), 700);
+      window.setTimeout(() => onBack(), 2200);
     } catch (err) {
       setMsg(err instanceof Error ? err.message : '转存失败');
     } finally {
@@ -132,14 +139,16 @@ export function P115PastePanel({ onBack }: { onBack: () => void }) {
               <span className="p115-paste__dir-title">{destTitle}</span>
               <span className="p115-paste__dir-sub">
                 {!hasCookie
-                  ? '请到更多 → 115 填写 Cookie，并把仓库目录设为「云下载」'
+                  ? configFailed
+                    ? '配置读取失败，请检查网络后重试；仍可直接转存'
+                    : '请到更多 → 115 填写 Cookie，并把仓库目录设为「云下载」'
                   : willTag
                     ? '直存云下载 · 转存后自动标注密码'
                     : '直存云下载 · 离线 / 分享转存'}
               </span>
             </div>
             <span className={`p115-paste__badge${folderOk ? ' is-ok' : ' is-warn'}`}>
-              {folderOk ? '已就绪' : '需配置'}
+              {folderOk ? '已就绪' : configFailed ? '读取失败' : '需配置'}
             </span>
           </div>
         </div>

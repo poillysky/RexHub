@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppFootnote } from '@/components/ui/AppMsg';
-import type { ResourceDbBackupItem } from '@/lib/api';
+import { cn } from '@/lib/utils';
+import type { DbBackupProgress, ResourceDbBackupItem } from '@/lib/api';
 
 function formatBytes(n: number): string {
   if (!Number.isFinite(n) || n < 0) return '—';
@@ -17,6 +18,7 @@ export function DbDataBackupSection({
   disabled,
   listBackups,
   exportBackup,
+  getProgress,
   uploadImportBackup,
   onMessage,
   onBusyChange,
@@ -29,6 +31,7 @@ export function DbDataBackupSection({
     bytes: number;
     elapsedMs: number;
   }>;
+  getProgress: () => Promise<DbBackupProgress>;
   uploadImportBackup: (file: File) => Promise<{
     filename: string;
     bytes?: number;
@@ -39,8 +42,20 @@ export function DbDataBackupSection({
   onBusyChange?: (busy: boolean) => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  /** busy 是 state，同一帧连点会重复提交；用 ref 做同步重入保护 */
+  const running = useRef(false);
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<'export' | 'import' | null>(null);
+  const [progress, setProgress] = useState<DbBackupProgress | null>(null);
   const [backups, setBackups] = useState<ResourceDbBackupItem[]>([]);
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   function setBusyBoth(next: boolean) {
     setBusy(next);
@@ -59,18 +74,53 @@ export function DbDataBackupSection({
     void refresh();
   }, [refresh]);
 
+  /**
+   * 导出/导入是同步请求，进度只能在请求进行中轮询。
+   * 主流程结束（无论成败）立即停止，避免定时器泄漏。
+   */
+  async function withProgress<T>(
+    action: 'export' | 'import',
+    task: () => Promise<T>,
+  ): Promise<T> {
+    const stop = { done: false };
+    setProgress(null);
+    void (async () => {
+      while (!stop.done) {
+        try {
+          const p = await getProgress();
+          if (stop.done || !mounted.current) return;
+          if (p.running && p.action === action) setProgress(p);
+        } catch {
+          /* 进度接口失败不影响导出/导入本身 */
+        }
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    })();
+    try {
+      return await task();
+    } finally {
+      stop.done = true;
+      if (mounted.current) setProgress(null);
+    }
+  }
+
   async function onExport() {
+    if (running.current) return;
+    running.current = true;
+    setPending('export');
     setBusyBoth(true);
     onMessage(`正在导出资源数据到 ${dirHint}…`);
     try {
-      const r = await exportBackup();
+      const r = await withProgress('export', exportBackup);
       await refresh();
       const sec = (r.elapsedMs / 1000).toFixed(1);
       onMessage(`已导出 ${r.filename}（${formatBytes(r.bytes)}，${sec}s）`);
     } catch (e) {
       onMessage(e instanceof Error ? e.message : '导出失败');
     } finally {
+      setPending(null);
       setBusyBoth(false);
+      running.current = false;
     }
   }
 
@@ -78,6 +128,10 @@ export function DbDataBackupSection({
     if (!file) return;
     if (!/\.zip$/i.test(file.name)) {
       onMessage('请选择 .zip 备份文件');
+      return;
+    }
+    if (running.current) {
+      if (fileRef.current) fileRef.current.value = '';
       return;
     }
     if (
@@ -88,17 +142,21 @@ export function DbDataBackupSection({
       if (fileRef.current) fileRef.current.value = '';
       return;
     }
+    running.current = true;
+    setPending('import');
     setBusyBoth(true);
     onMessage(`正在上传并导入 ${file.name}…`);
     try {
-      const r = await uploadImportBackup(file);
+      const r = await withProgress('import', () => uploadImportBackup(file));
       await refresh();
       const sec = (r.elapsedMs / 1000).toFixed(1);
       onMessage(`已导入 ${r.filename}（${r.tables.length} 张表，${sec}s）`);
     } catch (e) {
       onMessage(e instanceof Error ? e.message : '导入失败');
     } finally {
+      setPending(null);
       setBusyBoth(false);
+      running.current = false;
       if (fileRef.current) fileRef.current.value = '';
     }
   }
@@ -115,7 +173,7 @@ export function DbDataBackupSection({
           disabled={locked}
           onClick={() => void onExport()}
         >
-          {busy ? '处理中…' : '导出 zip'}
+          {pending === 'export' ? '导出中…' : '导出 zip'}
         </button>
         <button
           type="button"
@@ -123,7 +181,7 @@ export function DbDataBackupSection({
           disabled={locked}
           onClick={() => fileRef.current?.click()}
         >
-          导入 zip
+          {pending === 'import' ? '导入中…' : '导入 zip'}
         </button>
         <input
           ref={fileRef}
@@ -141,6 +199,36 @@ export function DbDataBackupSection({
           刷新列表
         </button>
       </div>
+      {pending ? (
+        <div className="settings-backup-progress" aria-live="polite">
+          <div
+            className={cn(
+              'settings-backup-progress__bar',
+              (!progress || progress.percent <= 0) && 'is-indeterminate',
+            )}
+            role="progressbar"
+            aria-label={pending === 'export' ? '导出进度' : '导入进度'}
+            aria-valuenow={
+              progress && progress.percent > 0 ? progress.percent : undefined
+            }
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <span
+              style={
+                progress && progress.percent > 0
+                  ? { width: `${progress.percent}%` }
+                  : undefined
+              }
+            />
+          </div>
+          <p className="settings-backup-progress__text">
+            {pending === 'export' ? '导出' : '导入'}
+            {progress?.message ? ` · ${progress.message}` : '中'}
+            {progress && progress.percent > 0 ? ` ${progress.percent}%` : ''}
+          </p>
+        </div>
+      ) : null}
       {backups.length > 0 ? (
         <ul className="settings-group" style={{ marginTop: 8 }}>
           {backups.map((b) => (

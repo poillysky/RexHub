@@ -50,12 +50,17 @@ export function StreamPlayModal({
   total,
   reason = '',
   loading = false,
+  searching = false,
   error = '',
   hint = '',
   footerHint = '',
   subtitles = [],
   subtitleLoading = false,
   subtitleReason = '',
+  season,
+  episode,
+  onSeasonChange,
+  onEpisodeChange,
   onRetry,
   onNeedAggregate,
   onClose,
@@ -66,12 +71,19 @@ export function StreamPlayModal({
   total: number;
   reason?: string;
   loading?: boolean;
+  /** 还有片源来源在请求中：首屏显示“正在匹配”，已有列表时显示追加中 */
+  searching?: boolean;
   error?: string;
   hint?: string;
   footerHint?: string;
   subtitles?: MediaSubtitle[];
   subtitleLoading?: boolean;
   subtitleReason?: string;
+  /** 剧集选择：传入回调才显示季/集输入 */
+  season?: number;
+  episode?: number;
+  onSeasonChange?: (value: number) => void;
+  onEpisodeChange?: (value: number) => void;
   onRetry?: () => void;
   onNeedAggregate?: () => void;
   onClose: () => void;
@@ -155,6 +167,11 @@ export function StreamPlayModal({
     void import('hls.js').then(({ default: Hls }) => {
       if (cancelled || !Hls.isSupported()) return;
       hls = new Hls({ enableWorker: true });
+      // 非原生 HLS 的失败不会触发 video.onError，需要监听 hls 事件
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (!data.fatal) return;
+        setPlayError('视频流解析失败，可换一条片源或外部打开。');
+      });
       hls.loadSource(playing.url);
       hls.attachMedia(video);
     });
@@ -171,6 +188,37 @@ export function StreamPlayModal({
       onClose={onClose}
       cardClassName={playing ? 'stream-modal stream-modal--player' : 'stream-modal'}
     >
+      {!playing && onSeasonChange && onEpisodeChange ? (
+        <div
+          className="stream-season"
+          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 2px 10px' }}
+        >
+          <span>季</span>
+          <input
+            type="number"
+            min={1}
+            max={99}
+            inputMode="numeric"
+            value={season ?? 1}
+            style={{ width: 64 }}
+            onChange={(event) =>
+              onSeasonChange(Math.max(1, Math.min(99, Number(event.target.value) || 1)))
+            }
+          />
+          <span>集</span>
+          <input
+            type="number"
+            min={1}
+            max={999}
+            inputMode="numeric"
+            value={episode ?? 1}
+            style={{ width: 64 }}
+            onChange={(event) =>
+              onEpisodeChange(Math.max(1, Math.min(999, Number(event.target.value) || 1)))
+            }
+          />
+        </div>
+      ) : null}
       {playing ? (
         <div className="stream-player">
           <video
@@ -253,14 +301,23 @@ export function StreamPlayModal({
         </div>
       ) : visible.length === 0 ? (
         <div className="stream-modal__state">
-          <span>{reason || '没有找到可播放的片源'}</span>
-          {hint ? <span className="stream-modal__hint">{hint}</span> : null}
-          {onNeedAggregate ? (
-            <button type="button" className="stream-modal__plain" onClick={onNeedAggregate}>
-              <RefreshCw size={14} strokeWidth={2.3} aria-hidden />
-              从全部插件找片源
-            </button>
-          ) : null}
+          {searching ? (
+            <>
+              <LoaderCircle size={22} strokeWidth={2.2} className="media-detail__cta-spin" />
+              <span>正在匹配片源…</span>
+            </>
+          ) : (
+            <>
+              <span>{reason || '没有找到可播放的片源'}</span>
+              {hint ? <span className="stream-modal__hint">{hint}</span> : null}
+              {onNeedAggregate ? (
+                <button type="button" className="stream-modal__plain" onClick={onNeedAggregate}>
+                  <RefreshCw size={14} strokeWidth={2.3} aria-hidden />
+                  从全部插件找片源
+                </button>
+              ) : null}
+            </>
+          )}
         </div>
       ) : (
         <>
@@ -321,6 +378,12 @@ export function StreamPlayModal({
               </li>
             ))}
           </ul>
+          {searching ? (
+            <p className="stream-modal__hint stream-modal__searching">
+              <LoaderCircle size={13} strokeWidth={2.2} className="media-detail__cta-spin" aria-hidden />
+              正在匹配更多片源…
+            </p>
+          ) : null}
           {total > visible.length ? (
             <p className="stream-modal__hint">
               仅展示前 {visible.length} 条，共 {total} 条。

@@ -3,19 +3,8 @@
  *
  * 由 lib/api.ts 拆分而来；对外统一从 `@/lib/api` 导入，请不要直接引用本文件。
  */
-import { API_BASE, apiFetch, parseError } from './client';
+import { apiFetch, parseError } from './client';
 import type { Envelope } from './client';
-import type {
-  AuthUser,
-  BrowseResult,
-  FilterSize,
-  FilterTime,
-  MatchMode,
-  ResourceDbConfig,
-  ResourceItem,
-  SearchResult,
-  SortType,
-} from '@/types/resource';
 
 /** 115 转存入口：搜索 / 影视 / 片商 */
 export type P115SaveSource = 'search' | 'media' | 'maker';
@@ -39,7 +28,6 @@ export type P115TargetFolder = {
 };
 
 export type P115Config = {
-  enabled: boolean;
   folderCid: string;
   folderName: string;
   label: string;
@@ -107,7 +95,6 @@ export async function putP115(body: {
       label: body.label ?? '',
       targets: body.targets,
       validate: body.validate ?? true,
-      enabled: true,
     }),
   });
   if (!res.ok) throw new Error(await parseError(res));
@@ -445,7 +432,7 @@ export async function completeP115Qrcode(body: {
   uid: string;
   app?: string;
   save?: boolean;
-}): Promise<P115Config & { cookie?: string; saved?: boolean; message?: string }> {
+}): Promise<P115Config & { saved?: boolean; message?: string }> {
   const res = await apiFetch('/settings/p115/qrcode/complete', {
     method: 'POST',
     body: JSON.stringify({
@@ -456,7 +443,7 @@ export async function completeP115Qrcode(body: {
   });
   if (!res.ok) throw new Error(await parseError(res));
   const json = (await res.json()) as Envelope<
-    P115Config & { cookie?: string; saved?: boolean }
+    P115Config & { saved?: boolean }
   > & { message: string };
   return { ...json.data, message: json.message };
 }

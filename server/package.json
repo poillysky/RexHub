@@ -5,7 +5,7 @@
   "description": "RexHub monorepo：iOS App + PWA 前端（Next.js）+ API（FastAPI）",
   "scripts": {
     "dev": "bash scripts/dev.sh",
-    "dev:api": "cd api && .venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8787 --reload",
+    "dev:api": "cd api && .venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8020 --reload",
     "dev:web": "npm run dev --prefix web",
     "build": "npm run build --prefix web",
     "start": "npm run start --prefix web",

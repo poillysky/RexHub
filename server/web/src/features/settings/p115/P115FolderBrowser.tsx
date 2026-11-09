@@ -20,6 +20,7 @@ export function P115FolderBrowser({ p }: { p: P115PanelState }) {
     targets,
     extractConfig,
     locked,
+    settingsLocked,
   } = p;
 
   const isExtract = browseSource === 'extract';
@@ -41,13 +42,14 @@ export function P115FolderBrowser({ p }: { p: P115PanelState }) {
           type="button"
           className="app-btn-primary"
           style={{ flex: 1 }}
+          disabled={settingsLocked}
           onClick={() => {
             const cur = folderPath[folderPath.length - 1];
             if (cur) {
               selectFolder(cur);
               return;
             }
-            selectFolder({ cid: '0', name: '根目录' });
+            selectFolder({ cid: '0', name: '' });
           }}
         >
           {folderPath.length > 0 ? '选用当前路径' : '选用根目录'}
@@ -112,6 +114,7 @@ export function P115FolderBrowser({ p }: { p: P115PanelState }) {
                   <button
                     type="button"
                     className={cn('p115-browser__pick', selected && 'is-on')}
+                    disabled={settingsLocked}
                     onClick={() => selectFolder(f)}
                   >
                     {selected ? '已选' : '选用'}

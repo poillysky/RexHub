@@ -43,12 +43,17 @@ type DetailBack = {
   from: Exclude<DetailFrom, 'person'>;
   chart?: string;
   chartTab?: MediaHubTab;
+  /** 来源榜单页码 */
+  chartPage?: number;
+  /** 来源搜索关键词与页码 */
+  searchQ?: string;
+  searchPage?: number;
 };
 
 type Stack =
   | { kind: 'hub' }
-  | { kind: 'search' }
-  | { kind: 'chart'; tab: MediaHubTab; chart?: string }
+  | { kind: 'search'; q?: string; page?: number }
+  | { kind: 'chart'; tab: MediaHubTab; chart?: string; page?: number }
   | {
       kind: 'detail';
       category: MediaCategoryId;
@@ -57,6 +62,9 @@ type Stack =
       from: DetailFrom;
       chart?: string;
       chartTab?: MediaHubTab;
+      chartPage?: number;
+      searchQ?: string;
+      searchPage?: number;
       /** 从影人作品页点进详情时，返回用 */
       person?: MediaCastPerson;
       /** 影人所属数据源（作品可能跨源，返回影人页要还原） */
@@ -78,6 +86,8 @@ type Stack =
 export function MediaScreen() {
   const tabCtx = useTabNavigation();
   const { toast } = useOverlay();
+  const activeTab = tabCtx?.activeTab;
+  const tabReselect = tabCtx?.tabReselect ?? 0;
   const queryClient = useQueryClient();
   const [stack, setStack] = useState<Stack>({ kind: 'hub' });
   const [hubTab, setHubTab] = useState<HubTab>('movie');
@@ -91,15 +101,22 @@ export function MediaScreen() {
     'app-hub media-hub-root',
   );
 
+  // 切换分类后回到内容顶部，避免停在上一个分类的滚动位置
+  useEffect(() => {
+    hubCover.ref.current
+      ?.querySelector('.app-hub__scroll')
+      ?.scrollTo({ top: 0 });
+  }, [hubTab, hubCover.ref]);
+
   const exploring = hubTab === 'explore';
   const hubCategory: MediaHubTab = exploring ? 'movie' : hubTab;
   // 搜索页默认数据源；影人页则跟随详情源
   const source: MediaSourceId = 'tmdb';
 
   useEffect(() => {
-    if (!tabCtx || tabCtx.activeTab !== '/media') return;
-    if (tabCtx.tabReselect > 0) setStack({ kind: 'hub' });
-  }, [tabCtx?.tabReselect, tabCtx?.activeTab]);
+    if (activeTab !== '/media' || tabReselect === 0) return;
+    startTransition(() => setStack({ kind: 'hub' }));
+  }, [activeTab, tabReselect]);
 
   const openDetail = useCallback(
     async (
@@ -109,6 +126,9 @@ export function MediaScreen() {
       opts?: {
         chart?: string;
         chartTab?: MediaHubTab;
+        chartPage?: number;
+        searchQ?: string;
+        searchPage?: number;
         person?: MediaCastPerson;
         personSource?: MediaSourceId;
         detailBack?: DetailBack;
@@ -124,6 +144,9 @@ export function MediaScreen() {
         from,
         chart: opts?.chart,
         chartTab: opts?.chartTab,
+        chartPage: opts?.chartPage,
+        searchQ: opts?.searchQ,
+        searchPage: opts?.searchPage,
         person: opts?.person,
         personSource: opts?.personSource,
         detailBack: opts?.detailBack,
@@ -277,11 +300,20 @@ export function MediaScreen() {
       >
         <MediaSearchBody
           source={source}
+          initialQuery={stack.q}
+          initialPage={stack.page}
+          onStateChange={({ q, page }) =>
+            setStack({ kind: 'search', q, page })
+          }
           onOpen={(item) =>
             void openDetail(
               item.mediaType === 'tv' ? 'tv' : 'movie',
               item,
               'search',
+              {
+                searchQ: stack.q,
+                searchPage: stack.page,
+              },
             )
           }
         />
@@ -302,12 +334,25 @@ export function MediaScreen() {
           key={`${stack.tab}-${stack.chart || ''}`}
           tab={stack.tab}
           initialChart={stack.chart}
+          initialPage={stack.page}
+          onPageChange={(page) =>
+            setStack({
+              kind: 'chart',
+              tab: stack.tab,
+              chart: stack.chart,
+              page,
+            })
+          }
           onOpen={(item) =>
             void openDetail(
               chartItemCategory(stack.tab, item),
               item,
               'chart',
-              { chart: stack.chart, chartTab: stack.tab },
+              {
+                chart: stack.chart,
+                chartTab: stack.tab,
+                chartPage: stack.page,
+              },
             )
           }
         />
@@ -356,12 +401,14 @@ export function MediaScreen() {
         });
         return;
       }
-      if (stack.from === 'search') setStack({ kind: 'search' });
-      else if (stack.from === 'chart') {
+      if (stack.from === 'search') {
+        setStack({ kind: 'search', q: stack.searchQ, page: stack.searchPage });
+      } else if (stack.from === 'chart') {
         setStack({
           kind: 'chart',
           tab: stack.chartTab || 'movie',
           chart: stack.chart,
+          page: stack.chartPage,
         });
       } else setStack({ kind: 'hub' });
     };
@@ -381,6 +428,7 @@ export function MediaScreen() {
         onBack={onBack}
       >
         <MediaDetailBody
+          key={`${show.source}-${show.id}`}
           item={show}
           enriching={loadingDetail && !stack.detail}
           onPtSearch={(mode) =>
@@ -394,6 +442,9 @@ export function MediaScreen() {
               {
                 chart: stack.chart,
                 chartTab: stack.chartTab,
+                chartPage: stack.chartPage,
+                searchQ: stack.searchQ,
+                searchPage: stack.searchPage,
                 person: stack.person,
                 personSource: stack.personSource,
                 detailBack: stack.detailBack,
@@ -421,6 +472,9 @@ export function MediaScreen() {
                     from,
                     chart: stack.chart,
                     chartTab: stack.chartTab,
+                    chartPage: stack.chartPage,
+                    searchQ: stack.searchQ,
+                    searchPage: stack.searchPage,
                   },
                 }),
               );

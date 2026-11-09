@@ -4,6 +4,7 @@
 """
 
 
+import json
 import time
 from typing import Any
 
@@ -195,11 +196,56 @@ def market(repo_id: str = "") -> dict[str, Any]:
     return {"plugins": plugins, "errors": errors, "fetched_at": int(time.time())}
 
 
+_PUBLIC_KEYS = (
+    "id",
+    "name",
+    "description",
+    "author",
+    "category",
+    "protocol",
+    "api_version",
+    "version",
+    "installed_version",
+    "capabilities",
+    "endpoints",
+    "permissions",
+    "enabled",
+    "running",
+    "proxy",
+    "proxy_available",
+    "show_in_drama",
+    "ui",
+    "error",
+    "port",
+    "base_url",
+    "uptime",
+    "restarts",
+    "started_at",
+    "source_repo",
+    "source_repo_url",
+    "healthcheck",
+    "widget_meta",
+)
+
+
+def _public_plugin(row: dict[str, Any]) -> dict[str, Any]:
+    """会话可读的插件信息：剔除配置、安装路径与运行时私密字段。"""
+    status = runtime.status(row)
+    info = {key: status[key] for key in _PUBLIC_KEYS if key in status}
+    runtime_info = status.get("runtime") if isinstance(status.get("runtime"), dict) else {}
+    info["runtime"] = {
+        "type": str(runtime_info.get("type") or "isolated"),
+        "engine": str(runtime_info.get("engine") or ""),
+    }
+    info["installed"] = True
+    return info
+
+
 def installed() -> list[dict[str, Any]]:
     proxy_available = bool(network_store.proxy_url())
     rows = []
     for row in store.list_plugins():
-        info = runtime.status(row)
+        info = _public_plugin(row)
         info["proxy_available"] = proxy_available
         rows.append(info)
     return rows
@@ -366,6 +412,9 @@ def update(plugin_id: str) -> dict[str, Any]:
 
 
 def rollback(plugin_id: str) -> dict[str, Any]:
+    current = store.get_plugin(plugin_id)
+    if not str(current.get("previous_version") or "") or not str(current.get("previous_path") or ""):
+        raise installer.InstallError("没有可回滚的版本")
     runtime.stop(plugin_id)
     row = installer.rollback(plugin_id)
     info = runtime.start(row)
@@ -391,6 +440,7 @@ def disable(plugin_id: str) -> dict[str, Any]:
 
 
 def restart(plugin_id: str) -> dict[str, Any]:
+    runtime.stop(plugin_id)
     row = store.get_plugin(plugin_id)
     info, error = _start_and_check(row)
     if error:
@@ -405,9 +455,43 @@ def uninstall(plugin_id: str, *, purge_data: bool = False) -> dict[str, Any]:
     return {"ok": True, "data_kept": not purge_data}
 
 
+def _config_fields(row: dict[str, Any]) -> list[dict[str, Any]]:
+    fields = row.get("manifest_config") if isinstance(row.get("manifest_config"), list) else []
+    if not fields:
+        manifest_file = store.install_path(row) / "manifest.json"
+        try:
+            raw = json.loads(manifest_file.read_text("utf-8"))
+            fields = manifest.normalize_manifest(raw)["config"]
+        except (OSError, ValueError):
+            fields = []
+    return fields
+
+
+def _secret_keys(fields: list[dict[str, Any]]) -> set[str]:
+    keys = set()
+    for field in fields:
+        if not isinstance(field, dict):
+            continue
+        key = str(field.get("key") or "")
+        if key and (field.get("secret") or field.get("type") == "password"):
+            keys.add(key)
+    return keys
+
+
 def save_config(plugin_id: str, config: dict[str, Any]) -> dict[str, Any]:
     row = store.get_plugin(plugin_id)
-    clean = {str(key): str(value) for key, value in config.items()}
+    old = row.get("config") if isinstance(row.get("config"), dict) else {}
+    secrets = _secret_keys(_config_fields(row))
+    clean = {str(key): str(value) for key, value in old.items()}
+    for key, value in config.items():
+        name = str(key).strip()
+        if not name:
+            continue
+        text = "" if value is None else str(value)
+        # 密钥字段留空表示沿用已保存值，避免面板回显导致误清空
+        if name in secrets and not text and old.get(name):
+            continue
+        clean[name] = text
     store.patch_plugin(plugin_id, config=clean)
     if runtime.status(row).get("running"):
         row = store.get_plugin(plugin_id)
@@ -447,17 +531,12 @@ def set_shortdrama_visible(plugin_id: str, enabled: bool) -> dict[str, Any]:
 
 def config_schema(plugin_id: str) -> dict[str, Any]:
     row = store.get_plugin(plugin_id)
-    fields = row.get("manifest_config") if isinstance(row.get("manifest_config"), list) else []
-    if not fields:
-        manifest_file = store.install_path(row) / "manifest.json"
-        try:
-            import json
-
-            raw = json.loads(manifest_file.read_text("utf-8"))
-            fields = manifest.normalize_manifest(raw)["config"]
-        except (OSError, ValueError):
-            fields = []
-    return {"config": row.get("config") or {}, "fields": fields}
+    fields = _config_fields(row)
+    config = row.get("config") if isinstance(row.get("config"), dict) else {}
+    secrets = _secret_keys(fields)
+    saved = sorted(key for key in secrets if str(config.get(key) or ""))
+    masked = {key: ("" if key in secrets else value) for key, value in config.items()}
+    return {"config": masked, "fields": fields, "saved": saved}
 
 
 def capabilities() -> list[dict[str, Any]]:

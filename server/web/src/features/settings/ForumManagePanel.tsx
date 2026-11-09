@@ -22,6 +22,7 @@ import {
 } from '@/lib/forumRegionDefaults';
 import { AppPush } from '@/components/ui/AppPush';
 import { AppMsg } from '@/components/ui/AppMsg';
+import { useAuth } from '@/providers/AuthProvider';
 import { ResourceDbPanel } from './ResourceDbPanel';
 
 type Stack =
@@ -37,6 +38,7 @@ type Stack =
     };
 
 export function ForumManagePanel({ onBack }: { onBack: () => void }) {
+  const { isAdmin } = useAuth();
   const [stack, setStack] = useState<Stack>({ kind: 'hub' });
   const [overrides, setOverrides] = useState<Record<string, ForumRegionId>>({});
   const [msg, setMsg] = useState('');
@@ -243,24 +245,26 @@ export function ForumManagePanel({ onBack }: { onBack: () => void }) {
       title="色花堂"
       onBack={onBack}
       extraRows={
-        <li>
-          <button
-            type="button"
-            className="settings-nav"
-            onClick={() => setStack({ kind: 'forum' })}
-          >
-            <span className="settings-nav__icon settings-nav__icon--blue" aria-hidden>
-              <MessagesSquare size={16} strokeWidth={2.25} />
-            </span>
-            <span className="settings-nav__main">
-              <span className="settings-nav__title">论坛管理</span>
-              <span className="settings-nav__desc">
-                {SEHUATANG_FORUM.length} 大区 · {boardCount} 板块
+        isAdmin ? (
+          <li>
+            <button
+              type="button"
+              className="settings-nav"
+              onClick={() => setStack({ kind: 'forum' })}
+            >
+              <span className="settings-nav__icon settings-nav__icon--blue" aria-hidden>
+                <MessagesSquare size={16} strokeWidth={2.25} />
               </span>
-            </span>
-            <ChevronRight className="settings-nav__chev" size={18} strokeWidth={2.25} />
-          </button>
-        </li>
+              <span className="settings-nav__main">
+                <span className="settings-nav__title">论坛管理</span>
+                <span className="settings-nav__desc">
+                  {SEHUATANG_FORUM.length} 大区 · {boardCount} 板块
+                </span>
+              </span>
+              <ChevronRight className="settings-nav__chev" size={18} strokeWidth={2.25} />
+            </button>
+          </li>
+        ) : null
       }
     />
   );

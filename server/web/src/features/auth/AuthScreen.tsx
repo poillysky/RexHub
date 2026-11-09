@@ -9,21 +9,41 @@ import {
 } from 'react';
 import Image from 'next/image';
 import { Eye, EyeOff } from 'lucide-react';
+import { AppCenterModal } from '@/components/ui/AppCenterModal';
 import { BackButton } from '@/components/ui/BackButton';
 import { useAuth } from '@/providers/AuthProvider';
-import './login.css';
 
 type Phase = 'gate' | 'login' | 'register';
 type NavDir = 'push' | 'pop';
+type DocKind = 'terms' | 'privacy';
 
 const PUSH_MS = 360;
 const BRAND = 'RexHub';
+
+const DOC_TITLES: Record<DocKind, string> = {
+  terms: '用户协议',
+  privacy: '隐私政策',
+};
+
+const DOC_TEXT: Record<DocKind, string[]> = {
+  terms: [
+    '本系统为私人自部署工具，仅限持有有效邀请码的用户注册使用。',
+    '请勿转借账号或邀请码，请勿用于任何违法用途。',
+    '管理员可随时停用或删除账号。',
+  ],
+  privacy: [
+    '账号、会话与设置仅保存在部署者自己的服务器（SQLite 元库），不会上传到外部服务。',
+    '本系统不接入第三方统计或广告。',
+    '搜索、播放会请求你在设置页配置的第三方服务，其数据处理受对应服务条款约束。',
+    '管理员删除账号时会一并删除该账号的会话记录。',
+  ],
+};
 
 /**
  * 色花登录：门闸 → Push 登录/注册（Cookie 会话认证）
  */
 export function AuthScreen() {
-  const { status, user, login, register, logout, isAdmin } = useAuth();
+  const { login, register } = useAuth();
   const [phase, setPhase] = useState<Phase>('gate');
   const [prevPhase, setPrevPhase] = useState<Phase | null>(null);
   const [navDir, setNavDir] = useState<NavDir | null>(null);
@@ -33,7 +53,8 @@ export function AuthScreen() {
   const [inviteCode, setInviteCode] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [agreed, setAgreed] = useState(true);
+  const [agreed, setAgreed] = useState(false);
+  const [doc, setDoc] = useState<DocKind | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [gateActionsSettled, setGateActionsSettled] = useState(false);
@@ -106,6 +127,7 @@ export function AuthScreen() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    if (submitting) return;
     if (!requireAgree()) return;
     if (phase === 'register' && password !== confirmPassword) {
       setError('两次输入的密码不一致');
@@ -173,11 +195,19 @@ export function AuthScreen() {
             />
             <span>
               已阅读并同意{' '}
-              <button type="button" className="login-terms-link">
+              <button
+                type="button"
+                className="login-terms-link"
+                onClick={() => setDoc('terms')}
+              >
                 用户协议
               </button>{' '}
               &{' '}
-              <button type="button" className="login-terms-link">
+              <button
+                type="button"
+                className="login-terms-link"
+                onClick={() => setDoc('privacy')}
+              >
                 隐私政策
               </button>
             </span>
@@ -286,7 +316,6 @@ export function AuthScreen() {
                   autoCapitalize="none"
                   autoCorrect="off"
                   spellCheck={false}
-                  inputMode="numeric"
                   placeholder="请输入注册码"
                   value={inviteCode}
                   onChange={(e) => setInviteCode(e.target.value)}
@@ -318,8 +347,7 @@ export function AuthScreen() {
                     setConfirmPassword('');
                     setInviteCode('');
                     setShowConfirmPassword(false);
-                    setError('');
-                    setPhase('register');
+                    navigate('register', 'push');
                   }}
                 >
                   立即注册
@@ -330,10 +358,7 @@ export function AuthScreen() {
                 已有账号？
                 <button
                   type="button"
-                  onClick={() => {
-                    setError('');
-                    setPhase('login');
-                  }}
+                  onClick={() => navigate('login', 'pop')}
                 >
                   去登录
                 </button>
@@ -356,42 +381,6 @@ export function AuthScreen() {
     if (role === 'current') parts.push(`login-layer--enter-${navDir}`);
     else parts.push(`login-layer--exit-${navDir}`);
     return parts.join(' ');
-  }
-
-  if (status === 'authenticated' && user) {
-    return (
-      <div className="login-screen">
-        <div className="login-gate">
-          <div className="login-gate-brand">
-            <div className="login-app-icon" aria-hidden>
-              <Image
-                src="/brand/logo.png"
-                alt=""
-                width={144}
-                height={144}
-                className="login-app-icon-img"
-                priority
-              />
-            </div>
-            <h1 className="login-brand">{BRAND}</h1>
-            <p className="login-tagline">
-              已登录 · {user.username}
-              {isAdmin ? ' · 管理员' : ' · 普通用户'}
-            </p>
-          </div>
-          <div className="login-gate-spacer" aria-hidden />
-          <div className="login-gate-actions login-gate-actions--settled">
-            <button
-              type="button"
-              className="login-btn-secondary"
-              onClick={() => void logout()}
-            >
-              退出登录
-            </button>
-          </div>
-        </div>
-      </div>
-    );
   }
 
   const currentKey = isForm ? 'form' : 'gate';
@@ -420,6 +409,28 @@ export function AuthScreen() {
           {renderPhase(phase)}
         </div>
       </div>
+      <AppCenterModal
+        open={doc !== null}
+        title={doc ? DOC_TITLES[doc] : ''}
+        onClose={() => setDoc(null)}
+        footer={
+          <button
+            type="button"
+            className="app-btn-primary app-btn-block"
+            onClick={() => setDoc(null)}
+          >
+            我知道了
+          </button>
+        }
+      >
+        {doc ? (
+          <ul className="login-doc-list">
+            {DOC_TEXT[doc].map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        ) : null}
+      </AppCenterModal>
     </div>
   );
 }

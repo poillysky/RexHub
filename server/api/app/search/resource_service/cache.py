@@ -1,6 +1,7 @@
 """搜索结果缓存与 pg_trgm 可用性探测。"""
 
 
+import threading
 import time
 from typing import Any
 
@@ -11,24 +12,36 @@ _cjk_bigram_ok: bool | None = None
 _SEARCH_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 _SEARCH_CACHE_TTL = 30.0
 _SEARCH_CACHE_MAX = 64
+_CACHE_LOCK = threading.RLock()
 
 
 def _search_cache_get(key: str) -> dict[str, Any] | None:
-    hit = _SEARCH_CACHE.get(key)
-    if not hit:
-        return None
-    ts, data = hit
-    if time.monotonic() - ts > _SEARCH_CACHE_TTL:
-        _SEARCH_CACHE.pop(key, None)
-        return None
-    return data
+    with _CACHE_LOCK:
+        hit = _SEARCH_CACHE.get(key)
+        if not hit:
+            return None
+        ts, data = hit
+        if time.monotonic() - ts > _SEARCH_CACHE_TTL:
+            _SEARCH_CACHE.pop(key, None)
+            return None
+        return data
 
 
 def _search_cache_set(key: str, data: dict[str, Any]) -> None:
-    if len(_SEARCH_CACHE) >= _SEARCH_CACHE_MAX:
-        oldest = min(_SEARCH_CACHE.items(), key=lambda kv: kv[1][0])[0]
-        _SEARCH_CACHE.pop(oldest, None)
-    _SEARCH_CACHE[key] = (time.monotonic(), data)
+    with _CACHE_LOCK:
+        if len(_SEARCH_CACHE) >= _SEARCH_CACHE_MAX:
+            oldest = min(_SEARCH_CACHE.items(), key=lambda kv: kv[1][0])[0]
+            _SEARCH_CACHE.pop(oldest, None)
+        _SEARCH_CACHE[key] = (time.monotonic(), data)
+
+
+def reset_cache_state() -> None:
+    """换库后丢弃旧库的探测结果与搜索结果，避免沿用错误的能力判断。"""
+    global _trgm_ok, _cjk_bigram_ok
+    _trgm_ok = None
+    _cjk_bigram_ok = None
+    with _CACHE_LOCK:
+        _SEARCH_CACHE.clear()
 
 
 def pg_trgm_available() -> bool:

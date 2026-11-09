@@ -7,17 +7,6 @@
 /**
  * 精简 API 客户端 — 对接 api（色花同协议），非整包复制 sehua 前端。
  */
-import type {
-  AuthUser,
-  BrowseResult,
-  FilterSize,
-  FilterTime,
-  MatchMode,
-  ResourceDbConfig,
-  ResourceItem,
-  SearchResult,
-  SortType,
-} from '@/types/resource';
 
 export const API_BASE =
   typeof window === 'undefined'
@@ -59,6 +48,15 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
   if (isForm && headers.has('Content-Type')) {
     headers.delete('Content-Type');
   }
-  return fetch(`${API_BASE}${path}`, { ...init, headers, credentials: 'include' });
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    headers,
+    credentials: 'include',
+  });
+  // 会话过期统一通知 AuthProvider 退出登录，避免各页面各写一套
+  if (res.status === 401 && typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('rexhub:unauthorized'));
+  }
+  return res;
 }
 

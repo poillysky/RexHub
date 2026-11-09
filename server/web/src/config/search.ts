@@ -30,7 +30,6 @@ export const DEFAULT_SORT_TYPE: SortType = "relevance";
 export const DEFAULT_FILTER_TIME: FilterTime = "all";
 export const DEFAULT_FILTER_SIZE: FilterSize = "all";
 export const DEFAULT_MATCH_MODE: MatchMode = "exact";
-export const SEARCH_PAGE_SIZE = 10;
 /** 范围聚合搜索每页条数（服务端分页） */
 export const SCOPE_PAGE_SIZE = 20;
 /**
@@ -42,12 +41,6 @@ export const BROWSE_LATEST_MAX = 500;
 /** Bitmagnet / 色花 搜索卡片最多展示的核心文件行数 */
 export const SEARCH_DISPLAY_FILES_MAX = 3;
 export const SEARCH_KEYWORD_LENGTH_MIN = 2;
-/** 番号搜索底池一次拉取上限（无中文/破解，客户端再 filter） */
-export const CODE_SEARCH_POOL_SIZE = 80;
-/** 前缀番号网格每页条数 */
-export const PREFIX_CODE_PAGE_SIZE = 60;
-/** 前缀翻页上限 */
-export const BROWSE_PAGE_MAX = 5000;
 
 export function normalizeSortType(v?: string | null): SortType {
   if (v && (SEARCH_PARAMS.sortType as readonly string[]).includes(v)) {

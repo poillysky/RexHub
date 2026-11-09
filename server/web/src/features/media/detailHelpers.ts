@@ -1,24 +1,7 @@
 import {
   type MediaCastPerson,
   type MediaItem,
-  type PansouLink,
 } from '@/lib/api';
-import { linkKindOf } from '@/lib/resourceView';
-
-export type CloudSearchKind = 'pansou' | 'cloudsaver';
-
-export function is115ShareLink(lk: PansouLink): boolean {
-  return linkKindOf(lk.url) === '115share';
-}
-
-export function isOfflineSaveLink(lk: PansouLink): boolean {
-  const kind = linkKindOf(lk.url);
-  return kind === 'magnet' || kind === 'ed2k';
-}
-
-export function canSaveTo115(lk: PansouLink): boolean {
-  return is115ShareLink(lk) || isOfflineSaveLink(lk);
-}
 
 export function pickAka(item: MediaItem): string[] {
   return [item.originalTitle, ...(item.aka || [])]

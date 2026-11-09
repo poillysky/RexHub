@@ -1,12 +1,8 @@
 # -*- coding: utf-8 -*-
-"""115 离线转存轮询 + 延迟任务调度（`extract` / `relocate` 共用）。
+"""115 离线转存轮询 + 延迟任务调度。
 
-`extract._wait_until_transfer_ready` 与 `relocate._wait_offline_file_ids` 的
 「按 info_hash 匹配任务 → 判失败/终态/已完成 → 算进度文案 → 超时文案」这一段
-曾是逐字复制的；`schedule_deferred_*` 也是同一形状。此处收敛为唯一实现。
-
-两个循环**刻意保留的差异**由调用方自己持有：轮询时长（30s / 90s）、返回值形状、
-以及 extract 额外的「查目标目录」分支。
+曾在校验/搬移流程中逐字复制；`schedule_deferred_*` 也是同一形状。此处收敛为唯一实现。
 """
 
 
@@ -54,35 +50,6 @@ def match_tasks_by_hashes(tasks: list[Any], hashes: list[str]) -> list[dict[str,
         if isinstance(t, dict)
         and str(t.get("info_hash") or t.get("infoHash") or "").lower() in hashes
     ]
-
-
-def task_phases(matched: list[dict[str, Any]]) -> dict[str, Any]:
-    """一批匹配任务的阶段判定 + 进行中进度（纯计算，无副作用）。
-
-    `all_failed` 仅在一批非空且全为失败时为真。
-    """
-    failed = [t for t in matched if is_task_failed(t)]
-    downloading = next(
-        (t for t in matched if not is_task_done(t) and not is_task_failed(t)), None
-    )
-    pct = 0.0
-    if isinstance(downloading, dict):
-        try:
-            pct = float(
-                downloading.get("percentDone") or downloading.get("percent_done") or 0
-            )
-        except (TypeError, ValueError):
-            pct = 0.0
-    return {
-        "all_failed": bool(matched) and len(failed) == len(matched),
-        "all_terminal": all(is_task_done(t) or is_task_failed(t) for t in matched),
-        "any_done": any(is_task_done(t) for t in matched),
-        "pct": pct,
-    }
-
-
-def progress_note(pct: float) -> str:
-    return f"转存中 {int(pct)}%" if pct else "转存中 …"
 
 
 def timeout_message(poll_max_s: float, note: str) -> str:

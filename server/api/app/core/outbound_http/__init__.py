@@ -35,7 +35,7 @@ from .proxy import (  # noqa: F401
     normalize_flaresolverr_url,
     normalize_proxy_url,
     resolve_flaresolverr_url,
-    resolve_scrape_proxy_url,
+    resolve_proxy_url,
 )
 from .classify import (  # noqa: F401
     extract_safeid,

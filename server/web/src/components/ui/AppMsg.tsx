@@ -40,14 +40,12 @@ const TOAST_DEDUPE_MS = 8000;
 export function AppMsg({
   children,
   tone,
-  className: _unusedClassName,
   allowSelect,
   onDismiss,
   duration = AUTO_HIDE_MS,
 }: {
   children: string;
   tone?: AppMsgTone;
-  className?: string;
   allowSelect?: boolean;
   onDismiss?: () => void;
   /** 自动消失毫秒，默认 2200；传 0 则不自动消失 */
@@ -56,8 +54,6 @@ export function AppMsg({
   const { toast } = useOverlay();
   const text = children.trim();
   const lastKey = useRef('');
-  const onDismissRef = useRef(onDismiss);
-  onDismissRef.current = onDismiss;
 
   useEffect(() => {
     if (!text) {
@@ -87,10 +83,10 @@ export function AppMsg({
       allowSelect,
       onDismiss: () => {
         lastKey.current = '';
-        onDismissRef.current?.();
+        onDismiss?.();
       },
     });
-  }, [text, tone, duration, allowSelect, toast]);
+  }, [text, tone, duration, allowSelect, toast, onDismiss]);
 
   return null;
 }

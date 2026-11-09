@@ -11,38 +11,60 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { AppPush } from '@/components/ui/AppPush';
 import { AppMsg } from '@/components/ui/AppMsg';
+import { useAuth } from '@/providers/AuthProvider';
 import { cn } from '@/lib/utils';
 import { testResultText, usePanelAction } from '@/hooks/usePanelAction';
 
-function toProxyHostPort(raw: string): string {
+type AddrResult = { ok: true; value: string } | { ok: false };
+
+/** host:port（可带 user:pass@ 或 http(s)/socks 前缀）→ 归一化地址；留空合法。 */
+function parseAddr(raw: string): AddrResult {
   const s = raw.trim();
-  if (!s) return '';
-  try {
-    const u = new URL(s.includes('://') ? s : `http://${s}`);
-    return u.host || u.hostname;
-  } catch {
-    return s.replace(/^https?:\/\//i, '').replace(/\/$/, '');
+  if (!s) return { ok: true, value: '' };
+  const schemeMatch = s.match(/^([a-z][a-z0-9+.-]*):\/\//i);
+  const scheme = (schemeMatch?.[1] || '').toLowerCase();
+  if (scheme && !['http', 'https', 'socks4', 'socks4a', 'socks5', 'socks5h'].includes(scheme)) {
+    return { ok: false };
   }
+  let u: URL;
+  try {
+    u = new URL(s.includes('://') ? s : `http://${s}`);
+  } catch {
+    return { ok: false };
+  }
+  const port = Number(u.port);
+  if (!u.hostname || !u.port || !Number.isInteger(port) || port < 1 || port > 65535) {
+    return { ok: false };
+  }
+  const auth = u.username
+    ? `${u.username}${u.password ? `:${u.password}` : ''}@`
+    : '';
+  // 显式写了 socks5:// 等协议时必须保留，否则会被 httpx 当成 HTTP 代理
+  const prefix = scheme ? `${scheme}://` : '';
+  return { ok: true, value: `${prefix}${auth}${u.host}` };
 }
 
+const PROXY_ADDR_ERROR = '代理地址格式应为 host:port，如 127.0.0.1:7890';
+const FLARE_ADDR_ERROR = 'FlareSolverr 地址格式应为 host:port，如 127.0.0.1:8191';
+
 export function NetworkPanel({ onBack }: { onBack: () => void }) {
+  const { isAdmin } = useAuth();
   const [proxyAddr, setProxyAddr] = useState('');
   const [enabled, setEnabled] = useState(false);
-  const [flareAddr, setFlareAddr] = useState('127.0.0.1:8191');
+  const [flareAddr, setFlareAddr] = useState('');
   const [flareEnabled, setFlareEnabled] = useState(false);
   const [ghApi, setGhApi] = useState('https://api.github.com');
   const [ghToken, setGhToken] = useState('');
   const [ghTokenSet, setGhTokenSet] = useState(false);
-  const [ghTokenHint, setGhTokenHint] = useState('');
   const [ghMirror, setGhMirror] = useState('');
   const [ghPresets, setGhPresets] = useState<{ url: string; label: string }[]>([]);
   const [loading, setLoading] = useState(true);
-  const { msg, setMsg, busy, withBusy, run } = usePanelAction();
+  const { msg, setMsg, busy, run } = usePanelAction();
 
   function applyPublic(d: NetworkConfig) {
-    setProxyAddr(toProxyHostPort(d.proxyUrl || ''));
+    setProxyAddr(d.proxyUrl || '');
     setEnabled(Boolean(d.proxyEnabled));
-    setFlareAddr(toProxyHostPort(d.flareSolverrUrl || '') || '127.0.0.1:8191');
+    setFlareAddr(d.flareSolverrUrl || '');
     setFlareEnabled(Boolean(d.flareSolverrEnabled));
   }
 
@@ -50,131 +72,141 @@ export function NetworkPanel({ onBack }: { onBack: () => void }) {
     setGhApi(d.githubApiUrl || 'https://api.github.com');
     setGhToken('');
     setGhTokenSet(Boolean(d.githubTokenSet));
-    setGhTokenHint(d.githubTokenHint || '');
     setGhMirror(d.githubMirror || '');
     setGhPresets(d.githubMirrorPresets || []);
   }
 
   useEffect(() => {
+    let alive = true;
     void (async () => {
       setLoading(true);
       try {
         const d = await getNetwork();
+        if (!alive) return;
         applyPublic(d);
         applyGithub(d);
       } catch (e) {
-        setMsg(e instanceof Error ? e.message : '读取失败');
+        if (alive) setMsg(e instanceof Error ? e.message : '读取失败');
       } finally {
-        setLoading(false);
+        if (alive) setLoading(false);
       }
     })();
+    return () => {
+      alive = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function proxyValue() {
-    return proxyAddr.trim();
-  }
-
-  function flareValue() {
-    return flareAddr.trim() || '127.0.0.1:8191';
-  }
-
-  async function persist(partial: {
-    proxyEnabled?: boolean;
-    proxyUrl?: string;
-    flareSolverrEnabled?: boolean;
-    flareSolverrUrl?: string;
-  }) {
-    return withBusy(async () => {
-      const next = await putNetwork({
-        proxyUrl: partial.proxyUrl ?? proxyValue(),
-        proxyEnabled: partial.proxyEnabled ?? enabled,
-        flareSolverrUrl: partial.flareSolverrUrl ?? flareValue(),
-        flareSolverrEnabled: partial.flareSolverrEnabled ?? flareEnabled,
-      });
-      applyPublic(next);
-      return next;
-    });
-  }
-
   async function onToggle(next: boolean) {
-    if (next && !proxyValue()) {
+    if (!isAdmin) return;
+    const addr = parseAddr(proxyAddr);
+    if (!addr.ok) {
+      setMsg(PROXY_ADDR_ERROR);
+      return;
+    }
+    if (next && !addr.value) {
       setMsg('请先填写主机和端口');
       return;
     }
     await run('保存失败', async () => {
-      const saved = await persist({ proxyEnabled: next });
+      const saved = await putNetwork({ proxyUrl: addr.value, proxyEnabled: next });
+      applyPublic(saved);
       setMsg(saved.configured ? '已启用代理' : '已关闭代理');
     });
   }
 
   async function onToggleFlare(next: boolean) {
-    if (next && !flareValue()) {
+    if (!isAdmin) return;
+    const addr = parseAddr(flareAddr);
+    if (!addr.ok) {
+      setMsg(FLARE_ADDR_ERROR);
+      return;
+    }
+    if (next && !addr.value) {
       setMsg('请先填写 FlareSolverr 主机和端口');
       return;
     }
     await run('保存失败', async () => {
-      const saved = await persist({
+      const saved = await putNetwork({
+        flareSolverrUrl: addr.value,
         flareSolverrEnabled: next,
-        flareSolverrUrl: flareValue(),
       });
+      applyPublic(saved);
       setMsg(saved.flareSolverrConfigured ? '已启用过盾' : '已关闭过盾');
     });
   }
 
   async function onTest() {
+    if (!isAdmin) return;
+    const addr = parseAddr(proxyAddr);
+    if (!addr.ok) {
+      setMsg(PROXY_ADDR_ERROR);
+      return;
+    }
     await run('代理测试失败', async () => {
-      const r = await testNetwork({ proxyUrl: proxyValue() });
+      const r = await testNetwork({ proxyUrl: addr.value });
       setMsg(testResultText(r, '代理正常', '代理失败'));
     });
   }
 
   async function onTestFlare() {
+    if (!isAdmin) return;
+    const addr = parseAddr(flareAddr);
+    if (!addr.ok) {
+      setMsg(FLARE_ADDR_ERROR);
+      return;
+    }
     await run('FlareSolverr 测试失败', async () => {
-      const r = await testFlareSolverr({ flareSolverrUrl: flareValue() });
+      const r = await testFlareSolverr({ flareSolverrUrl: addr.value });
       setMsg(testResultText(r, 'FlareSolverr 正常', 'FlareSolverr 失败'));
     });
   }
 
   async function onSave() {
+    if (!isAdmin) return;
+    const proxy = parseAddr(proxyAddr);
+    const flare = parseAddr(flareAddr);
+    if (!proxy.ok) {
+      setMsg(PROXY_ADDR_ERROR);
+      return;
+    }
+    if (!flare.ok) {
+      setMsg(FLARE_ADDR_ERROR);
+      return;
+    }
     await run('保存失败', async () => {
-      const url = proxyValue();
-      const flare = flareValue();
-      const saved = await persist({
-        proxyUrl: url,
-        proxyEnabled: Boolean(url) && enabled,
-        flareSolverrUrl: flare,
-        flareSolverrEnabled: Boolean(flare) && flareEnabled,
+      const saved = await putNetwork({
+        proxyUrl: proxy.value,
+        proxyEnabled: Boolean(proxy.value) && enabled,
+        flareSolverrUrl: flare.value,
+        flareSolverrEnabled: Boolean(flare.value) && flareEnabled,
       });
+      applyPublic(saved);
       const bits: string[] = [];
       if (saved.configured) bits.push('代理已启用');
-      else if (url) bits.push('代理已保存未启用');
+      else if (proxy.value) bits.push('代理已保存未启用');
       if (saved.flareSolverrConfigured) bits.push('过盾已启用');
-      else if (flare) bits.push('过盾已保存未启用');
+      else if (flare.value) bits.push('过盾已保存未启用');
       setMsg(bits.length ? bits.join(' · ') : '已清空');
     });
   }
 
   async function onSaveGithub() {
+    if (!isAdmin) return;
     await run('保存失败', async () => {
       const next = await putNetwork({
-        proxyUrl: proxyValue(),
-        proxyEnabled: Boolean(proxyValue()) && enabled,
-        flareSolverrUrl: flareValue(),
-        flareSolverrEnabled: Boolean(flareValue()) && flareEnabled,
         githubApiUrl: ghApi.trim() || 'https://api.github.com',
         githubToken: ghToken.trim(),
         githubMirror: ghMirror,
       });
-      applyPublic(next);
       applyGithub(next);
       setMsg('GitHub 配置已保存');
     });
   }
 
-  const active = enabled && Boolean(proxyValue());
-  const flareActive = flareEnabled && Boolean(flareValue());
-  const locked = busy || loading;
+  const active = enabled && Boolean(proxyAddr.trim());
+  const flareActive = flareEnabled && Boolean(flareAddr.trim());
+  const locked = busy || loading || !isAdmin;
 
   return (
     <AppPush title="网络代理" onBack={onBack}>
@@ -330,11 +362,7 @@ export function NetworkPanel({ onBack }: { onBack: () => void }) {
               <input
                 type="password"
                 className="allow-select"
-                placeholder={
-                  ghTokenSet
-                    ? `已配置 ${ghTokenHint}，留空不修改`
-                    : '可选，留空即匿名访问'
-                }
+                placeholder={ghTokenSet ? '已配置，留空不修改' : '可选，留空即匿名访问'}
                 value={ghToken}
                 onChange={(e) => setGhToken(e.target.value)}
                 autoCapitalize="off"

@@ -3,19 +3,9 @@
  *
  * 由 lib/api.ts 拆分而来；对外统一从 `@/lib/api` 导入，请不要直接引用本文件。
  */
-import { API_BASE, apiFetch, parseError } from './client';
+import { apiFetch, parseError } from './client';
 import type { Envelope } from './client';
-import type {
-  AuthUser,
-  BrowseResult,
-  FilterSize,
-  FilterTime,
-  MatchMode,
-  ResourceDbConfig,
-  ResourceItem,
-  SearchResult,
-  SortType,
-} from '@/types/resource';
+import type { BrowseResult, ResourceItem } from '@/types/resource';
 
 export async function fetchBrowse(opts: {
   page?: number;
@@ -38,45 +28,6 @@ export async function fetchBrowse(opts: {
   const res = await apiFetch(`/browse?${q}`, { signal: opts.signal });
   if (!res.ok) throw new Error(await parseError(res));
   return ((await res.json()) as Envelope<BrowseResult>).data;
-}
-
-export async function fetchSearch(opts: {
-  keyword: string;
-  page?: number;
-  pageSize?: number;
-  sortType?: SortType;
-  filterTime?: FilterTime;
-  filterSize?: FilterSize;
-  matchMode?: MatchMode;
-  withTotalCount?: boolean;
-  countOnly?: boolean;
-  preferChinese?: boolean;
-  preferCrack?: boolean;
-  region?: string;
-  includeOptionalBoards?: boolean;
-  signal?: AbortSignal;
-}): Promise<SearchResult> {
-  const q = new URLSearchParams();
-  q.set('keyword', opts.keyword);
-  q.set('p', String(opts.page ?? 1));
-  q.set('ps', String(opts.pageSize ?? 10));
-  q.set('sortType', opts.sortType ?? 'date');
-  q.set('filterTime', opts.filterTime ?? 'all');
-  q.set('filterSize', opts.filterSize ?? 'all');
-  q.set('matchMode', opts.matchMode ?? 'exact');
-  q.set('withTotalCount', opts.withTotalCount === false ? '0' : '1');
-  if (opts.countOnly) q.set('countOnly', '1');
-  const preferOn = Boolean(opts.preferChinese || opts.preferCrack);
-  q.set('jp', preferOn ? '1' : '0');
-  q.set('cn', opts.preferChinese ? '1' : '0');
-  q.set('ck', opts.preferCrack ? '1' : '0');
-  if (opts.region) {
-    q.set('region', opts.region);
-    if (opts.includeOptionalBoards === false) q.set('optb', '0');
-  }
-  const res = await apiFetch(`/search?${q}`, { signal: opts.signal });
-  if (!res.ok) throw new Error(await parseError(res));
-  return ((await res.json()) as Envelope<SearchResult>).data;
 }
 
 export async function fetchTranslate(

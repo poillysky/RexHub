@@ -14,8 +14,6 @@ from contextlib import contextmanager
 from typing import Any, Iterator
 from urllib.parse import urlparse
 
-import httpx
-
 log = logging.getLogger(__name__)
 
 # 取消令牌的轮询步长：等槽期间每 0.2s 醒一次看是否已被上层放弃。
@@ -43,7 +41,7 @@ class OutboundBusy(TimeoutError):
     """等槽 / 限速 / 退避超出了**排队预算** —— 这次请求压根没轮到发，不是源故障。
 
     为什么要单独一个类型：`TimeoutError` 的既有语义是「等不到槽」，但
-    `enrich._classify_source_failure` 只按消息里的 `timeout` 判定 → 排队被记成
+    上游错误分类只按消息里的 `timeout` 判定 → 排队被记成
     `down`（源不可用）→ 高优先源静默降级 + 误挂补抓标记（mgstage 433 次假 down 的根因之一）。
 
     继承 `TimeoutError` 是为了兼容既有 `except TimeoutError` 分支（行为不变）；
@@ -56,7 +54,7 @@ class SlotWaitMeter:
     """出站等槽记账：**只累计「没在发请求」的时间**（pause / pacing / 抢槽 / 退避）。
 
     用途：把策略「单源超时」从**墙钟**改成**工作耗时** ——
-    `enrich._one` 每 0.25s 轮询 `wait_now()`，用「墙钟 − 等槽」判真超时。
+    抓取任务每 0.25s 轮询 `wait_now()`，用「墙钟 − 等槽」判真超时。
     否则 `th.join(timeout=单源超时)` 会把排队算进单源超时，源明明 3.4s 能返回
     也被记成 `down`。
 
@@ -72,7 +70,7 @@ class SlotWaitMeter:
         self.acquired = 0  # 成功拿到槽的次数；0 = 压根没轮到发请求
         # 排队预算耗尽（OutboundBusy）的次数。第十一轮用：源自己可能
         # `except Exception: return None` 把这个信号吞成「未找到」，
-        # 记账是唯一可靠的痕迹 → `enrich` 用它把假 miss 改回 busy。
+        # 记账是唯一可靠的痕迹 → 调用方用它把假 miss 改回 busy。
         self.slot_timeout = 0
 
     def wait_now(self) -> float:
@@ -109,7 +107,7 @@ CAPS_BASELINE_ITEM_WORKERS = 4
 
 # 封面全局槽相对「真实峰值并发」的余量。
 # 峰值 = itemWorkers × COVER_BATCH_WORKERS（封面是在番号工人里**同步** `.result()` 等结果的，
-# 见 `enrich._download_covers`，所以不是异步池，会乘起来）。
+# 见封面下载任务，所以不是异步池，会乘起来）。
 #
 # 1.25（基线恒等 20）→ 1.5（基线 24）：第二十一轮调高，依据是**现场实测到的
 # `slot_blocked`**（报告 §二十一）。原 1.25 只算了「本进程 itemWorkers × 批并发」
@@ -244,8 +242,6 @@ class OutboundScheduler:
         self._host_limits: dict[str, int] = {}
         self._next_at: dict[str, float] = {}
         self._paused_until: dict[str, float] = {}
-        self._client_mu = threading.Lock()
-        self._clients: dict[str, httpx.Client] = {}
         # 早停/暂停回收的在飞请求数（可观测：抢槽前被取消的次数）
         self._cancelled_n = 0
         # 已应用的 itemWorkers（None = 还没按任务规模重算过槽位）
@@ -285,15 +281,6 @@ class OutboundScheduler:
             caps["api"],
             caps["cover"],
         )
-
-    def applied_item_workers(self) -> int:
-        """当前槽位是按哪个 itemWorkers 算出来的（未应用过则返回基线值）。
-
-        调用方（换号主循环）用它给「热更新并发」封顶：飞行中换信号量不安全，
-        所以派发上限不得越过已经按规模算好的槽位，否则就是 2× 超订。
-        """
-        n = self._applied_item_workers
-        return int(n) if n else int(CAPS_BASELINE_ITEM_WORKERS)
 
     @staticmethod
     def host_key(url_or_host: str) -> str:
@@ -399,14 +386,6 @@ class OutboundScheduler:
             prev = float(self._paused_until.get(host) or 0.0)
             self._paused_until[host] = max(prev, until)
         log.info("outbound throttle host=%s status=%s pause=%.2fs", host, status, delay)
-
-    def note_retry_after(self, url: str, seconds: float) -> None:
-        host = self.host_key(url)
-        delay = max(0.2, min(30.0, float(seconds or 0)))
-        until = time.monotonic() + delay
-        with self._mu:
-            prev = float(self._paused_until.get(host) or 0.0)
-            self._paused_until[host] = max(prev, until)
 
     @contextmanager
     def slot(
@@ -518,37 +497,6 @@ class OutboundScheduler:
         finally:
             _settle(False)
 
-    def shared_client(
-        self,
-        *,
-        proxy: str | None = None,
-        verify: bool = False,
-        timeout: httpx.Timeout | None = None,
-    ) -> httpx.Client:
-        """长寿命 Client（连接复用）。按 proxy/verify 分桶。"""
-        proxy_s = str(proxy or "").strip()
-        key = f"{'p' if proxy_s else 'd'}|{1 if verify else 0}|{proxy_s}"
-        with self._client_mu:
-            hit = self._clients.get(key)
-            if hit is not None:
-                return hit
-            opts: dict[str, Any] = {
-                "trust_env": False,
-                "follow_redirects": True,
-                "verify": verify,
-                "timeout": timeout
-                or httpx.Timeout(12.0, connect=3.0),
-                "limits": httpx.Limits(
-                    max_connections=max(24, sum(_KIND_GLOBAL.values()) + 4),
-                    max_keepalive_connections=20,
-                ),
-            }
-            if proxy_s:
-                opts["proxy"] = proxy_s
-            client = httpx.Client(**opts)
-            self._clients[key] = client
-            return client
-
     def _note_cancelled(self) -> None:
         with self._mu:
             self._cancelled_n = int(self._cancelled_n) + 1
@@ -564,7 +512,6 @@ class OutboundScheduler:
                 "kindGlobal": dict(_KIND_GLOBAL),
                 "hostGates": len(self._host_sems),
                 "pausedHosts": paused,
-                "clients": len(self._clients),
                 "cancelledWaiters": int(self._cancelled_n),
             }
 

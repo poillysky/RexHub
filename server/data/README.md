@@ -16,13 +16,9 @@ data/
     widgets/            # 插件源码副本（按 id）
     p115cache/          # 115 网盘缓存
   meta/                 # cf-clearance 等会话态
-  mirrors/              # site-mirrors.json · iqqtv-mirror.json
   prefix/
     catalog/            # 七区前缀→番号目录（catalog.json）
     code-ranges.json    # 前缀流水号上限缓存
-  cache/
-    cover/              # 封面缩略缓存
-    facets/             # 刮削库分面快照
   presets/              # 本机预设（如 openai）
   debug/                # 脚本报告 / 探针输出
 ```
@@ -32,7 +28,7 @@ data/
 从 MDCX 导入演员/标签/标题（写入 `maps/scrape/`，不是这里）：
 
 ```bash
-cd api && .venv/bin/python scripts/import_mdcx_maps.py
+cd api && .venv/bin/python scripts/build_actor_map_from_mdcx.py
 ```
 
 片库见 [`media/README.md`](../media/README.md)；约定见 [`docs/backend/local-runtime.md`](../docs/backend/local-runtime.md)。

@@ -15,12 +15,6 @@ from app.search.hit_label import display_hit_label
 
 ToolHandler = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
 
-_SOURCE_LABEL = {
-    "sehua": "仓库",
-    "magnet": "磁力",
-    "media": "影视",
-    "web": "网络",
-}
 
 _WEB_META_LABELS = (
     "导演",
@@ -149,6 +143,163 @@ def tool_definitions(*, include_web: bool = True) -> list[dict[str, Any]]:
                 },
             },
         },
+        {
+            "type": "function",
+            "function": {
+                "name": "sehua_detail",
+                "description": "按 info hash 查看色花仓库资源详情：标题、大小、电驴链接、文件列表。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "hash": {"type": "string", "description": "资源 info hash，来自 sehua_keyword 卡片"},
+                    },
+                    "required": ["hash"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "magnet_detail",
+                "description": "按 info hash 查看 Bitmagnet 种子详情：文件列表、大小、磁力链接。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "hash": {"type": "string", "description": "种子 info hash，来自 magnet_search"},
+                    },
+                    "required": ["hash"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "media_detail",
+                "description": (
+                    "影视详情（TMDB/豆瓣等）：简介、评分、类型、片长、主演、IMDb ID。"
+                    "media_id 形如 tmdb:movie/123，来自 media_search 结果。"
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "media_id": {"type": "string", "description": "影视 ID，形如 tmdb:movie/123"},
+                    },
+                    "required": ["media_id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "av_search",
+                "description": (
+                    "AV 片库搜索（JavDB）：番号、片名、片商、演员、系列、片单、导演。"
+                    "actor 类型用于先拿演员 id，再调 av_actor_works 列作品。"
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string"},
+                        "type": {
+                            "type": "string",
+                            "enum": ["code", "movie", "actor", "maker", "series", "director", "list"],
+                            "description": "默认 code；普通片名用 movie",
+                        },
+                        "limit": {"type": "integer", "description": "条数 1-12，默认 8"},
+                    },
+                    "required": ["query"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "av_movie",
+                "description": "AV 影片详情与种子列表。movie_id 来自 av_search 的 facts.movieIds。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "movie_id": {"type": "string", "description": "影片 id（av_search 返回）"},
+                        "limit": {"type": "integer", "description": "种子条数 1-12，默认 8"},
+                    },
+                    "required": ["movie_id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "av_actor_works",
+                "description": "按 AV 演员 id 列出参演影片，用于「某某女优有哪些作品」。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "actor_id": {"type": "string", "description": "演员 id，来自 av_search(type=actor)"},
+                        "name": {"type": "string", "description": "演员姓名，仅用于展示"},
+                        "limit": {"type": "integer", "description": "条数 1-12，默认 10"},
+                    },
+                    "required": ["actor_id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "media_streams",
+                "description": (
+                    "按 IMDb ID 聚合在线播放源（电影/剧集）。imdbId 来自 media_detail。"
+                    "剧集可给 season/episode。"
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "imdb_id": {"type": "string", "description": "形如 tt1234567"},
+                        "media_type": {"type": "string", "enum": ["movie", "tv"], "description": "默认 movie"},
+                        "season": {"type": "integer"},
+                        "episode": {"type": "integer"},
+                    },
+                    "required": ["imdb_id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "cloudsaver_search",
+                "description": "网盘资源搜索（CloudSaver）：夸克/阿里/115 等分享链接与提取码。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string"},
+                        "limit": {"type": "integer", "description": "条数 1-12，默认 6"},
+                    },
+                    "required": ["query"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "p115_save",
+                "description": (
+                    "把网盘分享链接或磁力/电驴链接转存/离线下载到 115。"
+                    "仅在用户明确要求转存或下载时调用。"
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "urls": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "分享链接或磁力/ed2k 链接；单条也可直接传字符串",
+                        },
+                        "password": {"type": "string", "description": "分享提取码（若有）"},
+                        "cid": {"type": "string", "description": "115 目标目录 id，默认 0（根目录）"},
+                    },
+                    "required": ["urls"],
+                },
+            },
+        },
     ]
     if include_web:
         tools.append(
@@ -181,20 +332,32 @@ def filter_tools_by_prefer(
     if not allow:
         return tools
     name_map = {
-        "sehua": {"sehua_keyword"},
-        "magnet": {"magnet_search"},
-        "media": {"media_search", "media_person_works"},
+        "sehua": {"sehua_keyword", "sehua_detail"},
+        "magnet": {"magnet_search", "magnet_detail"},
+        "media": {"media_search", "media_detail", "media_person_works"},
+        "av": {"av_search", "av_movie", "av_actor_works"},
+        "stream": {"media_streams"},
+        "cloud": {"cloudsaver_search", "p115_save"},
         "web": {"web_search"},
-        "warehouse": {"sehua_keyword"},
+        "warehouse": {"sehua_keyword", "sehua_detail"},
     }
     names: set[str] = set()
     for p in allow:
         names |= name_map.get(p, set())
         if p in {
             "sehua_keyword",
+            "sehua_detail",
             "magnet_search",
+            "magnet_detail",
             "media_search",
+            "media_detail",
             "media_person_works",
+            "av_search",
+            "av_movie",
+            "av_actor_works",
+            "media_streams",
+            "cloudsaver_search",
+            "p115_save",
             "web_search",
         }:
             names.add(p)
@@ -625,6 +788,533 @@ async def run_web_search(args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+_MAGNET_HASH_RE = re.compile(r"urn:btih:([0-9a-fA-F]{32,40})")
+
+
+def _hash_from_magnet(url: str) -> str:
+    m = _MAGNET_HASH_RE.search(str(url or ""))
+    return m.group(1).lower() if m else ""
+
+
+def _str_list(raw: Any) -> list[str]:
+    if isinstance(raw, str):
+        return [raw.strip()] if raw.strip() else []
+    if isinstance(raw, (list, tuple)):
+        return [str(x).strip() for x in raw if str(x).strip()]
+    return []
+
+
+def _file_rows(files: Any, limit: int = 8) -> list[str]:
+    out: list[str] = []
+    for f in files or []:
+        if isinstance(f, dict):
+            path = str(f.get("path") or f.get("name") or "").strip()
+            size = f.get("size")
+        else:
+            path = str(f).strip()
+            size = None
+        if not path:
+            continue
+        row = path[:90]
+        if isinstance(size, (int, float)) and size > 0:
+            row += f" ({_fmt_size(int(size))})"
+        out.append(row)
+        if len(out) >= limit:
+            break
+    return out
+
+
+async def run_sehua_detail(args: dict[str, Any]) -> dict[str, Any]:
+    h = str(args.get("hash") or args.get("info_hash") or "").strip()
+    if len(h) < 32:
+        return {"ok": False, "error": "hash 不合法", "cards": [], "total": 0}
+    try:
+        import app.search.resource_service as resource_service
+
+        item = await asyncio.to_thread(resource_service.resource_by_hash, h)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e), "cards": [], "total": 0, "summary": f"仓库详情失败：{e}"}
+    if not isinstance(item, dict) or not item:
+        return {"ok": False, "error": "未找到该资源", "cards": [], "total": 0, "summary": "仓库里没有这个 hash"}
+    title = display_hit_label(
+        title=item.get("title"),
+        description=item.get("description"),
+        filename=item.get("name") or item.get("filename"),
+    )
+    size = item.get("size")
+    cover = ""
+    previews = item.get("preview_images") or item.get("images") or []
+    if isinstance(previews, list) and previews:
+        cover = str(previews[0] or "")
+    card = make_card(
+        source="sehua",
+        title=title,
+        subtitle=_guess_code(title),
+        meta=_fmt_size(int(size)) if isinstance(size, (int, float)) and size > 0 else "",
+        cover=cover,
+        key=h.lower(),
+        open_payload={"kind": "sehua", "hash": h},
+    )
+    facts = {
+        "title": title,
+        "code": _guess_code(title),
+        "size": _fmt_size(int(size)) if isinstance(size, (int, float)) and size > 0 else "",
+        "files": _file_rows(item.get("files")),
+        "ed2kLinks": _str_list(item.get("ed2k_links") or item.get("ed2k_link"))[:6],
+        "extractPassword": str(item.get("extract_password") or ""),
+        "sourceUrl": str(item.get("source_url") or ""),
+    }
+    return {
+        "ok": True,
+        "source": "sehua",
+        "mode": "detail",
+        "query": title,
+        "total": 1,
+        "cards": [card],
+        "facts": [facts],
+        "summary": f"仓库资源「{title[:40]}」",
+    }
+
+
+async def run_magnet_detail(args: dict[str, Any]) -> dict[str, Any]:
+    h = str(args.get("hash") or args.get("info_hash") or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{32}|[0-9a-f]{40}", h):
+        return {"ok": False, "error": "infoHash 不合法", "cards": [], "total": 0}
+    try:
+        import app.search.bitmagnet_client as bitmagnet_client
+
+        item = await asyncio.to_thread(bitmagnet_client.get, h)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e), "cards": [], "total": 0, "summary": f"磁力详情失败：{e}"}
+    title = str(item.get("name") or item.get("title") or h)
+    size_text = str(item.get("sizeText") or "")
+    magnet = str(item.get("magnet_uri") or item.get("magnet") or "")
+    files = _file_rows(item.get("files"))
+    card = make_card(
+        source="magnet",
+        title=title,
+        subtitle=size_text or h[:12],
+        meta=f"{int(item.get('fileCount') or 0)} 个文件",
+        key=h,
+        open_payload={"kind": "magnet", "hash": h},
+    )
+    facts = {
+        "title": title,
+        "size": size_text,
+        "fileCount": int(item.get("fileCount") or 0),
+        "files": files,
+        "magnet": magnet,
+    }
+    return {
+        "ok": True,
+        "source": "magnet",
+        "mode": "detail",
+        "query": title,
+        "total": 1,
+        "cards": [card],
+        "facts": [facts],
+        "summary": f"种子「{title[:40]}」",
+    }
+
+
+async def run_media_detail(args: dict[str, Any]) -> dict[str, Any]:
+    raw_id = str(args.get("media_id") or args.get("id") or "").strip()
+    if not raw_id:
+        return {"ok": False, "error": "缺少 media_id", "cards": [], "total": 0}
+    try:
+        source, ident, media_type = _split_media_id(raw_id)
+        from app.core.moviepilot_routes import moviepilot_detail
+
+        raw = await asyncio.to_thread(moviepilot_detail, source, ident, media_type)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e), "cards": [], "total": 0, "summary": f"影视详情失败：{e}"}
+    detail = raw.get("data") if isinstance(raw, dict) else None
+    if not isinstance(detail, dict) or not detail:
+        return {"ok": False, "error": "未找到影视详情", "cards": [], "total": 0}
+
+    full_id = str(detail.get("id") or raw_id)
+    title = str(detail.get("title") or "")
+    cast_people: list[dict[str, str]] = []
+    for c in detail.get("cast") or []:
+        if not isinstance(c, dict):
+            continue
+        pid = str(c.get("id") or "").strip()
+        name = str(c.get("name") or "").strip()
+        if not pid or not name:
+            continue
+        cast_people.append(
+            {"name": name, "personId": pid if ":" in pid else f"{source}:{pid}"}
+        )
+        if len(cast_people) >= 8:
+            break
+    item = {**detail, "id": full_id}
+    card = make_card(
+        source="media",
+        title=title or full_id,
+        subtitle=str(detail.get("originalTitle") or ""),
+        meta=str(detail.get("year") or ""),
+        cover=str(detail.get("posterUrl") or ""),
+        key=full_id,
+        open_payload={"kind": "media", "item": item},
+    )
+    facts = {
+        "title": title,
+        "originalTitle": str(detail.get("originalTitle") or ""),
+        "year": str(detail.get("year") or ""),
+        "rating": detail.get("rating"),
+        "runtime": detail.get("runtime"),
+        "genres": detail.get("genres") or [],
+        "countries": detail.get("countries") or [],
+        "overview": str(detail.get("overview") or "")[:400],
+        "imdbId": str(detail.get("imdbId") or ""),
+        "cast": cast_people,
+    }
+    return {
+        "ok": True,
+        "source": "media",
+        "mode": "detail",
+        "query": title or full_id,
+        "total": 1,
+        "cards": [card],
+        "facts": [facts],
+        "summary": f"影视详情「{title or full_id}」",
+    }
+
+
+async def run_av_search(args: dict[str, Any]) -> dict[str, Any]:
+    q = str(args.get("query") or "").strip()
+    if not q:
+        return {"ok": False, "error": "空查询", "cards": [], "total": 0}
+    kind = str(args.get("type") or "code").strip().lower()
+    limit = _limit(args.get("limit"), 8)
+    try:
+        from app.makers.service import fetch_movie_search, fetch_search
+
+        if kind in {"code", "movie", "all"}:
+            data = await asyncio.to_thread(
+                fetch_movie_search, q, 1, limit, False, "all", "", "relevance"
+            )
+            rows = [
+                {
+                    "movieId": str(it.get("id") or ""),
+                    "code": str(it.get("number") or ""),
+                    "title": str(it.get("title") or ""),
+                    "releaseDate": str(it.get("releaseDate") or ""),
+                    "magnets": int(it.get("magnetsCount") or 0),
+                    "cnsub": bool(it.get("hasCnsub")),
+                }
+                for it in (data.get("items") or [])
+                if isinstance(it, dict)
+            ]
+            mode = "movie"
+        else:
+            data = await asyncio.to_thread(fetch_search, q, kind)
+            rows = [
+                {
+                    "id": str(it.get("id") or ""),
+                    "name": str(it.get("name") or ""),
+                    "kind": str(it.get("kind") or kind),
+                    "count": int(it.get("count") or 0),
+                }
+                for it in (data.get("items") or [])
+                if isinstance(it, dict)
+            ]
+            mode = kind
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e), "cards": [], "total": 0, "summary": f"AV 搜索失败：{e}"}
+    return {
+        "ok": True,
+        "source": "av",
+        "mode": mode,
+        "query": q,
+        "total": len(rows),
+        "cards": [],
+        "facts": [{"mode": mode, "results": rows}],
+        "summary": f"AV「{q}」{len(rows)} 条",
+    }
+
+
+async def run_av_movie(args: dict[str, Any]) -> dict[str, Any]:
+    mid = str(args.get("movie_id") or args.get("id") or "").strip()
+    if not mid:
+        return {"ok": False, "error": "缺少 movie_id", "cards": [], "total": 0}
+    limit = _limit(args.get("limit"), 8)
+    try:
+        from app.makers.service import fetch_movie_detail
+
+        detail = await asyncio.to_thread(fetch_movie_detail, mid)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e), "cards": [], "total": 0, "summary": f"AV 详情失败：{e}"}
+
+    magnets_out: list[dict[str, Any]] = []
+    cards: list[dict[str, Any]] = []
+    for m in (detail.get("magnets") or [])[:limit]:
+        if not isinstance(m, dict):
+            continue
+        url = str(m.get("url") or "")
+        h = _hash_from_magnet(url)
+        name = str(m.get("name") or m.get("title") or detail.get("number") or mid)
+        size = str(m.get("sizeText") or m.get("size") or "")
+        magnets_out.append({"name": name, "size": size, "url": url})
+        if h:
+            cards.append(
+                make_card(
+                    source="magnet",
+                    title=name,
+                    subtitle=size,
+                    meta=str(detail.get("number") or ""),
+                    key=h,
+                    open_payload={"kind": "magnet", "hash": h},
+                )
+            )
+    actors = [
+        {"name": str(a.get("name") or ""), "id": str(a.get("id") or "")}
+        for a in (detail.get("actors") or [])
+        if isinstance(a, dict) and a.get("name")
+    ]
+    facts = {
+        "movieId": str(detail.get("id") or mid),
+        "code": str(detail.get("number") or ""),
+        "title": str(detail.get("title") or ""),
+        "summary": str(detail.get("summary") or "")[:300],
+        "releaseDate": str(detail.get("releaseDate") or ""),
+        "duration": detail.get("duration"),
+        "score": detail.get("score"),
+        "makers": detail.get("makers") or [],
+        "actors": actors[:8],
+        "tags": detail.get("tags") or [],
+        "magnets": magnets_out,
+        "resources": [
+            {"name": str(r.get("name") or ""), "url": str(r.get("url") or "")}
+            for r in (detail.get("resources") or [])[:6]
+            if isinstance(r, dict)
+        ],
+    }
+    return {
+        "ok": True,
+        "source": "av",
+        "mode": "movie",
+        "query": facts["code"] or facts["title"] or mid,
+        "total": len(magnets_out),
+        "cards": cards[:limit],
+        "facts": [facts],
+        "summary": f"AV「{facts['code'] or facts['title'] or mid}」种子 {len(magnets_out)} 条",
+    }
+
+
+async def run_av_actor_works(args: dict[str, Any]) -> dict[str, Any]:
+    aid = str(args.get("actor_id") or args.get("id") or "").strip()
+    if not aid:
+        return {"ok": False, "error": "缺少 actor_id", "cards": [], "total": 0}
+    name = str(args.get("name") or "").strip()
+    limit = _limit(args.get("limit"), 10)
+    try:
+        from app.makers.service import fetch_browse
+
+        data = await asyncio.to_thread(
+            fetch_browse,
+            "0", "", "", "", aid, "", "", "", "", "", "", "",
+            "release", "desc", 1, limit,
+        )
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e), "cards": [], "total": 0, "summary": f"女优作品失败：{e}"}
+    rows = [
+        {
+            "movieId": str(it.get("id") or ""),
+            "code": str(it.get("number") or ""),
+            "title": str(it.get("title") or ""),
+            "releaseDate": str(it.get("releaseDate") or ""),
+            "magnets": int(it.get("magnetsCount") or 0),
+        }
+        for it in (data.get("items") or [])
+        if isinstance(it, dict)
+    ]
+    label = name or aid
+    return {
+        "ok": True,
+        "source": "av",
+        "mode": "actor",
+        "query": label,
+        "total": len(rows),
+        "cards": [],
+        "facts": [{"actor": label, "actorId": aid, "results": rows}],
+        "summary": f"「{label}」作品 {len(rows)} 部",
+    }
+
+
+async def run_media_streams(args: dict[str, Any]) -> dict[str, Any]:
+    imdb_id = str(args.get("imdb_id") or "").strip()
+    if not imdb_id.startswith("tt"):
+        return {"ok": False, "error": "imdb_id 需形如 tt1234567", "cards": [], "total": 0}
+    media_type = "series" if str(args.get("media_type") or "movie").lower() in {"tv", "series"} else "movie"
+    try:
+        season = max(0, int(args.get("season") or 0))
+        episode = max(0, int(args.get("episode") or 0))
+    except (TypeError, ValueError):
+        season = episode = 0
+    try:
+        from app.rexhub.addons_store import streams as addon_streams
+
+        data = await addon_streams.collect(media_type, imdb_id, season, episode)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e), "cards": [], "total": 0, "summary": f"片源查询失败：{e}"}
+    streams = [s for s in (data.get("streams") or []) if isinstance(s, dict)]
+    cards: list[dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
+    for s in streams[:12]:
+        kind = str(s.get("kind") or "")
+        url = str(s.get("url") or s.get("externalUrl") or "")
+        info_hash = str(s.get("infoHash") or "").lower()
+        name = str(s.get("name") or s.get("addon") or "片源")
+        addon = str(s.get("addon") or "")
+        desc = str(s.get("title") or "")[:100]
+        rows.append({"addon": addon, "name": name, "kind": kind, "title": desc, "url": url})
+        if kind == "torrent" and info_hash:
+            cards.append(
+                make_card(
+                    source="magnet",
+                    title=name,
+                    subtitle=addon,
+                    meta=desc,
+                    key=info_hash,
+                    open_payload={"kind": "magnet", "hash": info_hash},
+                )
+            )
+        elif url.startswith("http"):
+            cards.append(
+                make_card(
+                    source="stream",
+                    title=name,
+                    subtitle=addon,
+                    meta=desc,
+                    key=url,
+                    open_payload={"kind": "url", "url": url, "title": name},
+                )
+            )
+    if not rows:
+        return {
+            "ok": True,
+            "source": "stream",
+            "mode": media_type,
+            "query": imdb_id,
+            "total": 0,
+            "cards": [],
+            "facts": [{"imdbId": imdb_id, "streams": [], "reason": str(data.get("reason") or "")}],
+            "summary": "没有可用片源（可能未配置片源插件）",
+        }
+    return {
+        "ok": True,
+        "source": "stream",
+        "mode": media_type,
+        "query": imdb_id,
+        "total": len(rows),
+        "cards": cards[:12],
+        "facts": [{"imdbId": imdb_id, "streams": rows}],
+        "summary": f"{imdb_id} 可用片源 {len(rows)} 条",
+    }
+
+
+async def run_cloudsaver_search(args: dict[str, Any]) -> dict[str, Any]:
+    q = str(args.get("query") or "").strip()
+    if not q:
+        return {"ok": False, "error": "空查询", "cards": [], "total": 0}
+    limit = _limit(args.get("limit"), 6)
+    try:
+        import app.search.cloudsaver_client as cloudsaver_client
+
+        data = await asyncio.to_thread(cloudsaver_client.search, q)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e), "cards": [], "total": 0, "summary": f"网盘搜索失败：{e}"}
+    items = [it for it in (data.get("items") or []) if isinstance(it, dict)][:limit]
+    cards: list[dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
+    for it in items:
+        title = str(it.get("title") or q)
+        links = [lk for lk in (it.get("links") or []) if isinstance(lk, dict)]
+        main = links[0] if links else {}
+        url = str(main.get("url") or "")
+        channel = str(it.get("channel") or main.get("type") or "")
+        password = str(main.get("password") or "")
+        rows.append(
+            {
+                "title": title,
+                "channel": channel,
+                "url": url,
+                "password": password,
+                "links": len(links),
+            }
+        )
+        if url.startswith("http"):
+            cards.append(
+                make_card(
+                    source="cloud",
+                    title=title,
+                    subtitle=channel,
+                    meta=f"提取码 {password}" if password else "",
+                    key=url,
+                    open_payload={"kind": "url", "url": url, "title": title},
+                )
+            )
+    return {
+        "ok": True,
+        "source": "cloud",
+        "mode": "search",
+        "query": q,
+        "total": len(rows),
+        "cards": cards,
+        "facts": [{"results": rows}],
+        "summary": f"网盘「{q}」{len(rows)} 条",
+    }
+
+
+async def run_p115_save(args: dict[str, Any]) -> dict[str, Any]:
+    raw = args.get("urls") if args.get("urls") is not None else args.get("url")
+    urls = _str_list(raw)
+    if not urls:
+        return {"ok": False, "error": "缺少链接", "cards": [], "total": 0}
+    bad = [
+        u
+        for u in urls
+        if not re.match(r"^(https?://|magnet:\?|ed2k://)", u, re.I)
+    ]
+    if bad:
+        return {
+            "ok": False,
+            "error": f"不支持的链接：{bad[0][:48]}",
+            "cards": [],
+            "total": 0,
+            "summary": "只支持网页分享链接、磁力或 ed2k 链接",
+        }
+    password = str(args.get("password") or "").strip()
+    cid = str(args.get("cid") or "0").strip() or "0"
+    try:
+        from app.rexhub import pan115
+
+        result = await asyncio.to_thread(pan115.save_to_drive, urls, password, cid)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e), "cards": [], "total": 0, "summary": f"转存失败：{e}"}
+    count = int(result.get("count") or 0)
+    errors = [str(x) for x in (result.get("errors") or [])][:3]
+    return {
+        "ok": count > 0,
+        "source": "cloud",
+        "mode": "save",
+        "query": f"{count} 项",
+        "total": count,
+        "cards": [],
+        "facts": [
+            {
+                "mode": result.get("mode"),
+                "count": count,
+                "received": int(result.get("received") or 0),
+                "cloud": int(result.get("cloud") or 0),
+                "errors": errors,
+            }
+        ],
+        "summary": f"已转存到 115：{count} 项" + (f"（失败 {len(errors)}）" if errors else ""),
+    }
+
+
 async def _searxng_search(query: str, *, base_url: str, limit: int) -> list[dict[str, str]]:
     root = base_url.rstrip("/")
     async with httpx.AsyncClient(timeout=httpx.Timeout(25.0, connect=8.0)) as client:
@@ -716,17 +1406,35 @@ async def _brave_search(query: str, *, api_key: str, limit: int) -> list[dict[st
 
 TOOL_HANDLERS: dict[str, ToolHandler] = {
     "sehua_keyword": run_sehua_keyword,
+    "sehua_detail": run_sehua_detail,
     "magnet_search": run_magnet_search,
+    "magnet_detail": run_magnet_detail,
     "media_search": run_media_search,
+    "media_detail": run_media_detail,
     "media_person_works": run_media_person_works,
+    "av_search": run_av_search,
+    "av_movie": run_av_movie,
+    "av_actor_works": run_av_actor_works,
+    "media_streams": run_media_streams,
+    "cloudsaver_search": run_cloudsaver_search,
+    "p115_save": run_p115_save,
     "web_search": run_web_search,
 }
 
 TOOL_STATUS_LABEL: dict[str, str] = {
     "sehua_keyword": "正在仓库搜…",
+    "sehua_detail": "正在看仓库详情…",
     "magnet_search": "正在磁力库搜…",
+    "magnet_detail": "正在看种子文件…",
     "media_search": "正在影视库搜…",
+    "media_detail": "正在看影视详情…",
     "media_person_works": "正在查影人作品…",
+    "av_search": "正在搜 AV 片库…",
+    "av_movie": "正在看 AV 详情…",
+    "av_actor_works": "正在查女优作品…",
+    "media_streams": "正在找在线片源…",
+    "cloudsaver_search": "正在搜网盘…",
+    "p115_save": "正在转存到 115…",
     "web_search": "正在搜网络…",
 }
 
@@ -744,7 +1452,12 @@ async def dispatch_tool(name: str, arguments: dict[str, Any] | str | None) -> di
         args = arguments
     else:
         args = {}
-    result = await handler(args)
+    try:
+        result = await handler(args)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"{name} 调用失败：{e}", "cards": [], "total": 0}
+    if not isinstance(result, dict):
+        return {"ok": False, "error": f"{name} 返回异常", "cards": [], "total": 0}
     if "cards" not in result:
         result["cards"] = []
     return result
@@ -823,12 +1536,18 @@ async def heuristic_local_search(
         jobs.append(("magnet_search", {"query": q, "limit": 5}))
     if want("media") and tool_ok("media_search"):
         jobs.append(("media_search", {"query": q, "limit": 5}))
+    if "av" in prefer_set and tool_ok("av_search"):
+        jobs.append(("av_search", {"query": q, "limit": 5}))
+    if "cloud" in prefer_set and tool_ok("cloudsaver_search"):
+        jobs.append(("cloudsaver_search", {"query": q, "limit": 5}))
     if not jobs and allow is not None:
         # 无 prefer 命中时，退到已启用工具
         for name in (
             "sehua_keyword",
             "magnet_search",
             "media_search",
+            "av_search",
+            "cloudsaver_search",
         ):
             if name in allow:
                 jobs.append((name, {"query": q, "limit": 5}))
@@ -839,7 +1558,7 @@ async def heuristic_local_search(
             ("media_search", {"query": q, "limit": 5}),
         ]
 
-    # 并发跑各工具；gather 保序，异常仍按 jobs 顺序原样抛出（与串行时一致）
+    # 并发跑各工具；gather 保序。单个工具异常降级为一条失败结果，不拖垮整轮检索
     outs = await asyncio.gather(
         *(dispatch_tool(name, args) for name, args in jobs), return_exceptions=True
     )
@@ -847,7 +1566,7 @@ async def heuristic_local_search(
     steps: list[dict[str, Any]] = []
     for (name, _), r in zip(jobs, outs):
         if isinstance(r, BaseException):
-            raise r
+            r = {"ok": False, "error": str(r), "cards": [], "total": 0}
         results.append(r)
         steps.append(
             {

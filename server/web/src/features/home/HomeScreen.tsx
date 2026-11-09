@@ -1,5 +1,6 @@
 'use client';
 
+import { useRef } from 'react';
 import { AppPush } from '@/components/ui/AppPush';
 import { P115PastePanel } from './P115PastePanel';
 import { AiSearchChatPanel } from './AiSearchChatPanel';
@@ -16,12 +17,18 @@ import { HomeResults } from './HomeResults';
  * 影视 = Bitmagnet + CloudSaver；片商 = AVDB + Bitmagnet + 色花堂
  */
 export function HomeScreen() {
-  const h = useHomeScreen();
+  const scrollBodyRef = useRef<HTMLDivElement | null>(null);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const h = useHomeScreen({ scrollBodyRef, sentinelRef });
 
   return (
     <div className="app-stack-root">
       <div {...h.mainCover}>
-        {h.mode === 'landing' ? <HomeLanding h={h} /> : <HomeResults h={h} />}
+        {h.mode === 'landing' ? (
+          <HomeLanding h={h} />
+        ) : (
+          <HomeResults h={h} scrollBodyRef={scrollBodyRef} sentinelRef={sentinelRef} />
+        )}
       </div>
 
       {h.detailHash ? (

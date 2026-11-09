@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" role="img" aria-label="AI 模型">
+  <defs>
+    <linearGradient id="ai" x1="3" y1="2" x2="21" y2="22" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7c3aed" />
+      <stop offset="0.55" stop-color="#ec4899" />
+      <stop offset="1" stop-color="#f59e0b" />
+    </linearGradient>
+  </defs>
+  <g fill="url(#ai)">
+    <path d="M16 2l1.35 3.05L20.4 6.4l-3.05 1.35L16 10.8l-1.35-3.05L11.6 6.4l3.05-1.35L16 2Z" />
+    <path d="M7 9.6l1.25 2.85L11.1 13.7l-2.85 1.25L7 17.8l-1.25-2.85L2.9 13.7l2.85-1.25L7 9.6Z" />
+    <path d="M16.6 13.9l.95 2.15 2.15.95-2.15.95-.95 2.15-.95-2.15-2.15-.95 2.15-.95.95-2.15Z" />
+  </g>
+</svg>

@@ -20,11 +20,6 @@ export function clearScrollPosition(key: string): void {
   memory.delete(key);
 }
 
-export function peekScrollPosition(key: string): number | undefined {
-  if (!key) return undefined;
-  return memory.get(key);
-}
-
 export function restoreScrollPosition(
   el: HTMLElement | null | undefined,
   key: string,

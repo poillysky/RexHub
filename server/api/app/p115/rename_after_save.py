@@ -7,7 +7,6 @@
 
 
 import logging
-import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
@@ -16,11 +15,11 @@ import httpx
 
 from app.p115.client import normalize_cookie
 from app.p115.extract import (
-    ARCHIVE_RE,
     MULTIPART_RE,
     POLL_MAX_S,
     _list_offline_tasks_pages,
 )
+from app.p115.naming import ARCHIVE_RE, PASSWORD_TAG_RE
 from app.p115.polling import (
     POLL_INTERVAL_S,
     is_task_done,
@@ -35,12 +34,8 @@ log = logging.getLogger("p115-rename")
 _rename_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="p115-rename")
 
 LIST_PAGE = 200
+MAX_LIST_PAGES = 20
 MAX_SCAN_DIRS = 20
-
-# 已标注过密码（新旧两种写法）就不再重复追加
-PASSWORD_TAG_RE = re.compile(
-    r"(?:【\s*(?:解压)?密码\s*[:：]\s*[^】]*】|\[\s*密码\s*[:：]?\s*[^\]]*\])"
-)
 
 
 def password_labelled_name(name: str, password: str) -> str:
@@ -61,20 +56,32 @@ def password_labelled_name(name: str, password: str) -> str:
     return f"{stem[:170]} [密码 {pwd}]{m.group(0)}"
 
 
-def folder_item_ids(folder_cid: str, *, limit: int = LIST_PAGE) -> set[str] | None:
-    """转存前记下目标目录现有条目；拿不到时返回 None（调用方放弃自动改名）。"""
+def _list_all(folder_cid: str, *, limit: int = LIST_PAGE) -> list[dict[str, Any]] | None:
+    """翻页取全目录条目；任何一页失败返回 None（调用方放弃自动改名）。"""
     from app.rexhub import pan115
 
-    try:
-        data = pan115.list_files(folder_cid or "0", 0, limit)
-    except Exception as err:  # noqa: BLE001 - 记录失败不影响转存
-        log.info("list folder %s before save failed: %s", folder_cid, err)
+    rows: list[dict[str, Any]] = []
+    offset = 0
+    for _ in range(MAX_LIST_PAGES):
+        try:
+            data = pan115.list_files(folder_cid or "0", offset, limit)
+        except Exception as err:  # noqa: BLE001 - 记录失败不影响转存
+            log.info("list folder %s failed at offset %s: %s", folder_cid, offset, err)
+            return None
+        items = data.get("items") or []
+        rows.extend(item for item in items if isinstance(item, dict))
+        if len(items) < limit:
+            break
+        offset += limit
+    return rows
+
+
+def folder_item_ids(folder_cid: str, *, limit: int = LIST_PAGE) -> set[str] | None:
+    """转存前记下目标目录现有条目；拿不到时返回 None（调用方放弃自动改名）。"""
+    rows = _list_all(folder_cid, limit=limit)
+    if rows is None:
         return None
-    return {
-        str(item.get("id") or "")
-        for item in data.get("items") or []
-        if item.get("id")
-    }
+    return {str(item.get("id") or "") for item in rows if item.get("id")}
 
 
 def _collect_pairs(
@@ -83,17 +90,13 @@ def _collect_pairs(
     password: str,
 ) -> list[tuple[str, str]]:
     """只给本次新增的压缩包（含新增目录里的一层）追加密码标注。"""
-    from app.rexhub import pan115
-
-    try:
-        data = pan115.list_files(folder_cid or "0", 0, LIST_PAGE)
-    except Exception as err:  # noqa: BLE001
-        log.info("list folder %s after save failed: %s", folder_cid, err)
+    rows = _list_all(folder_cid)
+    if rows is None:
         return []
 
     pairs: list[tuple[str, str]] = []
     scanned_dirs = 0
-    for item in data.get("items") or []:
+    for item in rows:
         item_id = str(item.get("id") or "")
         if not item_id or item_id in before_ids:
             continue
@@ -102,12 +105,10 @@ def _collect_pairs(
             if scanned_dirs >= MAX_SCAN_DIRS:
                 continue
             scanned_dirs += 1
-            try:
-                inner = pan115.list_files(item_id, 0, LIST_PAGE)
-            except Exception as err:  # noqa: BLE001
-                log.info("list sub folder %s failed: %s", item_id, err)
+            inner = _list_all(item_id)
+            if inner is None:
                 continue
-            for sub in inner.get("items") or []:
+            for sub in inner:
                 if sub.get("is_dir"):
                     continue
                 fid = str(sub.get("id") or "")

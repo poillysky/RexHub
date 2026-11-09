@@ -23,7 +23,6 @@ export type P115PanelSnapshot = {
   quotaError: string;
   spaceUsedText: string;
   spaceTotalText: string;
-  spaceRemainText: string;
   spaceUsed: number | null;
   spaceTotal: number | null;
   tasks: P115Task[];
@@ -54,18 +53,6 @@ export function patchP115PanelCache(
   cache = { ...cache, ...patch, at: Date.now() };
 }
 
-export function clearP115PanelCache(): void {
-  cache = null;
-}
-
-export function emptyP115Targets(): Record<P115SaveSource, P115TargetFolder> {
-  return {
-    search: { folderCid: '0', folderName: '' },
-    media: { folderCid: '0', folderName: '' },
-    maker: { folderCid: '0', folderName: '' },
-  };
-}
-
 /** 从 getP115 结果写一版最小缓存（无配额时） */
 export function cacheFromP115Config(
   data: P115Config,
@@ -84,7 +71,6 @@ export function cacheFromP115Config(
     quotaError: data.quotaError || prev?.quotaError || '',
     spaceUsedText: String(data.spaceUsedText ?? prev?.spaceUsedText ?? ''),
     spaceTotalText: String(data.spaceTotalText ?? prev?.spaceTotalText ?? ''),
-    spaceRemainText: String(data.spaceRemainText ?? prev?.spaceRemainText ?? ''),
     spaceUsed: data.spaceUsed ?? prev?.spaceUsed ?? null,
     spaceTotal: data.spaceTotal ?? prev?.spaceTotal ?? null,
     tasks: prev?.tasks ?? [],

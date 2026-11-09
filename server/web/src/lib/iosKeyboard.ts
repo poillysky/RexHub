@@ -105,7 +105,7 @@ export function applyFormKeyboardInset(gap: number) {
     isEditableElement(a) &&
     Boolean(
       a.closest(
-        '.app-push:not(:has(.ai-chat-push)), .settings-push, .settings-screen-root .app-push, .home-search-screen, .login-screen, .auth-viewport',
+        '.app-push:not(:has(.ai-chat-push)), .settings-screen-root .app-push, .home-search-screen, .login-screen, .auth-viewport',
       ),
     );
   // 对话搜走 --chat-keyboard-inset，不走表单上抬
@@ -175,7 +175,7 @@ export function scrollFocusedFieldAboveKeyboard() {
   if (!isEditableElement(a)) return;
   if (isAiChatFocused()) return;
   const body = a.closest(
-    '.app-push__body, .settings-push__body, .home-search-body, .home-search-screen, .login-screen, .auth-viewport',
+    '.app-push__body, .home-search-body, .home-search-screen, .login-screen, .auth-viewport',
   ) as HTMLElement | null;
   if (!body) return;
   const vv = window.visualViewport;
@@ -211,23 +211,11 @@ export function ensureFormFieldAboveKeyboard(gap: number) {
   window.setTimeout(scrollFocusedFieldAboveKeyboard, 200);
 }
 
-export function isAiChatTyping(): boolean {
-  if (!isAiChatFocused()) return false;
-  const a = document.activeElement;
-  if (!(a instanceof HTMLElement)) return false;
-  return a.classList.contains('ai-chat__input');
-}
-
 /** 钉页表单输入中（搜索 / 登录 / Push 设置等）：vv 微抖勿反复开关键盘 / 锁页 */
 export function isPinnedFormTyping(): boolean {
   if (typeof document === 'undefined') return false;
   const a = document.activeElement;
   return isEditableElement(a) && isPinnedFocusSurface(a);
-}
-
-/** @deprecated 用 isPinnedFormTyping */
-export function isPushFormTyping(): boolean {
-  return isPinnedFormTyping();
 }
 
 /** PWA 键盘期勿跟 visualViewport 对打（Push / 主页搜索 / 登录等） */
@@ -236,7 +224,7 @@ export function shouldSkipViewportFight(): boolean {
   const a = document.activeElement;
   if (!(a instanceof Element)) return false;
   if (
-    a.closest('.app-push, .settings-push, .p115-paste-page')
+    a.closest('.app-push, .p115-paste-page')
   ) {
     return true;
   }
@@ -244,11 +232,11 @@ export function shouldSkipViewportFight(): boolean {
 }
 
 const FORM_SCROLL_SEL =
-  '.app-push__body, .settings-push__body, .home-search-body, .home-search-screen, .login-screen, .auth-viewport, .modal-card, .sheet-panel, .ai-chat__msgs, .ai-chat__composer, .ai-chat__field';
+  '.app-push__body, .home-search-body, .home-search-screen, .login-screen, .auth-viewport, .modal-card, .sheet-panel, .ai-chat__msgs, .ai-chat__composer, .ai-chat__field';
 
 /** 搜索 / 登录 / Push：钉页时仍允许这些区域触摸滚动 */
 export const PINNED_FOCUS_SEL =
-  '.app-search, .app-search-row, .login-screen, .auth-viewport, .home-search-screen, .home-search-body, .home-search__field, .home-search__input, .app-push, .settings-push, .p115-paste-page';
+  '.app-search, .app-search-row, .login-screen, .auth-viewport, .home-search-screen, .home-search-body, .home-search__field, .home-search__input, .app-push, .p115-paste-page';
 
 function pushBodyKeepsScroll(el: HTMLElement): boolean {
   if (el.classList.contains('ai-chat-push')) return true;
@@ -417,7 +405,7 @@ export function lockUnderlyingScroll() {
 
   // push 内 scroller 一并钉死，避免键盘期滚动（对话搜 msgs 除外）
   document
-    .querySelectorAll<HTMLElement>('.app-push__body, .settings-push__body')
+    .querySelectorAll<HTMLElement>('.app-push__body')
     .forEach((el) => {
       if (pushBodyKeepsScroll(el)) return;
       if (el.dataset.appSavedScroll != null) return;

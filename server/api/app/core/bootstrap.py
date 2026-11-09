@@ -7,7 +7,7 @@ from typing import Any
 import app.core.settings_store as settings_store
 from app.core.config_loader import config_paths, load_config
 
-log = logging.getLogger("sns.bootstrap")
+log = logging.getLogger("rexhub.bootstrap")
 
 SETTINGS_SEED_META_KEY = "bootstrap_settings"
 

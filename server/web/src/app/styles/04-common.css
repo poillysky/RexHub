@@ -1,0 +1,141 @@
+/* 通用组件层：状态徽标 / Push 顶栏 / 设置分组与导航行 / 卡片 / Toast。
+ *
+ * 只放跨页面复用的视觉原语，不放单一业务页面的布局。
+ * 由 app-ui.css 在 03 之后引入，保持原 04 位置的级联优先级。
+ */
+
+/* ================================ 状态徽标 ================================ */
+
+.settings-nav__status--ok {
+  color: #34c759;
+}
+
+.settings-nav__status--warn {
+  color: #ff9f0a;
+}
+
+/* ================================ Push 子页 ================================ */
+
+.app-push__bar {
+  min-height: 40px;
+  padding: calc(2px + var(--nav-safe-top)) 6px 3px;
+}
+
+.app-push__back {
+  color: var(--login-blue);
+  font-size: 16px;
+  font-weight: 450;
+  min-height: 38px;
+  padding: 0 4px 0 0;
+}
+
+.app-push__title {
+  font-weight: 600;
+  letter-spacing: -0.024em;
+}
+
+html.theme-dark .app-push {
+  box-shadow: -8px 0 28px rgba(0, 0, 0, 0.45);
+}
+
+/* ================================ 分组与导航行 ================================ */
+
+.settings-group{
+  margin: 0 0 12px;
+  background: var(--surface-elevated);
+  border: 0.5px solid var(--hairline);
+  border-radius: var(--radius-row);
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.settings-group-label,
+.sht-section__label {
+  margin: 12px 4px 6px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--mute);
+  text-transform: none;
+}
+.app-hub__title,
+.sht-hub .app-hub__title {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+}
+
+.settings-nav{
+  min-height: var(--row-h);
+  padding: 8px 14px;
+  gap: 12px;
+  background: transparent;
+}
+
+.settings-nav:active{
+  background: var(--login-blue-soft);
+}
+
+.settings-nav__icon{
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+}
+
+.settings-nav__title{
+  font-size: 16px;
+  font-weight: 560;
+  letter-spacing: -0.015em;
+}
+
+.settings-nav__desc{
+  font-size: 13px;
+  color: var(--mute);
+}
+
+.settings-nav__chev{
+  color: rgba(60, 60, 67, 0.36);
+  opacity: 1;
+}
+
+html.theme-dark .settings-nav__chev{
+  color: rgba(235, 235, 245, 0.3);
+}
+
+/* ================================ 卡片与 Toast ================================ */
+
+.sht-board-card {
+  border: 0.5px solid var(--hairline);
+  border-radius: var(--radius-card);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-card);
+}
+
+.sht-board-card:active {
+  background: var(--login-blue-soft);
+  transform: scale(0.97);
+}
+
+.sht-board-card__mark {
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  background: var(--login-blue-soft);
+  color: var(--login-blue);
+}
+
+.sht-section__count {
+  background: var(--surface-fill);
+  color: var(--mute);
+}
+
+html.theme-dark .sht-board-card {
+  box-shadow: none;
+}
+
+.toast {
+  border-radius: 16px;
+  box-shadow: 0 10px 28px rgba(var(--shadow-color), 0.22);
+  border: 0.5px solid rgba(255, 255, 255, 0.12);
+}

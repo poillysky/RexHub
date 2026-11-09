@@ -2,11 +2,6 @@
 
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import {
-  fetchMediaCharts,
-  fetchMediaDiscover,
-  fetchMediaGenres,
-  fetchMediaMeta,
-  fetchMpDetail,
   fetchMpList,
   fetchMpMediaSearch,
   fetchMpPerson,
@@ -18,10 +13,6 @@ import {
   type MpSearchMode,
   type MpSearchResult,
   type MediaCategoryId,
-  type MediaChartResult,
-  type MediaDiscoverResult,
-  type MediaGenre,
-  type MediaMeta,
   type MediaRelatedResult,
   type MediaSearchResult,
   type MediaSourceId,
@@ -56,55 +47,6 @@ type Opts = { enabled?: boolean };
 
 const detailStale = 5 * 60 * 1000;
 
-export function useMediaMeta(opts: Opts = {}) {
-  return useQuery<MediaMeta>({
-    queryKey: mediaKeys.meta(),
-    queryFn: ({ signal }) => fetchMediaMeta(signal),
-    enabled: opts.enabled ?? true,
-    staleTime: 5 * 60 * 1000,
-  });
-}
-
-export function useMediaCharts(opts: {
-  source: MediaSourceId;
-  category: MediaCategoryId;
-  chart: string;
-  page?: number;
-  enabled?: boolean;
-}) {
-  const page = opts.page ?? 1;
-  return useQuery<MediaChartResult>({
-    queryKey: mediaKeys.charts(opts.source, opts.category, opts.chart, page),
-    queryFn: ({ signal }) =>
-      fetchMediaCharts({
-        source: opts.source,
-        category: opts.category,
-        chart: opts.chart,
-        page,
-        signal,
-      }),
-    enabled: opts.enabled ?? true,
-    placeholderData: keepPreviousData,
-  });
-}
-
-export function useMediaDetail(
-  opts: { source: MediaSourceId; id: string; mediaType?: 'movie' | 'tv' } & Opts,
-) {
-  return useQuery({
-    queryKey: mediaKeys.detail(opts.source, opts.id, opts.mediaType),
-    queryFn: ({ signal }) =>
-      fetchMpDetail({
-        source: opts.source,
-        id: opts.id,
-        mediaType: opts.mediaType,
-        signal,
-      }),
-    enabled: (opts.enabled ?? true) && Boolean(opts.id),
-    staleTime: detailStale,
-  });
-}
-
 export function useMediaRelated(
   opts: { source: MediaSourceId; id: string; mediaType: 'movie' | 'tv' } & Opts,
 ) {
@@ -119,46 +61,6 @@ export function useMediaRelated(
       }),
     enabled: (opts.enabled ?? true) && Boolean(opts.id),
     staleTime: detailStale,
-  });
-}
-
-export function useMediaGenres(opts: { mediaType: 'movie' | 'tv' } & Opts) {
-  return useQuery<MediaGenre[]>({
-    queryKey: mediaKeys.genres(opts.mediaType),
-    queryFn: ({ signal }) => fetchMediaGenres({ mediaType: opts.mediaType, signal }),
-    enabled: opts.enabled ?? true,
-    staleTime: 30 * 60 * 1000,
-  });
-}
-
-export function useMediaDiscover(opts: {
-  mediaType: 'movie' | 'tv';
-  genre?: string;
-  sortBy?: string;
-  year?: string;
-  page?: number;
-  enabled?: boolean;
-}) {
-  const page = opts.page ?? 1;
-  return useQuery<MediaDiscoverResult>({
-    queryKey: mediaKeys.discover(
-      opts.mediaType,
-      opts.genre || '',
-      opts.sortBy || '',
-      opts.year || '',
-      page,
-    ),
-    queryFn: ({ signal }) =>
-      fetchMediaDiscover({
-        mediaType: opts.mediaType,
-        genre: opts.genre,
-        sortBy: opts.sortBy,
-        year: opts.year,
-        page,
-        signal,
-      }),
-    enabled: opts.enabled ?? true,
-    placeholderData: keepPreviousData,
   });
 }
 

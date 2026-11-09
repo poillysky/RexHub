@@ -27,6 +27,7 @@ export function P115TasksTab({ p }: { p: P115PanelState }) {
     tasks,
     tasksLoading,
     locked,
+    settingsLocked,
     refreshTasks,
     taskFilter,
     setTaskFilter,
@@ -73,7 +74,7 @@ export function P115TasksTab({ p }: { p: P115PanelState }) {
               type="button"
               className="p115-tasks-action"
               disabled={
-                tasksLoading || locked || clearing === 'done' || taskCounts.done === 0
+                tasksLoading || settingsLocked || clearing === 'done' || taskCounts.done === 0
               }
               onClick={() => void onClear('done')}
             >
@@ -86,7 +87,7 @@ export function P115TasksTab({ p }: { p: P115PanelState }) {
               className="p115-tasks-action p115-tasks-action--warn"
               disabled={
                 tasksLoading ||
-                locked ||
+                settingsLocked ||
                 clearing === 'failed' ||
                 taskCounts.failed === 0
               }
@@ -229,7 +230,7 @@ export function P115TasksTab({ p }: { p: P115PanelState }) {
                   className="p115-task__del"
                   aria-label={`删除${show.title}`}
                   title={hash ? '删除这条任务，不删网盘文件' : '缺少 infoHash，无法删除'}
-                  disabled={locked || !hash}
+                  disabled={settingsLocked || !hash}
                   onClick={() => void onDeleteTask(t)}
                 >
                   {deleting ? (

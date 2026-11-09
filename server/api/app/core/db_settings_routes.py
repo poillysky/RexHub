@@ -11,6 +11,7 @@
 """
 
 import logging
+import re
 from typing import Any, Callable
 
 import psycopg
@@ -47,6 +48,14 @@ class DbBackupImportBody(BaseModel):
     filename: str = Field(..., min_length=1)
 
 
+# DSN 里的密码段（scheme://user:password@host）——异常文本可能原样带出，需打码
+_DSN_SECRET_RE = re.compile(r"(://[^:/@\s]+:)[^@\s]+@")
+
+
+def _redact_dsn(text: str) -> str:
+    return _DSN_SECRET_RE.sub(r"\1***@", text)
+
+
 def test_postgres_dsn(dsn: str, *, refused_hint: str) -> Envelope:
     """PG 连接自检的唯一实现（对外返回 Envelope，不抛异常）。
 
@@ -76,7 +85,7 @@ def test_postgres_dsn(dsn: str, *, refused_hint: str) -> Envelope:
         elif "timeout" in low:
             msg = "连接超时：请确认主机/防火墙/端口可达"
         else:
-            msg = raw
+            msg = _redact_dsn(raw)
         return Envelope(data={"ok": False}, message=msg, status=200)
 
 
@@ -109,6 +118,9 @@ def build_db_settings_router(
         cfg = config_model.model_validate(raw or {})
         public = cfg.model_dump()
         configured = bool(cfg.enabled and cfg.dsn.strip())
+        # DSN 内含明文密码，仅管理员可见；普通用户只拿到「是否已配置」
+        if not _user.get("is_admin"):
+            public["dsn"] = ""
         return Envelope(
             data={**public, "configured": configured},
             message="configured" if configured else "not_configured",
@@ -142,6 +154,15 @@ def build_db_settings_router(
     def list_backups(_user: dict[str, Any] = Depends(require_admin)) -> Envelope:
         return Envelope(data={"items": pg_data_backup.list_backups(backup_kind)})
 
+    @router.get(
+        "/backups/progress",
+        response_model=Envelope,
+        operation_id=f"{operation_prefix}_backups_progress",
+    )
+    def backup_progress(_user: dict[str, Any] = Depends(require_admin)) -> Envelope:
+        # 导出/导入是同步整库操作，前端在请求进行中轮询本端点取真实百分比
+        return Envelope(data=pg_data_backup.get_progress(backup_kind))
+
     @router.post("/backups/export", response_model=Envelope, operation_id=f"{operation_prefix}_backups_export")
     def export_backup(_user: dict[str, Any] = Depends(require_admin)) -> Envelope:
         try:
@@ -152,7 +173,7 @@ def build_db_settings_router(
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
         except Exception as e:  # noqa: BLE001
-            raise HTTPException(status_code=500, detail=f"导出失败：{e}") from e
+            raise HTTPException(status_code=500, detail=_redact_dsn(f"导出失败：{e}")) from e
         return Envelope(data=result, message="已导出到 backups")
 
     @router.post("/backups/import", response_model=Envelope, operation_id=f"{operation_prefix}_backups_import")
@@ -169,7 +190,7 @@ def build_db_settings_router(
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
         except Exception as e:  # noqa: BLE001
-            raise HTTPException(status_code=500, detail=f"导入失败：{e}") from e
+            raise HTTPException(status_code=500, detail=_redact_dsn(f"导入失败：{e}")) from e
         return Envelope(data=result, message="已从备份恢复资源数据")
 
     @router.post(
@@ -177,30 +198,25 @@ def build_db_settings_router(
         response_model=Envelope,
         operation_id=f"{operation_prefix}_backups_upload_import",
     )
-    async def upload_import_backup(
+    def upload_import_backup(
         file: UploadFile = File(..., description=backup_filename_desc),
         _user: dict[str, Any] = Depends(require_admin),
     ) -> Envelope:
         dsn = _dsn_or_400()
-        saved: dict[str, Any] = {}
-        restored: dict[str, Any] = {}
         try:
-            saved = pg_data_backup.save_uploaded_zip(
+            restored = pg_data_backup.import_uploaded_zip(
                 backup_kind,
+                dsn,
                 source=file.file,
                 original_name=file.filename or "",
-            )
-            restored = pg_data_backup.import_resource_zip(
-                dsn,
-                str(saved["filename"]),
-                kind=backup_kind,
+                expected_bytes=getattr(file, "size", None),
             )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
         except Exception as e:  # noqa: BLE001
-            raise HTTPException(status_code=500, detail=f"导入失败：{e}") from e
+            raise HTTPException(status_code=500, detail=_redact_dsn(f"导入失败：{e}")) from e
         finally:
-            await file.close()
-        return Envelope(data={**saved, **restored}, message="已上传并恢复资源数据")
+            file.file.close()
+        return Envelope(data=restored, message="已上传并恢复资源数据")
 
     return router
