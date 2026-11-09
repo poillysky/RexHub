@@ -4,6 +4,8 @@ import SwiftUI
 enum PanTransferMode: String, Identifiable {
     case copy
     case move
+    /// 只选目录（例如设置里的转存目录），不执行搬移。
+    case select
 
     var id: String { rawValue }
 
@@ -11,6 +13,23 @@ enum PanTransferMode: String, Identifiable {
         switch self {
         case .copy: return "复制"
         case .move: return "移动"
+        case .select: return "选择目录"
+        }
+    }
+
+    var destinationTitle: String {
+        switch self {
+        case .copy: return "复制到"
+        case .move: return "移动到"
+        case .select: return "选择转存目录"
+        }
+    }
+
+    var confirmTitle: String {
+        switch self {
+        case .copy: return "复制到这里"
+        case .move: return "移动到这里"
+        case .select: return "使用此目录"
         }
     }
 
@@ -18,6 +37,7 @@ enum PanTransferMode: String, Identifiable {
         switch self {
         case .copy: return "doc.on.doc"
         case .move: return "arrow.forward.folder"
+        case .select: return "folder"
         }
     }
 
@@ -29,6 +49,10 @@ enum PanTransferMode: String, Identifiable {
 /// 复制 / 移动的目标目录选择：从根目录逐级进入，只列出文件夹。
 struct PanFolderPickerView: View {
     let mode: PanTransferMode
+    /// 非管理员只读：新建文件夹由服务端校验管理员权限，入口直接隐藏。
+    var isAdmin: Bool = false
+    /// 需要目录名时额外回调（例如转存配置、解压目录）。
+    var onPickNamed: ((String, String) -> Void)? = nil
     /// 确认目标目录后回调其 cid。
     let onPick: (String) -> Void
 
@@ -43,6 +67,8 @@ struct PanFolderPickerView: View {
     @State private var isCreatingFolder = false
     @State private var newFolderName = ""
     @State private var createError: String?
+    @State private var isConfirming = false
+    @State private var loadedCid: String?
 
     private let listSettings = FileListSettingsStore.shared
 
@@ -57,27 +83,24 @@ struct PanFolderPickerView: View {
     var body: some View {
         VStack(spacing: 0) {
             RexNavBar(
-                title: "\(mode.actionTitle)到",
+                title: mode.destinationTitle,
                 leading: path.isEmpty
                     ? .text("取消", action: { dismiss() })
                     : .back(action: pop),
-                actions: [
-                    RexNavAction(
-                        systemImage: "folder.badge.plus",
-                        label: "新建文件夹",
-                        action: { isCreatingFolder = true }
-                    )
-                ],
+                actions: isAdmin
+                    ? [
+                        RexNavAction(
+                            systemImage: "folder.badge.plus",
+                            label: "新建文件夹",
+                            action: { isCreatingFolder = true }
+                        )
+                    ]
+                    : [],
                 isScrolled: false
             )
 
             ScrollView {
                 VStack(alignment: .leading, spacing: RexSpacing.md) {
-                    RexSectionHeader(
-                        title: "当前目录",
-                        detail: currentTitle
-                    )
-
                     folderCard
                 }
                 .padding(.horizontal, RexSpacing.xl)
@@ -134,13 +157,16 @@ struct PanFolderPickerView: View {
             RexStateCard(
                 symbol: "folder",
                 title: "这里没有子文件夹",
-                message: "可以直接选择当前目录，或新建一个文件夹。",
+                message: isAdmin
+                    ? "可以直接选择当前目录，或新建一个文件夹。"
+                    : "可以直接选择当前目录。",
                 tone: .neutral,
-                actionTitle: "新建文件夹"
-            ) {
-                RexHaptics.tap()
-                isCreatingFolder = true
-            }
+                actionTitle: isAdmin ? "新建文件夹" : nil,
+                action: isAdmin ? {
+                    RexHaptics.tap()
+                    isCreatingFolder = true
+                } : nil
+            )
         } else {
             VStack(spacing: 0) {
                 ForEach(Array(folders.enumerated()), id: \.element.id) { index, item in
@@ -197,11 +223,14 @@ struct PanFolderPickerView: View {
                 .frame(height: 1 / displayScale)
 
             Button {
+                guard !isConfirming else { return }
+                isConfirming = true
                 RexHaptics.success()
+                onPickNamed?(currentCid, currentTitle)
                 onPick(currentCid)
                 dismiss()
             } label: {
-                Text("\(mode.actionTitle)到这里")
+                Text(mode.confirmTitle)
                     .font(RexFont.button)
                     .foregroundStyle(RexColor.onBrand)
                     .frame(maxWidth: .infinity)
@@ -214,6 +243,8 @@ struct PanFolderPickerView: View {
                     .shadow(color: RexColor.brandBlue.opacity(0.24), radius: 12, y: 5)
             }
             .buttonStyle(PressableButtonStyle())
+            .disabled(isLoading || errorText != nil || isConfirming)
+            .opacity(isLoading || errorText != nil ? 0.5 : 1)
             .padding(.horizontal, RexSpacing.xl)
             .padding(.vertical, RexSpacing.md)
         }
@@ -236,11 +267,11 @@ struct PanFolderPickerView: View {
     @MainActor
     private func createFolder() async {
         let name = newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
-        newFolderName = ""
         guard !name.isEmpty, let client = apiClient else { return }
 
         do {
             try await client.panCreateFolder(cid: currentCid, name: name)
+            newFolderName = ""
             RexHaptics.success()
             await load(currentCid)
             if let created = folders.first(where: { $0.isDir && $0.name == name }) {
@@ -263,6 +294,11 @@ struct PanFolderPickerView: View {
 
         isLoading = true
         errorText = nil
+        // 切换目录时先清空旧列表，避免加载中点到上一级的残留行。
+        if loadedCid != cid {
+            folders = []
+            loadedCid = cid
+        }
         defer { isLoading = false }
 
         do {

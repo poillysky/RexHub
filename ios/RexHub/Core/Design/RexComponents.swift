@@ -259,7 +259,7 @@ struct RexStateCard: View {
         case brand
         case warning
 
-        var tint: Color {
+        @MainActor var tint: Color {
             switch self {
             case .neutral: return RexColor.secondaryText
             case .brand: return RexColor.brandBlue
@@ -408,50 +408,52 @@ struct RexSkeletonResultCard: View {
     }
 }
 
-// MARK: - 浮层提示
+// MARK: - 原生提示弹窗
 
-struct RexToastBanner: View {
-    let message: String
-    var symbol: String = "checkmark.circle.fill"
+/// 统一的系统弹窗信息：标题 + 可选正文。
+/// 使用 SwiftUI `.alert`，与系统 UIAlertController 一致，替代自定义 Toast / 内联结果条。
+struct RexAlertInfo: Identifiable {
+    let id = UUID()
+    var title: String
+    var message: String?
 
-    var body: some View {
-        HStack(spacing: RexSpacing.sm) {
-            Image(systemName: symbol)
-                .font(.system(.footnote, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.92))
+    init(title: String = "提示", message: String? = nil) {
+        self.title = title
+        self.message = message
+    }
 
-            Text(message)
-                .font(.system(.subheadline, weight: .medium))
-                .foregroundStyle(.white)
-                .lineLimit(2)
-                .multilineTextAlignment(.leading)
-        }
-        .padding(.horizontal, RexSpacing.lg)
-        .frame(minHeight: RexLayout.minTouch)
-        .background(Color.black.opacity(0.86), in: Capsule(style: .continuous))
-        .overlay {
-            Capsule(style: .continuous)
-                .strokeBorder(.white.opacity(0.12), lineWidth: 0.75)
-        }
-        .shadow(color: .black.opacity(0.22), radius: 16, y: 6)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isStaticText)
+    static func success(_ message: String, title: String = "已完成") -> RexAlertInfo {
+        RexAlertInfo(title: title, message: message)
+    }
+
+    static func failure(_ message: String, title: String = "操作失败") -> RexAlertInfo {
+        RexAlertInfo(title: title, message: message)
+    }
+
+    static func notice(_ message: String, title: String = "提示") -> RexAlertInfo {
+        RexAlertInfo(title: title, message: message)
     }
 }
 
 extension View {
-    /// 顶部 Toast：调用方只需维护 `String?`，显隐动画与无障碍朗读统一在这里处理。
-    func rexToast(_ message: String?, alignment: Alignment = .top) -> some View {
-        overlay(alignment: alignment) {
-            if let message {
-                RexToastBanner(message: message)
-                    .padding(.horizontal, RexSpacing.xl)
-                    .padding(.top, RexSpacing.sm)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .zIndex(2)
+    /// 原生弹窗：调用方维护 `RexAlertInfo?`，关闭时自动置空。
+    func rexAlert(_ info: Binding<RexAlertInfo?>) -> some View {
+        alert(
+            info.wrappedValue?.title ?? "提示",
+            isPresented: Binding(
+                get: { info.wrappedValue != nil },
+                set: { presented in
+                    if !presented { info.wrappedValue = nil }
+                }
+            ),
+            presenting: info.wrappedValue
+        ) { _ in
+            Button("好", role: .cancel) {}
+        } message: { value in
+            if let message = value.message, !message.isEmpty {
+                Text(message)
             }
         }
-        .animation(RexMotion.quick, value: message)
     }
 }
 
@@ -553,8 +555,6 @@ struct RexRowButtonStyle: ButtonStyle {
         ) {}
 
         RexSkeletonResultCard()
-
-        RexToastBanner(message: "链接已复制")
     }
     .padding(RexSpacing.xl)
     .background(RexPageBackground())

@@ -1,8 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// 「更多」Tab：iOS 原生风格的分组设置中心。
-/// 结构固定：服务状态卡 → 常用功能快捷入口 → 外观与文件 / 视频与音乐 / 其他设置 / 应用与支持，
+/// 「更多」Tab：与 PWA 设置中心同构 —— 大标题 + 分组入口（彩色图标 + 描述）。
 struct MoreView: View {
     let session: AuthSession
     var onLogout: () -> Void
@@ -10,87 +9,25 @@ struct MoreView: View {
     var isOffline: Bool = false
 
     @State private var isScrolled = false
+    @State private var cacheUsage = CacheUsage.zero
+    @State private var isLoadingCache = true
+    @State private var isShowingCache = false
 
     var body: some View {
         VStack(spacing: 0) {
-            RexNavBar(title: "更多", isScrolled: isScrolled)
+            RexHubTitle(title: "更多") {
+                EmptyView()
+            }
 
             ScrollViewReader { proxy in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: RexSpacing.xxl) {
-                        VStack(alignment: .leading, spacing: RexSpacing.sm) {
-                            Text("个人设置与服务中心")
-                                .font(RexFont.section)
-                                .foregroundStyle(RexColor.secondaryText)
-                                .padding(.horizontal, RexSpacing.xs)
-
-                            NavigationLink {
-                                AccountSettingsView(session: session, onLogout: onLogout)
-                            } label: {
-                                ServiceStatusCard(isOffline: isOffline)
-                            }
-                            .buttonStyle(PressableButtonStyle())
-                        }
-
-                        SettingsSection(title: "常用功能") {
-                            QuickActionGrid(actions: quickActions)
-                        }
-
-                        SettingsSection(title: "外观与文件") {
-                            SettingsLink(icon: "paintpalette", title: "外观与主题") {
-                                AppearanceSettingsView()
-                            }
-                            SettingsDivider()
-                            SettingsLink(icon: "list.bullet.rectangle", title: "文件列表") {
-                                FileListSettingsView()
-                            }
-                        }
-
-                        SettingsSection(title: "视频与音乐") {
-                            SettingsLink(icon: "play.rectangle", title: "视频播放器") {
-                                VideoPlayerSettingsView()
-                            }
-
-                            SettingsDivider()
-
-                            SettingsLink(icon: "slider.horizontal.3", title: "播放偏好") {
-                                PlaybackPreferenceView()
-                            }
-
-                            SettingsDivider()
-
-                            SettingsLink(icon: "hand.draw", title: "手势") {
-                                GestureSettingsView()
-                            }
-
-                            SettingsDivider()
-
-                            SettingsLink(icon: "captions.bubble", title: "字幕") {
-                                SubtitleSettingsView()
-                            }
-
-                            SettingsDivider()
-
-                            SettingsLink(icon: "music.note", title: "音乐播放器") {
-                                MusicPlayerSettingsView()
-                            }
-                        }
-
-                        SettingsSection(title: "其他设置") {
-                            entry("eye.slash", "私密模式设置")
-                            SettingsDivider()
-                            SettingsLink(icon: "internaldrive", title: "缓存管理") {
-                                CacheManagementView()
-                            }
-                        }
-
-                        SettingsSection(title: "应用与支持") {
-                            entry("info.circle", "关于与版本", value: appVersion)
-                            SettingsDivider()
-                            entry("envelope", "问题反馈")
-                            SettingsDivider()
-                            entry("doc.text.magnifyingglass", "日志与诊断")
-                        }
+                    VStack(alignment: .leading, spacing: RexSpacing.xl) {
+                        cacheSection
+                        quickSection
+                        accountSection
+                        playerSection
+                        networkSection
+                        supportSection
 
                         Text("RexHub · Version \(appVersion)")
                             .font(RexFont.caption)
@@ -99,7 +36,7 @@ struct MoreView: View {
                             .padding(.top, RexSpacing.xs)
                     }
                     .padding(.horizontal, RexSpacing.xl)
-                    .padding(.top, RexSpacing.md)
+                    .padding(.top, RexSpacing.sm)
                     .padding(.bottom, RexSpacing.huge)
                     .frame(maxWidth: RexLayout.contentMaxWidth, alignment: .leading)
                     .frame(maxWidth: .infinity)
@@ -117,39 +54,297 @@ struct MoreView: View {
             }
         }
         .background(RexPageBackground())
+        .task { await refreshCache() }
+        .navigationDestination(isPresented: $isShowingCache) {
+            CacheManagementView()
+        }
+        .onChange(of: isShowingCache) { _, showing in
+            guard !showing else { return }
+            Task { await refreshCache() }
+        }
     }
 
-    /// 常用功能：高频业务入口，不是设置项，不与下面的分组重复。
-    private var quickActions: [QuickAction] {
-        [
-            QuickAction(icon: .symbol("heart.fill", 0xFF8FB1, 0xFF4D6D), title: "我的收藏") {
-                AnyView(ComingSoonPage(title: "我的收藏"))
-            },
-            QuickAction(icon: .asset("Brand115"), title: "115 网盘") {
-                AnyView(PanAccountView())
-            },
-            QuickAction(icon: .symbol("server.rack", 0x64D2FF, 0x0A84FF), title: "服务管理") {
-                AnyView(ServiceManagementView())
-            },
-            QuickAction(icon: .symbol("puzzlepiece.extension.fill", 0xA98BFF, 0x6D5AE6), title: "插件管理") {
-                AnyView(ComingSoonPage(title: "插件管理"))
+    // MARK: - 分组
+
+    private var cacheSection: some View {
+        Button {
+            isShowingCache = true
+        } label: {
+            CacheStorageCard(usage: cacheUsage, isLoading: isLoadingCache)
+        }
+        .buttonStyle(PressableButtonStyle())
+        .accessibilityLabel("缓存管理")
+    }
+
+    private func refreshCache() async {
+        cacheUsage = await CacheStats.scan()
+        isLoadingCache = false
+    }
+
+    private var accountSection: some View {
+        SettingsSection(title: "账号与外观") {
+            RexSettingsNavLink(
+                icon: "person.2.fill",
+                tint: Color(hex: 0x0A84FF),
+                title: "用户管理"
+            ) {
+                AccountSettingsView(session: session, onLogout: onLogout)
             }
+
+            SettingsDivider()
+
+            RexSettingsNavLink(
+                icon: "paintpalette.fill",
+                tint: Color(hex: 0x6D5AE6),
+                title: "外观"
+            ) {
+                AppearanceSettingsView()
+            }
+
+            SettingsDivider()
+
+            RexSettingsNavLink(
+                icon: "list.bullet.rectangle.fill",
+                tint: RexColor.brandBlue,
+                title: "文件列表"
+            ) {
+                FileListSettingsView()
+            }
+        }
+    }
+
+    /// 缓存卡片下方的快捷入口：一行四列，点进去是各自的配置列表。
+    private var quickSection: some View {
+        VStack(alignment: .leading, spacing: RexSpacing.sm) {
+            Text("快捷入口")
+                .font(RexFont.section)
+                .foregroundStyle(RexColor.secondaryText)
+                .padding(.horizontal, RexSpacing.xs)
+
+            QuickActionGrid(actions: quickActions)
+                .padding(.vertical, RexSpacing.md)
+                .padding(.horizontal, RexSpacing.xs)
+                .frame(maxWidth: .infinity)
+                .rexCard(cornerRadius: RexRadius.panel)
+        }
+    }
+
+    private var quickActions: [QuickAction] {
+        var actions: [QuickAction] = [
+            QuickAction(
+                icon: .asset("Brand115"),
+                title: "115 网盘",
+                destination: {
+                    AnyView(PanAccountView(isAdmin: session.user.isAdmin))
+                }
+            ),
+            QuickAction(
+                icon: .symbol("square.stack.3d.up.fill", 0x34C759, 0x248A3D),
+                title: "服务",
+                destination: {
+                    AnyView(ServiceSettingsHubView(isAdmin: session.user.isAdmin))
+                }
+            ),
+            QuickAction(
+                icon: .asset("ServicePluginCenter"),
+                title: "插件",
+                destination: {
+                    AnyView(PluginSettingsHubView(isAdmin: session.user.isAdmin))
+                }
+            )
         ]
+
+        if session.user.isAdmin {
+            actions.append(
+                QuickAction(
+                    icon: .asset("ServiceAI"),
+                    title: "AI 模型",
+                    destination: {
+                        AnyView(AISettingsView(isAdmin: true))
+                    }
+                )
+            )
+        }
+
+        return actions
+    }
+
+    private var networkSection: some View {
+        SettingsSection(title: "网络管理") {
+            RexSettingsNavLink(
+                imageName: "ServiceNetwork",
+                title: "网络代理"
+            ) {
+                NetworkSettingsView(isAdmin: session.user.isAdmin)
+            }
+        }
+    }
+
+    private var playerSection: some View {
+        SettingsSection(title: "播放与音频") {
+            RexSettingsNavLink(
+                icon: "play.rectangle.fill",
+                tint: Color(hex: 0x0A84FF),
+                title: "视频播放器"
+            ) {
+                VideoPlayerSettingsView()
+            }
+
+            SettingsDivider()
+
+            RexSettingsNavLink(
+                icon: "slider.horizontal.3",
+                tint: Color(hex: 0x64D2FF),
+                title: "播放偏好"
+            ) {
+                PlaybackPreferenceView()
+            }
+
+            SettingsDivider()
+
+            RexSettingsNavLink(
+                icon: "hand.draw.fill",
+                tint: Color(hex: 0xFF9F0A),
+                title: "手势"
+            ) {
+                GestureSettingsView()
+            }
+
+            SettingsDivider()
+
+            RexSettingsNavLink(
+                icon: "captions.bubble.fill",
+                tint: Color(hex: 0xEC4899),
+                title: "字幕"
+            ) {
+                SubtitleSettingsView()
+            }
+
+            SettingsDivider()
+
+            RexSettingsNavLink(
+                icon: "music.note",
+                tint: Color(hex: 0xA855F7),
+                title: "音乐播放器"
+            ) {
+                MusicPlayerSettingsView()
+            }
+        }
+    }
+
+    private var supportSection: some View {
+        SettingsSection(title: "应用与支持") {
+            RexSettingsNavButton(
+                icon: "info.circle.fill",
+                tint: Color(hex: 0x0A84FF),
+                title: "关于与版本",
+                value: nil,
+                action: {}
+            )
+
+            SettingsDivider()
+
+            RexSettingsNavButton(
+                icon: "envelope.fill",
+                tint: Color(hex: 0x10B981),
+                title: "问题反馈",
+                value: nil,
+                action: {}
+            )
+
+            SettingsDivider()
+
+            RexSettingsNavButton(
+                icon: "doc.text.magnifyingglass",
+                tint: Color(hex: 0x64748B),
+                title: "日志与诊断",
+                value: nil,
+                action: {}
+            )
+        }
     }
 
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
     }
+}
 
-    /// 统一入口：未接入的设置项先进占位页。
-    private func entry(_ icon: String, _ title: String, value: String? = nil) -> some View {
-        SettingsLink(icon: icon, title: title, value: value) {
-            ComingSoonPage(title: title)
+// MARK: - 二级页
+
+/// 「服务」快捷入口：服务配置列表，图标使用 PWA 同款品牌图。
+private struct ServiceSettingsHubView: View {
+    let isAdmin: Bool
+
+    var body: some View {
+        SettingsPage(title: "服务管理") {
+            SettingsSection(title: "服务") {
+                ForEach(Array(ServiceKind.allCases.enumerated()), id: \.element.id) { index, kind in
+                    if index > 0 {
+                        SettingsDivider()
+                    }
+
+                    RexSettingsNavLink(
+                        imageName: kind.imageName,
+                        title: kind.title,
+                        tags: kind.tags,
+                        subtitle: kind.subtitle
+                    ) {
+                        ServiceSettingsDestination(kind: kind, isAdmin: isAdmin)
+                    }
+                }
+            }
+
+            RexNote(text: "连接参数在此维护；账号、密码与令牌仅管理员可修改，普通账号只读。")
         }
     }
 }
 
-// MARK: - 二级页
+/// 按服务类型分流到 HTTP 配置页或 Postgres 连接配置页。
+private struct ServiceSettingsDestination: View {
+    let kind: ServiceKind
+    let isAdmin: Bool
+
+    var body: some View {
+        if kind.usesPostgres {
+            PostgresDbSettingsView(
+                kind: kind,
+                isAdmin: isAdmin,
+                showsForumManagement: kind == .sehuatang
+            )
+        } else {
+            ServiceSettingsView(kind: kind, isAdmin: isAdmin)
+        }
+    }
+}
+
+/// 「插件」快捷入口：插件配置列表。
+private struct PluginSettingsHubView: View {
+    let isAdmin: Bool
+
+    var body: some View {
+        SettingsPage(title: "插件") {
+            SettingsSection(title: "插件") {
+                RexSettingsNavLink(
+                    imageName: "ServicePluginCenter",
+                    title: "插件中心"
+                ) {
+                    PluginCenterView(isAdmin: isAdmin)
+                }
+
+                if isAdmin {
+                    SettingsDivider()
+
+                    RexSettingsNavLink(
+                        imageName: "ServiceStremio",
+                        title: "Stremio 插件库"
+                    ) {
+                        StremioSettingsView(isAdmin: true)
+                    }
+                }
+            }
+        }
+    }
+}
 
 private struct AccountSettingsView: View {
     let session: AuthSession
@@ -324,7 +519,7 @@ private struct ChangePasswordView: View {
     @State private var newPassword = ""
     @State private var confirmPassword = ""
     @State private var isSaving = false
-    @State private var errorText: String?
+    @State private var alert: RexAlertInfo?
     @State private var isFinished = false
     @FocusState private var focused: Field?
 
@@ -374,10 +569,6 @@ private struct ChangePasswordView: View {
                     )
                 }
 
-                if let errorText {
-                    RexInlineNotice(message: errorText, tone: .error)
-                }
-
                 Button {
                     Task { await submit() }
                 } label: {
@@ -396,6 +587,7 @@ private struct ChangePasswordView: View {
 
                 RexNote(text: "修改后所有设备的登录状态会立即失效，需要用新密码重新登录。")
             }
+            .rexAlert($alert)
         }
         .alert("密码已修改", isPresented: $isFinished) {
             Button("重新登录") { onLogout() }
@@ -446,14 +638,14 @@ private struct ChangePasswordView: View {
     private func submit() async {
         guard canSubmit else { return }
         guard let client = apiClient else {
-            errorText = "登录状态已失效，请重新登录"
+            alert = .failure("登录状态已失效，请重新登录")
             RexHaptics.error()
             return
         }
 
         focused = nil
         isSaving = true
-        errorText = nil
+        alert = nil
         defer { isSaving = false }
 
         do {
@@ -462,9 +654,7 @@ private struct ChangePasswordView: View {
             isFinished = true
         } catch {
             RexHaptics.error()
-            withAnimation(RexMotion.quick) {
-                errorText = (error as? LocalizedError)?.errorDescription ?? "修改失败，请重试"
-            }
+            alert = .failure((error as? LocalizedError)?.errorDescription ?? "修改失败，请重试")
         }
     }
 }
@@ -569,10 +759,12 @@ private struct QuickAction: Identifiable {
 private struct QuickActionGrid: View {
     let actions: [QuickAction]
 
-    private let columns = Array(
-        repeating: GridItem(.flexible(), spacing: RexSpacing.sm),
-        count: 4
-    )
+    private var columns: [GridItem] {
+        Array(
+            repeating: GridItem(.flexible(), spacing: RexSpacing.sm),
+            count: max(1, min(actions.count, 4))
+        )
+    }
 
     var body: some View {
         LazyVGrid(columns: columns, spacing: RexSpacing.md) {
@@ -600,19 +792,18 @@ private struct QuickActionGrid: View {
     }
 
     private func cell(_ action: QuickAction) -> some View {
-        VStack(spacing: RexSpacing.sm) {
+        VStack(spacing: 10) {
             iconTile(action.icon)
 
             Text(action.title)
-                .font(.system(.caption, weight: .medium))
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(RexColor.primaryText)
                 .lineLimit(1)
-                .minimumScaleFactor(0.85)
+                .minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity)
-        .frame(minHeight: 84)
-        .padding(.vertical, RexSpacing.sm)
-        .contentShape(Rectangle())
+        .padding(.vertical, RexSpacing.xs)
+        .contentShape(RoundedRectangle(cornerRadius: RexRadius.small, style: .continuous))
     }
 
     @ViewBuilder
@@ -620,30 +811,30 @@ private struct QuickActionGrid: View {
         switch icon {
         case .symbol(let name, let startHex, let endHex):
             Image(systemName: name)
-                .font(.system(size: 19, weight: .semibold))
+                .font(.system(size: 21, weight: .semibold))
                 .foregroundStyle(.white)
-                .frame(width: 44, height: 44)
+                .frame(width: 50, height: 50)
                 .background(
                     LinearGradient(
                         colors: [Color(hex: startHex), Color(hex: endHex)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
-                    in: RoundedRectangle(cornerRadius: RexRadius.iconTile, style: .continuous)
+                    in: RoundedRectangle(cornerRadius: 15, style: .continuous)
                 )
                 .overlay {
-                    RoundedRectangle(cornerRadius: RexRadius.iconTile, style: .continuous)
+                    RoundedRectangle(cornerRadius: 15, style: .continuous)
                         .strokeBorder(.white.opacity(0.28), lineWidth: 1)
                 }
-                .shadow(color: Color(hex: endHex).opacity(0.26), radius: 8, y: 4)
+                .shadow(color: Color(hex: endHex).opacity(0.28), radius: 10, y: 5)
 
         case .asset(let name):
             Image(name)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 44, height: 44)
-                .clipShape(RoundedRectangle(cornerRadius: RexRadius.iconTile, style: .continuous))
-                .shadow(color: Color(hex: 0x1B3B8F).opacity(0.22), radius: 8, y: 4)
+                .frame(width: 50, height: 50)
+                .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+                .shadow(color: Color(hex: 0x1B3B8F).opacity(0.18), radius: 10, y: 5)
         }
     }
 }
@@ -670,6 +861,8 @@ struct SettingsPage<Content: View>: View {
     let title: String
     /// 顶栏右侧快捷操作，最多两个。
     var actions: [RexNavAction] = []
+    /// 传入后页面支持下拉刷新。
+    var onRefresh: (() async -> Void)? = nil
     @ViewBuilder var content: Content
 
     @Environment(\.dismiss) private var dismiss
@@ -695,12 +888,26 @@ struct SettingsPage<Content: View>: View {
                 .frame(maxWidth: .infinity)
                 .background(RexScrollOffsetReader(space: "settingsScroll"))
             }
+            .modifier(SettingsRefreshModifier(action: onRefresh))
             .scrollDismissesKeyboard(.interactively)
             .scrollBounceBehavior(.basedOnSize)
             .rexScrollTracking("settingsScroll", isScrolled: $isScrolled)
         }
         .background(RexPageBackground())
         .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
+/// 只有传入刷新动作时才启用下拉刷新，避免普通设置页出现空手势。
+private struct SettingsRefreshModifier: ViewModifier {
+    let action: (() async -> Void)?
+
+    func body(content: Content) -> some View {
+        if let action {
+            content.refreshable { await action() }
+        } else {
+            content
+        }
     }
 }
 

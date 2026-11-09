@@ -3,7 +3,10 @@ import SwiftUI
 /// 115 网盘账号页：展示服务端探测到的头像、VIP 与容量，并提供云下载入口。
 /// App 不接触 Cookie，所有 115 请求由 NAS 后端转发。
 struct PanAccountView: View {
+    var isAdmin: Bool = false
+
     @Environment(\.apiClient) private var apiClient
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var account: PanAccount?
     @State private var phase: Phase = .loading
@@ -15,7 +18,7 @@ struct PanAccountView: View {
     }
 
     var body: some View {
-        SettingsPage(title: "115 网盘") {
+        SettingsPage(title: "115 网盘", onRefresh: { await load(silent: account != nil) }) {
             switch phase {
             case .loading where account == nil:
                 loadingCard
@@ -31,17 +34,22 @@ struct PanAccountView: View {
                     actions
                 } else {
                     unboundCard
+                    actions
                 }
             }
         }
         .task {
-            guard account == nil else { return }
-            if let cached = PanAccountCache.fresh {
+            // 先展示缓存，再静默刷新；从 PWA 绑定完返回时也能拿到最新状态。
+            if account == nil, let cached = PanAccountCache.fresh {
                 account = cached
                 phase = .loaded
-                return
             }
-            await load()
+            await load(silent: account != nil)
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            // 后台去 PWA 绑定 115 后回到 App，自动刷新账号状态。
+            guard newPhase == .active, account != nil else { return }
+            Task { await load(silent: true) }
         }
     }
 
@@ -68,21 +76,6 @@ struct PanAccountView: View {
                 }
 
                 Spacer(minLength: 0)
-            }
-
-            Rectangle()
-                .fill(.white.opacity(0.16))
-                .frame(height: 1)
-
-            HStack(spacing: 0) {
-                metric(icon: "internaldrive.fill", title: "已用空间", value: sizeText(account.used))
-
-                Rectangle()
-                    .fill(.white.opacity(0.2))
-                    .frame(width: 1, height: 32)
-                    .padding(.horizontal, RexSpacing.lg)
-
-                metric(icon: "externaldrive.fill", title: "网盘容量", value: sizeText(account.total))
             }
         }
         .padding(RexSpacing.xl)
@@ -180,28 +173,6 @@ struct PanAccountView: View {
         guard account.vipActive else { return "普通账号" }
         if account.vipForever { return "永久 VIP" }
         return account.vipExpire.isEmpty ? "VIP 会员" : "VIP 至 \(account.vipExpire)"
-    }
-
-    private func metric(icon: String, title: String, value: String) -> some View {
-        HStack(spacing: RexSpacing.sm) {
-            Image(systemName: icon)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.7))
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(.caption2, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.78))
-
-                Text(value)
-                    .font(.system(.callout, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                    .contentTransition(.numericText())
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - 容量
@@ -304,42 +275,90 @@ struct PanAccountView: View {
     private var actions: some View {
         SettingsSection(title: "快捷操作") {
             NavigationLink {
-                PanCloudDownloadView()
+                DriveView(isPushed: true, isAdmin: isAdmin)
             } label: {
-                HStack(spacing: RexSpacing.md) {
-                    Image(systemName: "icloud.and.arrow.down.fill")
-                        .font(.system(size: 19, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 42, height: 42)
-                        .background(
-                            RexColor.brandGradient,
-                            in: RoundedRectangle(cornerRadius: 13, style: .continuous)
-                        )
+                actionRow(
+                    symbol: "folder.fill",
+                    colors: [0x4C9CFF, 0x1652D6],
+                    title: "全部文件"
+                )
+            }
+            .buttonStyle(PressableButtonStyle())
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("云下载")
-                            .font(.system(.headline, weight: .semibold))
-                            .foregroundStyle(RexColor.primaryText)
+            SettingsDivider()
 
-                        Text("添加磁力 / HTTP 链接离线下载")
-                            .font(RexFont.caption)
-                            .foregroundStyle(RexColor.secondaryText)
-                            .lineLimit(1)
-                    }
+            NavigationLink {
+                PanExtractView(isAdmin: isAdmin)
+            } label: {
+                actionRow(
+                    symbol: "archivebox.fill",
+                    colors: [0xAF52DE, 0x7A3FD6],
+                    title: "文件解压"
+                )
+            }
+            .buttonStyle(PressableButtonStyle())
 
-                    Spacer(minLength: RexSpacing.sm)
+            SettingsDivider()
 
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12.5, weight: .semibold))
-                        .foregroundStyle(RexColor.tertiaryText)
-                }
-                .padding(.horizontal, RexSpacing.lg)
-                .frame(minHeight: 72)
-                .frame(maxWidth: .infinity)
-                .contentShape(Rectangle())
+            NavigationLink {
+                PanTransferConfigView(isAdmin: isAdmin)
+            } label: {
+                actionRow(
+                    symbol: "folder.badge.gearshape",
+                    colors: [0x30B0C7, 0x16879B],
+                    title: "文件转存"
+                )
+            }
+            .buttonStyle(PressableButtonStyle())
+
+            SettingsDivider()
+
+            NavigationLink {
+                PanCloudDownloadView(isAdmin: isAdmin)
+            } label: {
+                actionRow(
+                    symbol: "icloud.and.arrow.down.fill",
+                    colors: [0x4C9CFF, 0x1652D6],
+                    title: "云下载"
+                )
             }
             .buttonStyle(PressableButtonStyle())
         }
+    }
+
+    private func actionRow(
+        symbol: String,
+        colors: [UInt32],
+        title: String
+    ) -> some View {
+        HStack(spacing: RexSpacing.md) {
+            Image(systemName: symbol)
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 42, height: 42)
+                .background(
+                    LinearGradient(
+                        colors: colors.map { Color(hex: $0) },
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+                )
+
+            Text(title)
+                .font(.system(.headline, weight: .semibold))
+                .foregroundStyle(RexColor.primaryText)
+
+            Spacer(minLength: RexSpacing.sm)
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundStyle(RexColor.tertiaryText)
+        }
+        .padding(.horizontal, RexSpacing.lg)
+        .frame(minHeight: RexLayout.rowHeight)
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
     }
 
     // MARK: - 状态卡
@@ -407,13 +426,17 @@ struct PanAccountView: View {
 
     // MARK: - 数据
 
-    private func load() async {
+    private func load(silent: Bool = false) async {
         guard let client = apiClient else {
-            phase = .failed("登录状态已失效，请重新登录")
+            if !silent || account == nil {
+                phase = .failed("登录状态已失效，请重新登录")
+            }
             return
         }
 
-        phase = .loading
+        if !silent {
+            phase = .loading
+        }
         do {
             let snapshot = try await client.panAccount()
             PanAccountCache.store(snapshot)
@@ -421,8 +444,11 @@ struct PanAccountView: View {
             phase = .loaded
         } catch let error as APIError {
             guard error != .cancelled else { return }
+            // 静默刷新失败时保留已展示的账号信息，不打断页面。
+            guard !silent || account == nil else { return }
             phase = .failed(message(for: error))
         } catch {
+            guard !silent || account == nil else { return }
             phase = .failed("读取账号信息失败，请重试")
         }
     }
@@ -438,6 +464,7 @@ struct PanAccountView: View {
 // MARK: - 账号缓存
 
 /// 账号快照缓存：5 分钟内再次进入页面直接展示，避免每次 push 都等 115 接口。
+@MainActor
 private enum PanAccountCache {
     private static let ttl: TimeInterval = 300
     private static var account: PanAccount?

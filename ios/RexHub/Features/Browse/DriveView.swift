@@ -2,36 +2,24 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-/// 网盘 Tab：逐级浏览服务端已绑定的 115 网盘目录。
+/// 网盘目录浏览：默认作为一级 Tab 的根页面，也可从「快捷操作 · 全部文件」推入。
 /// 列表走服务端 JSON，播放只取临时直链，视频流量不经过本地服务端。
 struct DriveView: View {
     var reselectToken: Int = 0
-
-    @State private var path: [DriveRoute] = []
+    /// 被其他页面推入时显示返回按钮，而不是作为 Tab 根页面。
+    var isPushed: Bool = false
+    /// 非管理员只读：服务端所有写操作都要求管理员权限。
+    var isAdmin: Bool = false
 
     var body: some View {
         DriveFolderView(
             cid: "0",
-            title: "网盘",
-            isRoot: true,
+            title: isPushed ? "全部文件" : "网盘",
+            isRoot: !isPushed,
             reselectToken: reselectToken,
-            path: $path
+            isAdmin: isAdmin
         )
-        .navigationDestination(for: DriveRoute.self) { route in
-            DriveFolderView(
-                cid: route.cid,
-                title: route.name,
-                isRoot: false,
-                path: $path
-            )
-        }
     }
-}
-
-/// 文件夹路由，配合 `NavigationStack(path:)` 支持点击 Tab 回到根目录。
-private struct DriveRoute: Hashable {
-    let cid: String
-    let name: String
 }
 
 private struct DriveFolderView: View {
@@ -40,7 +28,7 @@ private struct DriveFolderView: View {
     /// 一级页没有返回；进入子文件夹后显示返回。
     let isRoot: Bool
     var reselectToken: Int = 0
-    @Binding var path: [DriveRoute]
+    var isAdmin: Bool = false
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.displayScale) private var displayScale
@@ -108,7 +96,12 @@ private struct DriveFolderView: View {
         .toolbar(.hidden, for: .navigationBar)
         .toolbar(isSelecting ? .hidden : .visible, for: .tabBar)
         .navigationDestination(isPresented: $showCloudDownload) {
-            PanCloudDownloadView()
+            PanCloudDownloadView(isAdmin: isAdmin)
+        }
+        .onChange(of: showCloudDownload) { _, presented in
+            // 云下载返回后刷新列表，让新落盘的文件立即出现。
+            guard !presented else { return }
+            Task { await load(reset: true) }
         }
         .fullScreenCover(item: $playItem) { item in
             RexPlayerView(item: item, playlist: videoItems)
@@ -136,25 +129,25 @@ private struct DriveFolderView: View {
                 busyOverlay(transferringText)
             }
         }
-        .sheet(item: $transferMode) { mode in
-            PanFolderPickerView(mode: mode) { cid in
+        .rexBottomDrawer(item: $transferMode) { mode in
+            PanFolderPickerView(mode: mode, isAdmin: isAdmin) { cid in
                 Task { await transfer(mode, to: cid, ids: transferIDs) }
             }
-            .rexSheetStyle(detents: [.large])
         }
-        .rexCardSheet(item: $actionItem) { item in
+        .rexBottomDrawer(item: $actionItem, sizing: .content(minHeight: 320)) { item in
             PanItemActionSheet(
                 item: item,
                 onInfo: { runAfterActionSheet { infoItem = item } },
                 onRename: { startRename(item) },
                 onTransfer: { mode in beginTransfer(mode, ids: [item.id]) },
-                onDelete: { confirmDelete([item.id]) }
+                onDelete: { confirmDelete([item.id]) },
+                isAdmin: isAdmin
             )
         }
-        .sheet(item: $infoItem) { item in
+        .rexBottomDrawer(item: $infoItem, sizing: .content()) { item in
             PanItemInfoSheet(item: item)
         }
-        .sheet(isPresented: $isBatchRenamePromptShown) {
+        .rexBottomDrawer(isPresented: $isBatchRenamePromptShown, sizing: .content()) {
             PanBatchRenameSheet(items: selectedItems) { pairs in
                 Task { await batchRename(pairs) }
             }
@@ -450,6 +443,9 @@ private struct DriveFolderView: View {
                 try await client.panCopy(ids: ids, to: cid)
             case .move:
                 try await client.panMove(ids: ids, to: cid)
+            case .select:
+                // 选目录模式不会走到搬移逻辑，这里只做兜底。
+                break
             }
             if isSelecting { exitSelection() }
             await load(reset: true)
@@ -570,48 +566,61 @@ private struct DriveFolderView: View {
                         action: exitSelection
                     )
                 ]
-                : [
-                    RexNavAction(
-                        systemImage: "icloud.and.arrow.down",
-                        label: "云下载",
-                        isEnabled: true,
-                        action: { showCloudDownload = true }
-                    ),
-                    RexNavAction(
-                        systemImage: "ellipsis",
-                        label: "更多操作",
-                        showsCircleOutline: true,
-                        menu: { AnyView(moreMenu) }
-                    )
-                ],
+                : headerActions,
             groupsActions: !isSelecting,
             isScrolled: isScrolled
         )
     }
 
+    /// 顶栏右侧操作：云下载仅管理员可用，更多菜单对所有人可见。
+    private var headerActions: [RexNavAction] {
+        var actions: [RexNavAction] = []
+        if isAdmin {
+            actions.append(
+                RexNavAction(
+                    systemImage: "icloud.and.arrow.down",
+                    label: "云下载",
+                    isEnabled: true,
+                    action: { showCloudDownload = true }
+                )
+            )
+        }
+        actions.append(
+            RexNavAction(
+                systemImage: "ellipsis",
+                label: "更多操作",
+                showsCircleOutline: true,
+                menu: { AnyView(moreMenu) }
+            )
+        )
+        return actions
+    }
+
     /// 顶栏三点菜单：选择、新建、上传、浏览方式、排序与置顶。
     @ViewBuilder
     private var moreMenu: some View {
-        Button {
-            enterSelection()
-        } label: {
-            Label("选择", systemImage: "checkmark.circle")
-        }
+        if isAdmin {
+            Button {
+                enterSelection()
+            } label: {
+                Label("选择", systemImage: "checkmark.circle")
+            }
 
-        Button {
-            newFolderName = ""
-            isCreatingFolder = true
-        } label: {
-            Label("新建文件夹", systemImage: "folder.badge.plus")
-        }
+            Button {
+                newFolderName = ""
+                isCreatingFolder = true
+            } label: {
+                Label("新建文件夹", systemImage: "folder.badge.plus")
+            }
 
-        Button {
-            isImporting = true
-        } label: {
-            Label("上传文件", systemImage: "arrow.up.doc")
-        }
+            Button {
+                isImporting = true
+            } label: {
+                Label("上传文件", systemImage: "arrow.up.doc")
+            }
 
-        Divider()
+            Divider()
+        }
 
         Picker(selection: viewModeBinding) {
             Label("图标", systemImage: "square.grid.2x2").tag(FileListViewMode.grid)
@@ -716,7 +725,6 @@ private struct DriveFolderView: View {
             .onChange(of: reselectToken) { _, _ in
                 guard isRoot else { return }
                 RexHaptics.tap()
-                path.removeAll()
                 exitSelection()
                 withAnimation(RexMotion.standard) {
                     proxy.scrollTo("driveTop", anchor: .top)
@@ -787,7 +795,7 @@ private struct DriveFolderView: View {
 
     @ViewBuilder
     private func row(_ item: PanItem) -> some View {
-        if isSelecting {
+        if isSelecting || !isAdmin {
             rowBody(item)
         } else {
             rowBody(item)
@@ -823,7 +831,9 @@ private struct DriveFolderView: View {
             }
             .buttonStyle(DriveRowButtonStyle())
         } else if item.isDir {
-            NavigationLink(value: DriveRoute(cid: item.id, name: item.name)) {
+            NavigationLink {
+                DriveFolderView(cid: item.id, title: item.name, isRoot: false, isAdmin: isAdmin)
+            } label: {
                 rowLabel(item)
             }
             .buttonStyle(DriveRowButtonStyle())
@@ -931,7 +941,7 @@ private struct DriveFolderView: View {
     /// 网格卡片同样支持长按快捷菜单。
     @ViewBuilder
     private func gridCellWithMenu(_ item: PanItem) -> some View {
-        if isSelecting {
+        if isSelecting || !isAdmin {
             gridCell(item)
         } else {
             gridCell(item)
@@ -949,7 +959,9 @@ private struct DriveFolderView: View {
             }
             .buttonStyle(DriveCellButtonStyle())
         } else if item.isDir {
-            NavigationLink(value: DriveRoute(cid: item.id, name: item.name)) {
+            NavigationLink {
+                DriveFolderView(cid: item.id, title: item.name, isRoot: false, isAdmin: isAdmin)
+            } label: {
                 gridLabel(item)
             }
             .buttonStyle(DriveCellButtonStyle())
@@ -1122,13 +1134,16 @@ private struct DriveFolderView: View {
         RexStateCard(
             symbol: "folder",
             title: "此文件夹为空",
-            message: "可以从这里上传文件，或新建文件夹开始整理。",
+            message: isAdmin
+                ? "可以从这里上传文件，或新建文件夹开始整理。"
+                : "这个文件夹里还没有内容。",
             tone: .brand,
-            actionTitle: "上传文件"
-        ) {
-            RexHaptics.tap()
-            isImporting = true
-        }
+            actionTitle: isAdmin ? "上传文件" : nil,
+            action: isAdmin ? {
+                RexHaptics.tap()
+                isImporting = true
+            } : nil
+        )
     }
 
     private func failureCard(_ message: String) -> some View {
@@ -1424,6 +1439,8 @@ private struct PanItemActionSheet: View {
     let onRename: () -> Void
     let onTransfer: (PanTransferMode) -> Void
     let onDelete: () -> Void
+    /// 非管理员只展示详情，写操作由服务端拒绝。
+    var isAdmin: Bool = false
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.displayScale) private var displayScale
@@ -1439,15 +1456,16 @@ private struct PanItemActionSheet: View {
                     .padding(.horizontal, RexSpacing.lg)
                     .padding(.vertical, RexSpacing.md)
 
-                divider
-
-                actionRow("复制到", systemImage: "doc.on.doc") { onTransfer(.copy) }
-                divider
-                actionRow("移动到", systemImage: "arrow.forward.folder") { onTransfer(.move) }
-                divider
-                actionRow("重命名", systemImage: "square.and.pencil") { onRename() }
-                divider
-                actionRow("删除", systemImage: "trash", isDestructive: true) { onDelete() }
+                if isAdmin {
+                    divider
+                    actionRow("复制到", systemImage: "doc.on.doc") { onTransfer(.copy) }
+                    divider
+                    actionRow("移动到", systemImage: "arrow.forward.folder") { onTransfer(.move) }
+                    divider
+                    actionRow("重命名", systemImage: "square.and.pencil") { onRename() }
+                    divider
+                    actionRow("删除", systemImage: "trash", isDestructive: true) { onDelete() }
+                }
             }
 
             // 「详情」单独一张卡片。
@@ -1456,8 +1474,8 @@ private struct PanItemActionSheet: View {
             }
         }
         .padding(.horizontal, RexSpacing.lg)
-        .padding(.top, RexSpacing.xs)
-        .padding(.bottom, RexSpacing.xs)
+        .padding(.top, RexSpacing.xxxl)
+        .padding(.bottom, RexSpacing.xxl)
         .frame(maxWidth: .infinity)
         .background(RexColor.sheetBackground.ignoresSafeArea())
     }
@@ -1707,7 +1725,6 @@ private struct PanBatchRenameSheet: View {
         }
         .padding(.bottom, RexSpacing.xxl)
         .background(RexColor.surface)
-        .rexSheetStyle()
     }
 }
 
@@ -1755,7 +1772,6 @@ private struct PanItemInfoSheet: View {
             Spacer(minLength: 0)
         }
         .background(RexColor.surface)
-        .rexSheetStyle()
     }
 
     private func infoRow(_ title: String, _ value: String) -> some View {
@@ -1815,7 +1831,7 @@ private func panDateText(_ timestamp: Int64) -> String {
 
 #Preview {
     NavigationStack {
-        DriveView()
+        DriveView(isAdmin: true)
             .toolbar(.hidden, for: .navigationBar)
     }
 }
@@ -1860,7 +1876,8 @@ private struct PanThumbnailView: View {
     }
 }
 
-private final class ThumbnailCache {
+/// `NSCache` 本身线程安全，可在任意线程读写。
+private final class ThumbnailCache: @unchecked Sendable {
     static let shared = ThumbnailCache()
 
     private let cache = NSCache<NSString, UIImage>()

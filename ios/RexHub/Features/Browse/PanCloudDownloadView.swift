@@ -4,29 +4,20 @@ import UIKit
 /// 115 云下载：任务列表（正在下载 / 下载失败 / 完成记录）与添加链接入口。
 /// 与 115 网页端的云下载一致，任务操作全部由 NAS 服务端转发。
 struct PanCloudDownloadView: View {
+    /// 非管理员只读：添加/重试/删除都由服务端校验管理员权限。
+    var isAdmin: Bool = false
+
     @Environment(\.apiClient) private var apiClient
 
     @State private var tab: CloudTab = .downloading
-    @State private var counts = PanCloudCounts(total: 0, downloading: 0, failed: 0, finished: 0)
     @State private var quota = PanCloudQuota(remaining: 0, total: 0)
-    @State private var tasks: [PanCloudTask] = []
-    @State private var page = 1
-    @State private var pageCount = 1
+    @State private var allTasks: [PanCloudTask] = []
     @State private var isLoading = false
     @State private var errorText: String?
     @State private var isAdding = false
     @State private var pendingDelete: PanCloudTask?
-    @State private var alertText: String?
-    @State private var toast: String?
-    @State private var cachedTabs: [Int: TabSnapshot] = [:]
+    @State private var alert: RexAlertInfo?
     @State private var loadVersion = 0
-
-    /// 每个 Tab 的列表快照：切回已看过的 Tab 时先显示缓存，再静默刷新。
-    private struct TabSnapshot {
-        var tasks: [PanCloudTask]
-        var page: Int
-        var pageCount: Int
-    }
 
     private enum CloudTab: Int, CaseIterable, Identifiable {
         case downloading
@@ -43,15 +34,6 @@ struct PanCloudDownloadView: View {
             }
         }
 
-        /// 115 的 stat：1-9 失败、10-11 已完成、12 进行中。
-        var stat: Int {
-            switch self {
-            case .downloading: return 12
-            case .failed: return 9
-            case .finished: return 11
-            }
-        }
-
         var emptyText: String {
             switch self {
             case .downloading: return "没有正在下载的任务"
@@ -60,12 +42,23 @@ struct PanCloudDownloadView: View {
             }
         }
 
-        func count(_ counts: PanCloudCounts) -> Int {
+        /// 和 PWA 一致按任务实际状态归类：完成 = 进度 100%，失败 = 状态含「失败」，其余算进行中。
+        /// 115 的 stat 分组（10、1-8）与服务端计数口径不同，不能直接按 stat 过滤。
+        func matches(_ task: PanCloudTask) -> Bool {
+            let isFailed = task.status == "failed" || task.statusText.contains("失败")
+
             switch self {
-            case .downloading: return counts.downloading
-            case .failed: return counts.failed
-            case .finished: return counts.finished
+            case .failed:
+                return isFailed
+            case .finished:
+                return !isFailed && task.percent >= 100
+            case .downloading:
+                return !isFailed && task.percent < 100
             }
+        }
+
+        func count(in tasks: [PanCloudTask]) -> Int {
+            tasks.filter(matches).count
         }
     }
 
@@ -77,7 +70,7 @@ struct PanCloudDownloadView: View {
                     systemImage: "arrow.clockwise",
                     label: "刷新",
                     isEnabled: !isLoading,
-                    action: { Task { await load(reset: true, silent: !tasks.isEmpty) } }
+                    action: { Task { await load(silent: !allTasks.isEmpty) } }
                 )
             ]
         ) {
@@ -96,14 +89,26 @@ struct PanCloudDownloadView: View {
             }
         }
         .task {
-            guard tasks.isEmpty else { return }
-            await load(reset: true)
+            guard allTasks.isEmpty else { return }
+            await load()
+        }
+        .task(id: tab) {
+            // 下载中每 5 秒静默刷新一次，和 PWA 云下载页保持一致。
+            guard tab == .downloading else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                guard !Task.isCancelled else { return }
+                await load(silent: true)
+            }
         }
         .sheet(isPresented: $isAdding) {
             PanCloudAddSheet(quota: quota) { count in
-                showToast("已添加 \(count) 个任务")
                 tab = .downloading
-                Task { await load(reset: true) }
+                Task {
+                    await load()
+                    try? await Task.sleep(for: .milliseconds(350))
+                    showSuccess("已添加 \(count) 个任务")
+                }
             }
             .rexSheetStyle()
         }
@@ -119,20 +124,7 @@ struct PanCloudDownloadView: View {
         } message: { task in
             Text("「\(task.name)」将从云下载列表移除，已保存到网盘的文件不受影响。")
         }
-        .alert("操作失败", isPresented: alertBinding) {
-            Button("好", role: .cancel) {}
-        } message: {
-            Text(alertText ?? "")
-        }
-        .overlay(alignment: .top) {
-            if let toast {
-                RexToastBanner(message: toast)
-                    .padding(.horizontal, RexSpacing.xl)
-                    .padding(.top, RexSpacing.sm)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
-        }
-        .animation(RexMotion.quick, value: toast)
+        .rexAlert($alert)
     }
 
     // MARK: - 顶部
@@ -166,26 +158,28 @@ struct PanCloudDownloadView: View {
 
                     Spacer(minLength: RexSpacing.xs)
 
-                    Button {
-                        RexHaptics.tap()
-                        isAdding = true
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "plus")
-                                .font(.system(size: 11, weight: .bold))
+                    if isAdmin {
+                        Button {
+                            RexHaptics.tap()
+                            isAdding = true
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "plus")
+                                    .font(.system(size: 11, weight: .bold))
 
-                            Text("添加云下载")
-                                .font(.system(.caption, weight: .semibold))
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.85)
+                                Text("添加云下载")
+                                    .font(.system(.caption, weight: .semibold))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.85)
+                            }
+                            .foregroundStyle(RexColor.onBrand)
+                            .padding(.horizontal, 12)
+                            .frame(height: 32)
+                            .background(RexColor.brandGradient, in: Capsule(style: .continuous))
+                            .frame(minHeight: RexLayout.minTouch)
                         }
-                        .foregroundStyle(RexColor.onBrand)
-                        .padding(.horizontal, 12)
-                        .frame(height: 32)
-                        .background(RexColor.brandGradient, in: Capsule(style: .continuous))
-                        .frame(minHeight: RexLayout.minTouch)
+                        .buttonStyle(PressableButtonStyle())
                     }
-                    .buttonStyle(PressableButtonStyle())
                 }
                 .padding(.horizontal, RexSpacing.md)
                 .padding(.vertical, 10)
@@ -214,7 +208,7 @@ struct PanCloudDownloadView: View {
                 Text(item.title)
                     .font(.system(.caption, weight: isSelected ? .semibold : .regular))
 
-                Text("\(item.count(counts))")
+                Text("\(item.count(in: allTasks))")
                     .font(.system(size: 10, weight: .semibold))
                     .monospacedDigit()
                     .padding(.horizontal, 4)
@@ -258,31 +252,13 @@ struct PanCloudDownloadView: View {
                         SettingsDivider()
                     }
                 }
-
-                if page < pageCount {
-                    SettingsDivider()
-
-                    Button {
-                        Task { await load(reset: false) }
-                    } label: {
-                        HStack(spacing: RexSpacing.sm) {
-                            if isLoading {
-                                ProgressView()
-                            }
-
-                            Text(isLoading ? "正在加载…" : "加载更多")
-                                .font(.system(.subheadline, weight: .medium))
-                                .foregroundStyle(RexColor.brandBlue)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: RexLayout.minTouch)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(PressableButtonStyle())
-                    .disabled(isLoading)
-                }
             }
         }
+    }
+
+    /// 当前 Tab 的任务：由完整任务列表按状态归类得到，和 PWA 行为一致。
+    private var tasks: [PanCloudTask] {
+        allTasks.filter(tab.matches)
     }
 
     private func taskRow(_ task: PanCloudTask) -> some View {
@@ -366,11 +342,19 @@ struct PanCloudDownloadView: View {
 
     @ViewBuilder
     private func menuItems(_ task: PanCloudTask) -> some View {
-        if isFailed(task) {
-            Button {
-                Task { await retry(task) }
+        if isAdmin {
+            if isFailed(task) {
+                Button {
+                    Task { await retry(task) }
+                } label: {
+                    Label("重试", systemImage: "arrow.clockwise")
+                }
+            }
+
+            Button(role: .destructive) {
+                pendingDelete = task
             } label: {
-                Label("重试", systemImage: "arrow.clockwise")
+                Label("删除", systemImage: "trash")
             }
         }
 
@@ -380,12 +364,6 @@ struct PanCloudDownloadView: View {
             } label: {
                 Label("复制链接", systemImage: "doc.on.doc")
             }
-        }
-
-        Button(role: .destructive) {
-            pendingDelete = task
-        } label: {
-            Label("删除", systemImage: "trash")
         }
     }
 
@@ -402,18 +380,20 @@ struct PanCloudDownloadView: View {
     }
 
     private var emptyCard: some View {
-        RexStateCard(
+        let canAdd = isAdmin && tab != .finished
+
+        return RexStateCard(
             symbol: "arrow.down.circle",
             title: tab.emptyText,
             message: tab == .finished
                 ? "完成的任务会记录在这里，方便日后查看。"
                 : "粘贴磁力或 HTTP 链接，即可交给 115 离线下载。",
             tone: .neutral,
-            actionTitle: tab == .finished ? nil : "添加云下载",
-            action: tab == .finished ? nil : {
+            actionTitle: canAdd ? "添加云下载" : nil,
+            action: canAdd ? {
                 RexHaptics.tap()
                 isAdding = true
-            }
+            } : nil
         )
     }
 
@@ -426,7 +406,7 @@ struct PanCloudDownloadView: View {
             actionTitle: "重试"
         ) {
             RexHaptics.tap()
-            Task { await load(reset: true) }
+            Task { await load() }
         }
     }
 
@@ -443,16 +423,16 @@ struct PanCloudDownloadView: View {
         if isFailed(task) {
             return task.statusText.isEmpty ? "下载失败" : task.statusText
         }
-        if tab == .downloading {
-            return "\(Int(task.percent.rounded()))%"
+        if task.percent >= 100 {
+            return task.statusText.isEmpty ? "已完成" : task.statusText
         }
-        return task.statusText.isEmpty ? "已完成" : task.statusText
+        return "\(Int(task.percent.rounded()))%"
     }
 
     private func statusColor(_ task: PanCloudTask) -> Color {
         if isFailed(task) { return RexColor.error }
-        if tab == .downloading { return RexColor.brandBlue }
-        return RexColor.success
+        if task.percent >= 100 { return RexColor.success }
+        return RexColor.brandBlue
     }
 
     private func fraction(_ task: PanCloudTask) -> CGFloat {
@@ -480,27 +460,21 @@ struct PanCloudDownloadView: View {
     private func select(_ item: CloudTab) {
         guard tab != item else { return }
 
-        cachedTabs[tab.rawValue] = TabSnapshot(tasks: tasks, page: page, pageCount: pageCount)
-
-        let cached = cachedTabs[item.rawValue]
         tab = item
-        tasks = cached?.tasks ?? []
-        page = cached?.page ?? 1
-        pageCount = cached?.pageCount ?? 1
         errorText = nil
 
-        Task { await load(reset: true, silent: cached != nil) }
+        if allTasks.isEmpty {
+            Task { await load(silent: true) }
+        }
     }
 
+    /// 拉取全部云下载任务（最多 5 页，和 PWA 一致），再按状态归类到各 Tab。
     /// `silent` 为 true 时保留当前列表做后台刷新，不显示加载态。
-    private func load(reset: Bool, silent: Bool = false) async {
+    private func load(silent: Bool = false) async {
         guard let client = apiClient else {
             errorText = "登录状态已失效，请重新登录"
             return
         }
-
-        let requestedTab = tab
-        let requestedPage = reset ? 1 : page + 1
 
         loadVersion += 1
         let version = loadVersion
@@ -516,30 +490,32 @@ struct PanCloudDownloadView: View {
         }
 
         do {
-            let result = try await client.panCloudTasks(
-                stat: requestedTab.stat,
-                page: requestedPage
-            )
-            guard version == loadVersion, tab == requestedTab else { return }
+            let firstPage = try await client.panCloudTasks(stat: 0, page: 1)
+            var collected = firstPage.tasks
+            let lastPage = min(max(firstPage.pageCount, 1), 5)
 
-            counts = result.counts
-            quota = result.quota
-            page = result.page
-            pageCount = result.pageCount
-            tasks = reset ? result.tasks : tasks + result.tasks
-            cachedTabs[requestedTab.rawValue] = TabSnapshot(
-                tasks: tasks,
-                page: page,
-                pageCount: pageCount
-            )
+            if lastPage > 1, !firstPage.tasks.isEmpty {
+                for page in 2...lastPage {
+                    let nextPage = try await client.panCloudTasks(stat: 0, page: page)
+                    guard version == loadVersion else { return }
+                    collected.append(contentsOf: nextPage.tasks)
+                    if nextPage.tasks.isEmpty { break }
+                }
+            }
+
+            guard version == loadVersion else { return }
+
+            var seen = Set<String>()
+            allTasks = collected.filter { seen.insert($0.id).inserted }
+            quota = firstPage.quota
         } catch let error as APIError {
             guard version == loadVersion, error != .cancelled else { return }
-            if !silent || tasks.isEmpty {
+            if !silent || allTasks.isEmpty {
                 errorText = message(for: error)
             }
         } catch {
             guard version == loadVersion else { return }
-            if !silent || tasks.isEmpty {
+            if !silent || allTasks.isEmpty {
                 errorText = "读取云下载任务失败，请重试"
             }
         }
@@ -550,13 +526,13 @@ struct PanCloudDownloadView: View {
 
         do {
             try await client.panCloudRetry(infoHash: task.infoHash)
-            showToast("已重新开始下载")
-            await load(reset: true)
+            showSuccess("已重新开始下载")
+            await load(silent: true)
         } catch let error as APIError {
             guard error != .cancelled else { return }
-            alertText = message(for: error)
+            alert = .failure(message(for: error))
         } catch {
-            alertText = "重试失败，请稍后再试"
+            alert = .failure("重试失败，请稍后再试")
         }
     }
 
@@ -565,35 +541,25 @@ struct PanCloudDownloadView: View {
 
         do {
             try await client.panCloudDelete(infoHash: task.infoHash)
-            tasks.removeAll { $0.id == task.id }
-            showToast("已删除任务")
-            await load(reset: true)
+            allTasks.removeAll { $0.id == task.id }
+            showSuccess("已删除任务")
+            await load(silent: true)
         } catch let error as APIError {
             guard error != .cancelled else { return }
-            alertText = message(for: error)
+            alert = .failure(message(for: error))
         } catch {
-            alertText = "删除失败，请稍后再试"
+            alert = .failure("删除失败，请稍后再试")
         }
     }
 
     private func copyLink(_ task: PanCloudTask) {
         UIPasteboard.general.string = task.url
-        showToast("链接已复制")
+        showSuccess("链接已复制")
     }
 
-    private func showToast(_ text: String) {
+    private func showSuccess(_ text: String) {
         RexHaptics.success()
-        withAnimation(RexMotion.quick) {
-            toast = text
-        }
-
-        Task {
-            try? await Task.sleep(for: .seconds(2))
-            guard toast == text else { return }
-            withAnimation(RexMotion.quick) {
-                toast = nil
-            }
-        }
+        alert = .success(text)
     }
 
     private func message(for error: APIError) -> String {
@@ -607,13 +573,6 @@ struct PanCloudDownloadView: View {
         Binding(
             get: { pendingDelete != nil },
             set: { if !$0 { pendingDelete = nil } }
-        )
-    }
-
-    private var alertBinding: Binding<Bool> {
-        Binding(
-            get: { alertText != nil },
-            set: { if !$0 { alertText = nil } }
         )
     }
 }
@@ -631,7 +590,7 @@ private struct PanCloudAddSheet: View {
     @State private var target = PanFolder(cid: "0", name: "根目录")
     @State private var isPickingFolder = false
     @State private var isSubmitting = false
-    @State private var errorText: String?
+    @State private var alert: RexAlertInfo?
     @FocusState private var isEditing: Bool
 
     private var links: [String] {
@@ -667,10 +626,6 @@ private struct PanCloudAddSheet: View {
                     VStack(alignment: .leading, spacing: RexSpacing.sm) {
                         fieldLabel("保存位置")
                         folderRow
-                    }
-
-                    if let errorText {
-                        errorCard(errorText)
                     }
                 }
                 .padding(.horizontal, RexSpacing.xl)
@@ -708,6 +663,7 @@ private struct PanCloudAddSheet: View {
                 try? await Task.sleep(for: .milliseconds(300))
                 isEditing = true
             }
+            .rexAlert($alert)
         }
     }
 
@@ -845,20 +801,11 @@ private struct PanCloudAddSheet: View {
         }
     }
 
-    private func errorCard(_ message: String) -> some View {
-        RexInlineNotice(
-            title: "添加失败",
-            message: message,
-            tone: .error
-        )
-    }
-
     private func submit() async {
         guard canSubmit, let client = apiClient else { return }
 
         isEditing = false
         isSubmitting = true
-        errorText = nil
         defer { isSubmitting = false }
 
         do {
@@ -868,9 +815,9 @@ private struct PanCloudAddSheet: View {
             dismiss()
         } catch let error as APIError {
             guard error != .cancelled else { return }
-            errorText = message(for: error)
+            alert = .failure(message(for: error))
         } catch {
-            errorText = "添加失败，请稍后再试"
+            alert = .failure("添加失败，请稍后再试")
         }
     }
 

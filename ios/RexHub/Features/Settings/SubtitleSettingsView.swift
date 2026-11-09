@@ -11,10 +11,14 @@ struct SubtitleSettingsView: View {
         SettingsPage(
             title: "字幕",
             actions: [
-                RexNavAction(systemImage: "plus", label: "添加字幕源") {
-                    draftSource = ""
-                    isAddingSource = true
-                }
+                RexNavAction(
+                    systemImage: "plus",
+                    label: "添加字幕源",
+                    action: {
+                        draftSource = ""
+                        isAddingSource = true
+                    }
+                )
             ]
         ) {
             SettingsSection(title: "字幕") {

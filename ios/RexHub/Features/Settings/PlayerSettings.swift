@@ -161,6 +161,7 @@ enum SubtitleLanguage: String, CaseIterable, Identifiable {
 }
 
 /// 播放器自身的参数，独立于文件列表设置，改动即时落盘。
+@MainActor
 @Observable
 final class PlayerSettingsStore {
     static let shared = PlayerSettingsStore()

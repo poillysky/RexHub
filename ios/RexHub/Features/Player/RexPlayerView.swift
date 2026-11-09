@@ -10,6 +10,8 @@ import UIKit
 struct RexPlayerView: View {
     let item: PanItem
     var playlist: [PanItem] = []
+    /// 片商 / 插件返回的直链：有值时不再向 115 换取播放地址。
+    var directSource: PanPlayInfo?
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.apiClient) private var apiClient
@@ -34,9 +36,10 @@ struct RexPlayerView: View {
         case failed(String)
     }
 
-    init(item: PanItem, playlist: [PanItem] = []) {
+    init(item: PanItem, playlist: [PanItem] = [], directSource: PanPlayInfo? = nil) {
         self.item = item
         self.playlist = playlist
+        self.directSource = directSource
         _activeItem = State(initialValue: item)
     }
 
@@ -214,17 +217,22 @@ struct RexPlayerView: View {
         subtitleCues = []
         subtitleText = ""
 
-        guard let client = apiClient else {
-            phase = .failed("登录状态已失效，请重新登录")
-            return
-        }
-        guard !activeItem.pickcode.isEmpty else {
-            phase = .failed("该文件缺少播放标识，无法播放")
-            return
-        }
-
         do {
-            let info = try await client.panPlay(pickcode: activeItem.pickcode)
+            let info: PanPlayInfo
+            if let directSource {
+                info = directSource
+            } else {
+                guard let client = apiClient else {
+                    phase = .failed("登录状态已失效，请重新登录")
+                    return
+                }
+                guard !activeItem.pickcode.isEmpty else {
+                    phase = .failed("该文件缺少播放标识，无法播放")
+                    return
+                }
+                info = try await client.panPlay(pickcode: activeItem.pickcode)
+            }
+
             let settings = PlayerSettingsStore.shared
             PlayerFacade.activateAudioSession()
             UIApplication.shared.isIdleTimerDisabled = settings.keepScreenAwake
@@ -427,7 +435,8 @@ struct RexPlayerView: View {
 
     /// 进度落盘后同步到服务端，供其它设备续播；失败不影响本机播放与续播。
     private func syncProgressToServer(_ settings: PlayerSettingsStore) {
-        guard let client = apiClient else { return }
+        // 片商直链不是 115 文件，服务端没有对应进度记录。
+        guard directSource == nil, let client = apiClient else { return }
         let pickcode = activeItem.pickcode
         let position = settings.savedPosition(for: pickcode)
         let duration = settings.savedDuration(for: pickcode)

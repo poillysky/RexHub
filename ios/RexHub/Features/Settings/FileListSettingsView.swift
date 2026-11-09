@@ -284,24 +284,26 @@ private struct ListIconSizeSettingsView: View {
                 systemImage: "minus",
                 label: "缩小图标",
                 isEnabled: settings.canStepIconSize(-1, grid: grid),
-                showsOutline: true
-            ) {
-                RexHaptics.selection()
-                withAnimation(RexMotion.quick) {
-                    settings.stepIconSize(-1, grid: grid)
+                showsOutline: true,
+                action: {
+                    RexHaptics.selection()
+                    withAnimation(RexMotion.quick) {
+                        settings.stepIconSize(-1, grid: grid)
+                    }
                 }
-            },
+            ),
             RexNavAction(
                 systemImage: "plus",
                 label: "放大图标",
                 isEnabled: settings.canStepIconSize(1, grid: grid),
-                showsOutline: true
-            ) {
-                RexHaptics.selection()
-                withAnimation(RexMotion.quick) {
-                    settings.stepIconSize(1, grid: grid)
+                showsOutline: true,
+                action: {
+                    RexHaptics.selection()
+                    withAnimation(RexMotion.quick) {
+                        settings.stepIconSize(1, grid: grid)
+                    }
                 }
-            }
+            )
         ]
     }
 

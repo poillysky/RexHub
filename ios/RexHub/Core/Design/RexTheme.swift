@@ -2,8 +2,8 @@ import SwiftUI
 import UIKit
 
 enum RexColor {
-    static var brandBlue: Color { RexThemeStore.shared.brandColor.color }
-    static var brandBlueSoft: Color { RexThemeStore.shared.brandColor.softColor }
+    @MainActor static var brandBlue: Color { RexThemeStore.shared.brandColor.color }
+    @MainActor static var brandBlueSoft: Color { RexThemeStore.shared.brandColor.softColor }
 
     static let lightBlue = Color(hex: 0xE6F0FF)
 
@@ -39,7 +39,7 @@ enum RexColor {
     static let mediaBackground = Color.black
     static let onMedia = Color.white
 
-    static var brandGradient: LinearGradient {
+    @MainActor static var brandGradient: LinearGradient {
         LinearGradient(
             colors: [brandBlueSoft, brandBlue],
             startPoint: .top,
@@ -183,6 +183,7 @@ enum RexLogoStyle: String, CaseIterable, Identifiable {
 }
 
 /// 外观偏好：跟随系统 / 品牌色 / 顶栏行为，全部落在 `UserDefaults`。
+@MainActor
 @Observable
 final class RexThemeStore {
     static let shared = RexThemeStore()

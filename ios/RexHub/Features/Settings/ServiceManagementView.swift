@@ -46,10 +46,9 @@ struct ServiceManagementView: View {
             RexNavAction(
                 systemImage: "arrow.clockwise",
                 label: "刷新",
-                isEnabled: phase != .loading
-            ) {
-                Task { await load() }
-            }
+                isEnabled: phase != .loading,
+                action: { Task { await load() } }
+            )
         ]
     }
 

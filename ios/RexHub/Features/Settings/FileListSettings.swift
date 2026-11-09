@@ -216,6 +216,7 @@ enum FileGridColumns: String, CaseIterable, Identifiable {
 // MARK: - 偏好
 
 /// 文件列表偏好：只包含网盘文件夹与列表真正用得到的项，全部落在 `UserDefaults`。
+@MainActor
 @Observable
 final class FileListSettingsStore {
     static let shared = FileListSettingsStore()

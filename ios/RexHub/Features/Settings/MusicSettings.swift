@@ -24,6 +24,7 @@ enum MusicPlaylistMode: String, CaseIterable, Identifiable {
 }
 
 /// 音乐播放器偏好，独立于视频设置，改动即时落盘。
+@MainActor
 @Observable
 final class MusicSettingsStore {
     static let shared = MusicSettingsStore()

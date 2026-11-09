@@ -54,14 +54,14 @@ enum FileIconKind: String {
         }
     }
 
-    var tint: Color {
+    @MainActor var tint: Color {
         switch self {
         case .folder, .privateFolder, .shortcut, .cloud: RexColor.brandBlue
         default: RexColor.secondaryText
         }
     }
 
-    var tileColor: Color {
+    @MainActor var tileColor: Color {
         switch self {
         case .folder, .privateFolder, .shortcut, .cloud: RexColor.brandBlue.opacity(0.1)
         default: RexColor.field

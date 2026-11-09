@@ -31,6 +31,7 @@ enum GestureAction: String, CaseIterable, Identifiable {
 }
 
 /// 手势偏好：每个单指手势单独绑定动作，改动即时落盘。
+@MainActor
 @Observable
 final class GestureSettingsStore {
     static let shared = GestureSettingsStore()

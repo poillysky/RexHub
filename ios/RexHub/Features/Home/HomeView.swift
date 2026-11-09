@@ -60,12 +60,18 @@ struct HomeView: View {
                 }
 
                 Tab(value: 2) {
-                    driveStack
+                    makersStack
                 } label: {
-                    tabLabel(.drive)
+                    tabLabel(.makers)
                 }
 
                 Tab(value: 3) {
+                    dramaStack
+                } label: {
+                    tabLabel(.drama)
+                }
+
+                Tab(value: 4) {
                     moreStack
                 } label: {
                     tabLabel(.more)
@@ -81,13 +87,17 @@ struct HomeView: View {
                     .tabItem { tabLabel(.library) }
                     .tag(1)
 
-                driveStack
-                    .tabItem { tabLabel(.drive) }
+                makersStack
+                    .tabItem { tabLabel(.makers) }
                     .tag(2)
+
+                dramaStack
+                    .tabItem { tabLabel(.drama) }
+                    .tag(3)
 
                 moreStack
                     .tabItem { tabLabel(.more) }
-                    .tag(3)
+                    .tag(4)
             }
         }
     }
@@ -133,15 +143,19 @@ struct HomeView: View {
             SearchHomeView(
                 focusToken: searchFocusToken,
                 name: session.user.name,
-                onOpenMore: { selectedTab = HomeTab.more.rawValue }
+                onOpenMore: { selectedTab = HomeTab.more.rawValue },
+                isAdmin: session.user.isAdmin
             )
             .toolbar(.hidden, for: .navigationBar)
         }
     }
 
     private var libraryStack: some View {
-        // 影视页自己维护导航栈（详情里还能继续 push 相关推荐）。
-        MediaHomeView(onOpenSearch: openSearch)
+        MoviePilotHomeView()
+    }
+
+    private var makersStack: some View {
+        MakerHomeView()
     }
 
     /// 影视页顶栏搜索框：切到搜索页并聚焦输入框。
@@ -150,11 +164,8 @@ struct HomeView: View {
         selectedTab = HomeTab.search.rawValue
     }
 
-    private var driveStack: some View {
-        NavigationStack {
-            DriveView(reselectToken: reselectToken)
-                .toolbar(.hidden, for: .navigationBar)
-        }
+    private var dramaStack: some View {
+        DramaHomeView()
     }
 
     private var moreStack: some View {
@@ -274,19 +285,20 @@ struct HomeView: View {
                 SearchHomeView(
                     focusToken: searchFocusToken,
                     name: session.user.name,
-                    onOpenMore: { selectedTab = HomeTab.more.rawValue }
+                    onOpenMore: { selectedTab = HomeTab.more.rawValue },
+                    isAdmin: session.user.isAdmin
                 )
                 .toolbar(.hidden, for: .navigationBar)
             }
 
         case .library:
-            MediaHomeView(onOpenSearch: openSearch)
+            MoviePilotHomeView()
 
-        case .drive:
-            NavigationStack {
-                DriveView(reselectToken: reselectToken)
-                    .toolbar(.hidden, for: .navigationBar)
-            }
+        case .makers:
+            MakerHomeView()
+
+        case .drama:
+            DramaHomeView()
 
         case .more:
             NavigationStack {
@@ -302,11 +314,12 @@ struct HomeView: View {
     }
 }
 
-/// 侧栏与底部 Tab 共用的四项定义。
+/// 侧栏与底部 Tab 共用的五项定义。
 private enum HomeTab: Int, CaseIterable, Identifiable {
     case search
     case library
-    case drive
+    case makers
+    case drama
     case more
 
     var id: Int { rawValue }
@@ -315,7 +328,8 @@ private enum HomeTab: Int, CaseIterable, Identifiable {
         switch self {
         case .search: "搜索"
         case .library: "影视"
-        case .drive: "网盘"
+        case .makers: "片商"
+        case .drama: "短剧"
         case .more: "更多"
         }
     }
@@ -324,7 +338,8 @@ private enum HomeTab: Int, CaseIterable, Identifiable {
         switch self {
         case .search: "magnifyingglass"
         case .library: "play.rectangle"
-        case .drive: "externaldrive"
+        case .makers: "rectangle.stack"
+        case .drama: "popcorn"
         case .more: "ellipsis.circle"
         }
     }
@@ -333,7 +348,8 @@ private enum HomeTab: Int, CaseIterable, Identifiable {
         switch self {
         case .search: "magnifyingglass"
         case .library: "play.rectangle.fill"
-        case .drive: "externaldrive.fill"
+        case .makers: "rectangle.stack.fill"
+        case .drama: "popcorn.fill"
         case .more: "ellipsis.circle.fill"
         }
     }

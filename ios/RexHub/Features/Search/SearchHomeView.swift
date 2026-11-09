@@ -1,42 +1,37 @@
 import SwiftUI
 
-/// 资源搜索入口：输入关键词、选择来源，跳转到结果列表页。
+/// 搜索首页：对齐 PWA Landing —— 顶部品牌 + 快捷胶囊，中部 logo / 标题 / 搜索框。
 struct SearchHomeView: View {
     /// 外部每次递增表示要求聚焦搜索框（例如在影视页点了顶栏搜索）。
     var focusToken: Int = 0
-    /// 顶栏头像使用的名字。
+    /// 顶栏头像使用的名字（保留给调用方兼容，落地页不再展示头像）。
     var name: String = ""
     /// 点击顶栏头像的动作（通常是切到「更多」）。
     var onOpenMore: (() -> Void)?
+    /// 转存入口只对管理员展示：服务端转存接口要求管理员权限。
+    var isAdmin: Bool = false
 
     @Environment(\.apiClient) private var apiClient
 
-    @State private var isScrolled = false
-    @State private var avatars = AvatarStore.shared
     @State private var keyword = ""
+    @State private var scope: SearchScope = ScopeSelectionStore.load()
     @State private var fieldFocusToken = 0
     @State private var handledFocusToken = 0
-    @State private var services: [SearchService] = []
-    @State private var isLoadingServices = true
-    @State private var servicesError: String?
-    @State private var selectedIDs: Set<String> = []
-    @State private var destination: SearchDestination?
-    @State private var toast: String?
-    @State private var showsNotifications = false
+    @State private var scopeDestination: ScopeDestination?
+    @State private var alert: RexAlertInfo?
+    @State private var showsAssistant = false
+    @State private var showsOffline = false
+    @State private var showsBoards = false
 
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.colorScheme) private var colorScheme
 
-    private let maxHeroWidth: CGFloat = 600
+    private let maxHeroWidth: CGFloat = 420
 
     var body: some View {
         VStack(spacing: 0) {
-            RexTopBar(title: "搜索", isCollapsed: isScrolled) {
-                leadingAvatar
-            } trailing: {
-                notificationButton
-            }
+            landingTop
 
             GeometryReader { proxy in
                 ScrollView {
@@ -44,35 +39,37 @@ struct SearchHomeView: View {
                         hero
                     }
                     .padding(.horizontal, RexSpacing.xl)
-                    .padding(.top, verticalSizeClass == .compact ? RexSpacing.lg : RexSpacing.xxl)
-                    .padding(.bottom, RexSpacing.huge)
+                    .padding(.bottom, verticalSizeClass == .compact ? RexSpacing.lg : 120)
                     .frame(maxWidth: RexLayout.contentMaxWidth)
                     .frame(maxWidth: .infinity)
                     .frame(minHeight: proxy.size.height, alignment: .center)
                 }
                 .scrollDismissesKeyboard(.interactively)
                 .scrollBounceBehavior(.basedOnSize)
-                .rexScrollTracking("searchScroll", isScrolled: $isScrolled)
-                .overlay(alignment: .top) {
-                    if let toast {
-                        RexToastBanner(message: toast, symbol: "exclamationmark.circle.fill")
-                            .padding(.horizontal, RexSpacing.xl)
-                            .padding(.top, RexSpacing.sm)
-                            .transition(.move(edge: .top).combined(with: .opacity))
-                    }
-                }
-                .animation(RexMotion.quick, value: toast)
             }
         }
         .background(RexPageBackground())
-        .navigationDestination(item: $destination) { item in
-            SearchResultsView(keyword: item.keyword, sources: item.sources)
+        .overlay(alignment: .bottomTrailing) {
+            assistantFAB
+                .padding(.trailing, RexSpacing.xl)
+                .padding(.bottom, RexSpacing.xxl)
+        }
+        .navigationDestination(item: $scopeDestination) { item in
+            ScopeSearchView(keyword: item.keyword, scope: item.scope)
                 .toolbar(.hidden, for: .navigationBar)
         }
-        .sheet(isPresented: $showsNotifications) {
-            NotificationCenterSheet()
+        .sheet(isPresented: $showsAssistant) {
+            AssistantView()
+                .rexSheetStyle(detents: [.large])
         }
-        .task { await loadServices() }
+        .sheet(isPresented: $showsOffline) {
+            PanOfflineView(isAdmin: isAdmin)
+                .rexSheetStyle(detents: [.large])
+        }
+        .sheet(isPresented: $showsBoards) {
+            BoardsView()
+                .rexSheetStyle(detents: [.large])
+        }
         .onAppear {
             guard focusToken != handledFocusToken else { return }
             handledFocusToken = focusToken
@@ -82,67 +79,125 @@ struct SearchHomeView: View {
             handledFocusToken = newValue
             focusField()
         }
+        .rexAlert($alert)
     }
 
-    // MARK: - 顶部
+    // MARK: - 顶部（品牌 + 快捷胶囊）
 
-    @ViewBuilder
-    private var leadingAvatar: some View {
-        if let onOpenMore {
-            Button(action: onOpenMore) {
-                RexAvatar(name: name, size: 32, selection: avatars.selection)
+    private var landingTop: some View {
+        HStack(alignment: .center, spacing: RexSpacing.md) {
+            HStack(spacing: RexSpacing.sm) {
+                RexLogoMark(size: 28, hasShadow: true)
+
+                Text("RexHub")
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .foregroundStyle(RexColor.primaryText)
             }
-            .buttonStyle(PressableButtonStyle())
-            .frame(width: 44, height: 44)
-            .accessibilityLabel("打开更多")
+
+            Spacer(minLength: 0)
+
+            HStack(spacing: RexSpacing.sm) {
+                topChip(title: "板块", symbol: "square.grid.2x2") {
+                    showsBoards = true
+                }
+
+                if isAdmin {
+                    topChip(title: "转存", symbol: "doc.on.clipboard") {
+                        showsOffline = true
+                    }
+                }
+            }
         }
+        .padding(.horizontal, RexSpacing.xl)
+        .padding(.top, RexSpacing.xs)
+        .padding(.bottom, RexSpacing.sm)
     }
 
-    private var notificationButton: some View {
+    /// 右下角悬浮的搜片助手入口：对应 PWA 的 chat-bot 圆形按钮。
+    private var assistantFAB: some View {
         Button {
             RexHaptics.tap()
-            showsNotifications = true
+            showsAssistant = true
         } label: {
-            Image(systemName: "bell")
-                .font(.system(size: 21, weight: .semibold))
-                .foregroundStyle(RexColor.primaryText)
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
+            ZStack {
+                Circle()
+                    .fill(RexColor.brandGradient)
+                    .frame(width: 56, height: 56)
+                    .shadow(color: RexColor.brandBlue.opacity(0.32), radius: 14, y: 6)
+
+                Image(systemName: "sparkles")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+            .overlay {
+                Circle()
+                    .strokeBorder(.white.opacity(0.28), lineWidth: 1)
+            }
+            .contentShape(Circle())
         }
         .buttonStyle(PressableButtonStyle())
-        .accessibilityLabel("通知")
+        .accessibilityLabel("AI 搜片助手")
     }
 
+    private func topChip(title: String, symbol: String, action: @escaping () -> Void) -> some View {
+        Button {
+            RexHaptics.tap()
+            action()
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: symbol)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(RexColor.brandBlue)
+
+                Text(title)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(RexColor.primaryText)
+            }
+            .padding(.horizontal, 11)
+            .frame(height: 32)
+            .background(
+                RexColor.surface.opacity(0.88),
+                in: Capsule(style: .continuous)
+            )
+            .overlay {
+                Capsule(style: .continuous)
+                    .strokeBorder(RexColor.cardBorder, lineWidth: 0.5)
+            }
+            .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
+            .contentShape(Capsule(style: .continuous))
+        }
+        .buttonStyle(PressableButtonStyle())
+    }
+
+    // MARK: - Hero
+
     private var hero: some View {
-        VStack(spacing: verticalSizeClass == .compact ? RexSpacing.lg : RexSpacing.xxl) {
+        VStack(spacing: verticalSizeClass == .compact ? RexSpacing.lg : RexSpacing.xl) {
             brandBlock
             searchBar
-            servicePicker
         }
         .frame(maxWidth: maxHeroWidth)
     }
 
     private var logoSize: CGFloat {
-        if verticalSizeClass == .compact { return 84 }
-        return dynamicTypeSize.isAccessibilitySize ? 88 : 112
+        if verticalSizeClass == .compact { return 88 }
+        return 104
     }
 
     private var brandBlock: some View {
-        ZStack {
-            // 图标后的柔光与光环
-            Ellipse()
-                .fill(RexColor.brandBlue.opacity(0.18))
-                .frame(width: logoSize * 1.75, height: logoSize * 0.96)
-                .blur(radius: 28)
-
-            Ellipse()
-                .strokeBorder(.white.opacity(0.65), lineWidth: 1)
-                .frame(width: logoSize * 1.68, height: logoSize * 0.92)
-                .rotationEffect(.degrees(-16))
-
+        VStack(spacing: RexSpacing.md) {
             RexLogoMark(size: logoSize)
+
+            VStack(spacing: 6) {
+                Text("RexHub")
+                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                    .foregroundStyle(RexColor.primaryText)
+
+                Text("片名 · 番号 · 关键词 · 多源同搜")
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(RexColor.secondaryText)
+            }
         }
-        .frame(height: logoSize * 1.18)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("RexHub")
     }
@@ -151,216 +206,18 @@ struct SearchHomeView: View {
         SearchPillField(
             text: $keyword,
             placeholder: "搜索片名、番号或关键词",
+            scope: scope,
+            scopeTitle: scope.title,
+            onScopeChange: { value in
+                scope = value
+                ScopeSelectionStore.save(value)
+            },
             focusToken: fieldFocusToken,
             onSubmit: submit
         )
     }
 
-    private var servicePicker: some View {
-        Group {
-            if services.isEmpty {
-                emptyServicesCard
-            } else {
-                HStack(spacing: RexSpacing.sm) {
-                    ForEach(services) { service in
-                        serviceCard(service)
-                    }
-                }
-                .frame(maxWidth: RexLayout.readableMaxWidth)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, RexSpacing.xs)
-                .animation(RexMotion.spring, value: selectedIDs)
-            }
-        }
-    }
-
-    private var emptyServicesCard: some View {
-        HStack(alignment: .center, spacing: RexSpacing.md) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill((servicesError == nil ? RexColor.brandBlue : RexColor.warning).opacity(0.10))
-                    .frame(width: 42, height: 42)
-
-                if isLoadingServices {
-                    ProgressView()
-                        .controlSize(.small)
-                } else {
-                    Image(systemName: servicesError == nil ? "square.stack.3d.up" : "wifi.exclamationmark")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(servicesError == nil ? RexColor.brandBlue : RexColor.warning)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(isLoadingServices ? "正在读取搜索服务" : (servicesError == nil ? "还没有可用来源" : "来源加载失败"))
-                    .font(.system(.subheadline, weight: .semibold))
-                    .foregroundStyle(RexColor.primaryText)
-
-                Text(servicesError ?? (isLoadingServices ? "马上就好…" : "请先在服务管理中添加搜索服务。"))
-                    .font(RexFont.caption)
-                    .foregroundStyle(RexColor.secondaryText)
-                    .lineLimit(2)
-            }
-
-            Spacer(minLength: 0)
-
-            if !isLoadingServices {
-                Button {
-                    RexHaptics.tap()
-                    if servicesError != nil {
-                        Task { await loadServices() }
-                    } else {
-                        onOpenMore?()
-                    }
-                } label: {
-                    Text(servicesError == nil ? "去添加" : "重试")
-                        .font(.system(.footnote, weight: .semibold))
-                        .foregroundStyle(RexColor.brandBlue)
-                        .frame(minWidth: 44, minHeight: 44, alignment: .trailing)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(PressableButtonStyle())
-                .disabled(servicesError == nil && onOpenMore == nil)
-            }
-        }
-        .padding(.horizontal, RexSpacing.lg)
-        .padding(.vertical, RexSpacing.md)
-        .rexCard()
-        .animation(RexMotion.standard, value: isLoadingServices)
-    }
-
-    /// 服务图标：优先使用各服务的官方图标资源，缺失时退回语义相近的系统图标。
-    private func serviceIcon(_ service: SearchService) -> (symbol: String, tint: Color, asset: String?) {
-        let name = service.name.lowercased()
-        if name.contains("bitmagnet") {
-            return ("cylinder.split.1x2.fill", RexColor.brandBlue, "ServiceBitmagnet")
-        }
-        if name.contains("cloud") {
-            return ("cloud.fill", Color(hex: 0x0EA5E9), "ServiceCloudSaver")
-        }
-        if name.contains("色花堂") {
-            return ("camera.macro", Color(hex: 0xEC4899), "ServiceSehuatang")
-        }
-        return ("square.stack.3d.up.fill", RexColor.brandBlue, nil)
-    }
-
-    private func serviceCard(_ service: SearchService) -> some View {
-        let isSelected = selectedIDs.contains(service.id)
-        let icon = serviceIcon(service)
-        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
-
-        return Button {
-            RexHaptics.selection()
-            withAnimation(RexMotion.spring) {
-                if isSelected {
-                    selectedIDs.remove(service.id)
-                } else {
-                    selectedIDs.insert(service.id)
-                }
-            }
-            // 勾选状态随手记住，下次打开搜索页沿用
-            SearchSelectionStore.save(selectedIDs)
-        } label: {
-            VStack(spacing: 5) {
-                Group {
-                    if let asset = icon.asset {
-                        let size = iconSize(for: asset)
-                        Image(asset)
-                            .resizable()
-                            .interpolation(.high)
-                            .antialiased(true)
-                            .scaledToFit()
-                            .frame(width: size.width, height: size.height)
-                            .accessibilityHidden(true)
-                    } else {
-                        Image(systemName: icon.symbol)
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(icon.tint)
-                            .frame(width: 20, height: 20)
-                            .background(icon.tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    }
-                }
-                .frame(height: 24)
-
-                Text(service.name)
-                    .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
-                    .foregroundStyle(RexColor.primaryText)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .minimumScaleFactor(0.75)
-                    .padding(.horizontal, 4)
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 66)
-            .background(
-                isSelected ? RexColor.brandBlue.opacity(0.06) : RexColor.surface,
-                in: shape
-            )
-            .overlay {
-                shape.strokeBorder(
-                    isSelected ? RexColor.brandBlue.opacity(0.26) : RexColor.cardBorder,
-                    lineWidth: isSelected ? 1 : 0.75
-                )
-            }
-            .overlay(alignment: .topTrailing) {
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 7.5, weight: .bold))
-                        .foregroundStyle(RexColor.onBrand)
-                        .frame(width: 14, height: 14)
-                        .background(RexColor.brandBlue, in: Circle())
-                        .padding(6)
-                        .transition(.scale(scale: 0.6).combined(with: .opacity))
-                }
-            }
-            .shadow(
-                color: (!isSelected && colorScheme == .light) ? Color.black.opacity(0.04) : .clear,
-                radius: 8,
-                y: 3
-            )
-            .contentShape(shape)
-        }
-        .buttonStyle(PressableButtonStyle())
-        .animation(RexMotion.spring, value: isSelected)
-        .accessibilityLabel(service.name)
-        .accessibilityHint(isSelected ? "已选为搜索来源" : "点按加入搜索来源")
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-
-    /// 宽幅的品牌图标需要更宽的展示区域，窄幅的直接按高度对齐，保证视觉面积相近。
-    /// 三个服务图标统一 24pt 高；CloudSaver 的云形标志更宽，单独放宽到 34pt。
-    private func iconSize(for asset: String?) -> CGSize {
-        asset == "ServiceCloudSaver"
-            ? CGSize(width: 34, height: 24)
-            : CGSize(width: 24, height: 24)
-    }
-
-    // MARK: - 浮层
-
     // MARK: - 数据
-
-    private func loadServices() async {
-        guard let client = apiClient else {
-            isLoadingServices = false
-            servicesError = "尚未连接 NAS 服务，请先在更多页完成登录。"
-            return
-        }
-
-        isLoadingServices = true
-        servicesError = nil
-        defer { isLoadingServices = false }
-
-        do {
-            let items = try await client.searchServices()
-            services = items
-            let ids = Set(items.map(\.id))
-            // 记住上次勾选的来源；第一次打开默认全不选，服务下线后自动剔除旧 ID
-            selectedIDs = SearchSelectionStore.load().intersection(ids)
-            SearchSelectionStore.save(selectedIDs)
-        } catch {
-            servicesError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-        }
-    }
 
     private func submit() {
         let query = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -369,17 +226,7 @@ struct SearchHomeView: View {
             showToast("服务未连接，请稍后重试")
             return
         }
-
-        let picked = services
-            .filter { selectedIDs.contains($0.id) }
-            .map { SearchSource(id: $0.id, name: $0.name) }
-
-        guard !picked.isEmpty else {
-            showToast("请至少选择一个搜索来源")
-            return
-        }
-
-        destination = SearchDestination(keyword: query, sources: picked)
+        scopeDestination = ScopeDestination(keyword: query, scope: scope)
     }
 
     // MARK: - 交互
@@ -393,36 +240,37 @@ struct SearchHomeView: View {
 
     private func showToast(_ text: String) {
         RexHaptics.warning()
-        withAnimation(RexMotion.quick) {
-            toast = text
-        }
-
-        Task {
-            try? await Task.sleep(for: .seconds(2))
-            guard toast == text else { return }
-            withAnimation(RexMotion.quick) {
-                toast = nil
-            }
-        }
+        alert = .notice(text)
     }
 }
 
-/// 搜索页主输入胶囊：右侧内嵌圆形品牌搜索按钮，空关键词时为禁用态。
+/// 搜索页主输入胶囊：左侧内嵌范围下拉（影视 / 片商），右侧圆形搜索按钮，空关键词时为禁用态。
 private struct SearchPillField: View {
     @Binding var text: String
     var placeholder: String
+    var scope: SearchScope
+    var scopeTitle: String
+    var onScopeChange: (SearchScope) -> Void
     var focusToken: Int
     var onSubmit: () -> Void
 
     @FocusState private var isFocused: Bool
+    @State private var showsScopeMenu = false
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.displayScale) private var displayScale
 
     private var canSubmit: Bool {
         !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
-        HStack(spacing: RexSpacing.xs) {
+        HStack(spacing: RexSpacing.sm) {
+            scopeMenu
+
+            Rectangle()
+                .fill(RexColor.divider)
+                .frame(width: 1 / displayScale, height: 24)
+
             TextField(placeholder, text: $text)
                 .font(RexFont.body)
                 .foregroundStyle(RexColor.primaryText)
@@ -431,9 +279,12 @@ private struct SearchPillField: View {
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .submitLabel(.search)
-                .onSubmit(onSubmit)
+                .onSubmit {
+                    showsScopeMenu = false
+                    onSubmit()
+                }
                 .accessibilityLabel(placeholder)
-                .padding(.leading, RexSpacing.xl)
+                .padding(.leading, RexSpacing.xs)
 
             if !text.isEmpty {
                 Button {
@@ -502,67 +353,111 @@ private struct SearchPillField: View {
         .animation(RexMotion.quick, value: isFocused)
         .animation(RexMotion.quick, value: canSubmit)
         .onChange(of: focusToken) { _, _ in isFocused = true }
+        .onChange(of: isFocused) { _, focused in
+            if focused { showsScopeMenu = false }
+        }
     }
-}
 
-/// 一次搜索的目标页参数：关键词 + 选中的来源。
-private struct SearchDestination: Identifiable, Hashable {
-    let keyword: String
-    let sources: [SearchSource]
-
-    var id: String {
-        keyword + "|" + sources.map(\.id).joined(separator: ",")
-    }
-}
-
-/// 系统通知入口：暂未接入通知数据源时展示统一空状态。
-private struct NotificationCenterSheet: View {
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                Spacer(minLength: 0)
-
-                RexStateCard(
-                    symbol: "bell",
-                    title: "暂无通知",
-                    message: "系统通知会显示在这里。"
-                )
-
-                Spacer(minLength: 0)
+    /// 搜索范围下拉：与 PWA 的 SourceSwitch 一致，嵌在输入框左侧。
+    /// 用自绘小弹层而非系统 Menu，避免系统菜单的最小宽度把弹层拉宽、留出大片空白。
+    private var scopeMenu: some View {
+        Button {
+            RexHaptics.tap()
+            withAnimation(RexMotion.quick) {
+                showsScopeMenu.toggle()
             }
-            .padding(RexSpacing.xl)
-            .frame(maxWidth: RexLayout.contentMaxWidth)
-            .frame(maxWidth: .infinity)
-            .background(RexPageBackground())
-            .navigationTitle("通知")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("完成") {
-                        dismiss()
+        } label: {
+            HStack(spacing: 2) {
+                Text(scopeTitle)
+                    .font(.system(size: 13, weight: .semibold))
+
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+            }
+            .foregroundStyle(RexColor.primaryText)
+            .padding(.leading, RexSpacing.md)
+            .padding(.trailing, RexSpacing.sm)
+            .frame(height: 40)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("搜索范围：\(scopeTitle)")
+        .accessibilityAddTraits(showsScopeMenu ? .isSelected : [])
+        .overlay(alignment: .topLeading) {
+            if showsScopeMenu {
+                scopeMenuPanel
+                    .offset(y: 46)
+                    .zIndex(3)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .topLeading)))
+            }
+        }
+    }
+
+    private var scopeMenuPanel: some View {
+        VStack(spacing: 0) {
+            ForEach(SearchScope.allCases) { item in
+                Button {
+                    showsScopeMenu = false
+                    guard item != scope else { return }
+                    RexHaptics.selection()
+                    onScopeChange(item)
+                } label: {
+                    HStack(spacing: RexSpacing.sm) {
+                        Text(item.title)
+                            .font(.system(size: 13, weight: item == scope ? .semibold : .regular))
+                            .foregroundStyle(RexColor.primaryText)
+
+                        Spacer(minLength: 0)
+
+                        if item == scope {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(RexColor.brandBlue)
+                        }
                     }
-                    .font(.system(.subheadline, weight: .medium))
-                    .foregroundStyle(RexColor.brandBlue)
+                    .padding(.horizontal, RexSpacing.md)
+                    .frame(width: 108, height: 38)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                if item != SearchScope.allCases.last {
+                    Rectangle()
+                        .fill(RexColor.divider)
+                        .frame(height: 1 / displayScale)
+                        .padding(.horizontal, RexSpacing.md)
                 }
             }
         }
-        .presentationDetents([.medium])
-        .presentationDragIndicator(.visible)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(RexColor.cardBorder, lineWidth: 0.75)
+        }
+        .shadow(color: .black.opacity(0.12), radius: 16, y: 6)
     }
 }
 
-/// 搜索来源选择的本地记忆：进入搜索页时沿用上次勾选，第一次打开默认全不选。
-private enum SearchSelectionStore {
-    private static let key = "rexhub.search.selectedServiceIDs"
+/// 范围搜索入口参数。
+private struct ScopeDestination: Identifiable, Hashable {
+    let keyword: String
+    let scope: SearchScope
 
-    static func load() -> Set<String> {
-        Set(UserDefaults.standard.stringArray(forKey: key) ?? [])
+    var id: String { scope.rawValue + "|" + keyword }
+}
+
+/// 搜索范围选择的本地记忆：下次打开搜索页沿用上次选的范围。
+enum ScopeSelectionStore {
+    private static let key = "rexhub.search.scope"
+
+    static func load() -> SearchScope {
+        guard let raw = UserDefaults.standard.string(forKey: key),
+              let value = SearchScope(rawValue: raw) else { return .movie }
+        return value
     }
 
-    static func save(_ ids: Set<String>) {
-        UserDefaults.standard.set(ids.sorted(), forKey: key)
+    static func save(_ scope: SearchScope) {
+        UserDefaults.standard.set(scope.rawValue, forKey: key)
     }
 }
 

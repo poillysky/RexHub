@@ -391,7 +391,8 @@ private extension UIImage {
 }
 
 /// 原图只在本次运行内复用，避免来回翻页重复下载；内存紧张时立即清空。
-private final class PanImageCache {
+/// `NSCache` 本身线程安全，可在任意线程读写。
+private final class PanImageCache: @unchecked Sendable {
     static let shared = PanImageCache()
 
     private let cache = NSCache<NSString, UIImage>()
@@ -513,7 +514,8 @@ private struct PanThumbnailView: View {
     }
 }
 
-private final class PanThumbnailCache {
+/// `NSCache` 本身线程安全，可在任意线程读写。
+private final class PanThumbnailCache: @unchecked Sendable {
     static let shared = PanThumbnailCache()
 
     private let cache = NSCache<NSString, UIImage>()

@@ -1,8 +1,9 @@
 import AVFoundation
-import KSPlayer
+@preconcurrency import KSPlayer
 
 /// 播放内核隔离层：业务层只通过这里创建与配置播放器，不直接依赖 AVFoundation 细节。
 /// AVPlayer 与 KSPlayer 两套配置都在本文件生成，播放页只负责选择内核。
+@MainActor
 enum PlayerFacade {
     /// 115 直链会校验 UA，必须把服务端给出的请求头一并交给播放内核。
     /// 缓冲策略与静音起播来自播放器设置，只影响本次新建的播放项。

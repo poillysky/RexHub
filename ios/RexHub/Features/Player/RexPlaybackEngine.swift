@@ -1,7 +1,7 @@
 import AVFoundation
 import AVKit
 import CoreImage
-import KSPlayer
+@preconcurrency import KSPlayer
 import MediaPlayer
 import Observation
 import SwiftUI
