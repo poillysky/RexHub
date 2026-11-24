@@ -15,8 +15,7 @@
 
 | Secret | 值 |
 |---|---|
-| `DOCKERHUB_USERNAME` | `poillysky` |
-| `DOCKERHUB_TOKEN` | Docker Hub → Account settings → Security → New Access Token（Read & Write） |
+| `DOCKERHUB` | Docker Hub → Account settings → Security → New Access Token（Read & Write） |
 
 > 不要用 Docker Hub 登录密码，用 Access Token。
 
