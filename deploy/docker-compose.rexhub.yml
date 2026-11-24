@@ -1,16 +1,17 @@
 # ============================================================
-# RexHub 单容器部署（web 3020 + api 8020 在一个镜像里，supervisord 托管）
+# RexHub 标准部署 compose（单容器，最新）
 #
-# 适用：不需要 Postgres 的 RexHub 轻量部署。
-#   元库 = SQLite（挂载到 /app/data/meta.db）
-#   115 / 插件 / 搜索 全部在容器内完成，不依赖任何外部数据库。
-#   （资源库 DSN 属于可选高级功能：将来需要色花/Bitmagnet 时，
-#     在网页「设置」里填 DSN 即可，本编排无需改动。）
+# 镜像: poillysky/rexhub:1.0.0
+#   web(3020) + api(8020) 在同一容器（supervisord 托管）
+#   已包含全部后端域：auth / search / rexhub(115,插件) / p115 /
+#   ai / moviepilot / moreplay / avdb / makers / translate
+#   元库 = SQLite（挂到 ./data）
 #
-# 目录: 任意目录放本文件 + data/ + config/
-# 启动: docker compose pull && docker compose up -d
-# 访问: http://NAS_IP:3020
-# 首次登录: docker logs rexhub | grep 管理员邀请码
+# 用法:
+#   mkdir -p rexhub/{data,config}
+#   cd rexhub && docker compose pull && docker compose up -d
+#   访问 http://<NAS_IP>:3020
+#   首次登录: docker logs rexhub | grep 管理员邀请码
 # ============================================================
 
 name: rexhub
@@ -20,32 +21,47 @@ services:
     image: poillysky/rexhub:1.0.0
     container_name: rexhub
     restart: always
+
     ports:
-      - "3020:3020"
+      - "3020:3020"            # Web/PWA 入口；改左侧可换对外端口
+
     environment:
       TZ: Asia/Shanghai
-      # 元库 SQLite 落到挂载卷上（默认值即是 /app/data/meta.db，显式写出便于理解）
+      # SQLite 元库（账号/设置/会话/缓存），持久化到卷
       SNS_META_DB: /app/data/meta.db
-      # UI 角色：同一镜像里 web + api 一起起
+      # UI 角色：同一镜像内 web + api 一起起
       APP_ROLE: ui
-      # web -> api 内部地址（容器内，无需改）
+      # web -> api 内部地址（容器内，默认即此值）
       API_INTERNAL_BASE: http://127.0.0.1:8020
       WEB_PORT: "3020"
-      # Cookie Secure 按请求协议自动判断；反代没传 X-Forwarded-Proto 时可手动 0/1
-      # SNS_COOKIE_SECURE=1
+      # 资源库/AI/115 等私有配置进 config/app.local.json，见下
+      # 反代 HTTPS 时若未传 X-Forwarded-Proto，可显式:
+      # SNS_COOKIE_SECURE: "1"
+
     volumes:
-      # 运行时数据（meta.db 等）持久化
+      # 运行时数据（meta.db 等）必须持久化
       - ./data:/app/data
-      # 可选：app.local.json（资源库 DSN / AI key / 115 账号等），不填则用镜像内默认
+      # 私有配置（app.local.json：115 账号 / AI key / 资源库 DSN 等）
       - ./config:/app/config
+
     dns:
       - 223.5.5.5
       - 8.8.8.8
+
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
     ulimits:
       nofile:
         soft: 65535
         hard: 65535
+
     mem_limit: 2g
     memswap_limit: 2g
+
+    healthcheck:
+      test: ["CMD", "/healthcheck.sh"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 60s
