@@ -5,7 +5,7 @@
 ## 镜像
 
 - 名称：`poillysky/sehua-next-web`
-- 当前版本：`1.2.28`
+- 当前版本：`1.0.0`
 - 架构：`linux/amd64` + `linux/arm64` 多架构
 - 构建上下文：`server/`（`server/Dockerfile`，单镜像含 web 3020 + api 8020，supervisord 托管）
 
@@ -26,12 +26,12 @@
 1. **推 main**：`git push origin main` 自动构建。
 2. **打 tag（推荐按版本）**：
    ```bash
-   git tag v1.2.28 && git push origin v1.2.28
+   git tag v1.0.0 && git push origin v1.0.0
    ```
-   生成的镜像 tag：`1.2.28` / `v1.2.28` / `latest` / `main`。
+   生成的镜像 tag：`1.0.0` / `v1.0.0` / `latest` / `main`。
 3. **手动**：Actions → Build & Push Image → Run workflow，可填额外 tag。
 
-> 发版时记得同时把 `server/docker-compose.yml` 里的 `image: …:1.2.28` 版本号与 `DEFAULT_VERSION`（workflow 里）一起改。
+> 发版时记得同时把 `server/docker-compose.yml` 里的 `image: …:1.0.0` 版本号与 `DEFAULT_VERSION`（workflow 里）一起改。
 
 ## NAS 部署
 
