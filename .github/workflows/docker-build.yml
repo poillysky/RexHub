@@ -64,7 +64,10 @@ jobs:
         with:
           context: ./server
           file: ./server/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          # quickjs 1.19 只有 amd64 linux wheel（aarch64 元数据未发布），
+          # arm64 需源码编译且 slim 镜像缺编译器 → 先只构建 amd64。
+          # 如需 arm64：给 Dockerfile 装 clang/build-essential 或换 quickjs 发行方式。
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
