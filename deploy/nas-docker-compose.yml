@@ -1,0 +1,133 @@
+# ============================================================
+# RexHub NAS 部署编排（部署模板）
+# 目录: /vol1/1000/Docker/sehua-next-web/
+#   本文件 + data/ + postgres/ + config/（config 里放 app.json / app.local.json）
+#
+# 启动:
+#   docker compose pull && docker compose up -d
+# 访问: http://NAS_IP:3020
+# Postgres 对外: NAS_IP:5439（库名 nextweb）
+# 日志看管理员邀请码: docker logs sehua-next-web | grep 管理员邀请码
+# ============================================================
+
+name: sehua-next-web
+
+services:
+  # ── Postgres(pgvector)：资源库/磁力库的元数据底座 ──
+  postgres:
+    image: pgvector/pgvector:0.8.6-pg16
+    container_name: sehua-next-web-postgres
+    restart: always
+    command:
+      - postgres
+      # 临时文件不限额会把数据卷写满导致 PANIC（历史根因），显式止血
+      - -c
+      - shared_buffers=512MB
+      - -c
+      - work_mem=16MB
+      - -c
+      - maintenance_work_mem=192MB
+      - -c
+      - temp_file_limit=16GB
+      - -c
+      - log_temp_files=262144
+      - -c
+      - log_min_duration_statement=3000
+    ports:
+      - "5439:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: nextweb
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --lc-collate=C --lc-ctype=C"
+      PGDATA: /var/lib/postgresql/data/pgdata
+      TZ: Asia/Shanghai
+    volumes:
+      - ./postgres:/var/lib/postgresql/data
+    shm_size: 1g
+    sysctls:
+      - kernel.shmmax=1073741824
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d nextweb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+
+  # ── 刮削 Worker：扫描/刮削/向量化重活，只跑 API ──
+  scrape-worker:
+    image: poillysky/sehua-next-web:1.2.28
+    container_name: sehua-next-web-scrape
+    restart: always
+    mem_limit: 4g
+    memswap_limit: 4g
+    cpu_shares: 512
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "8020"
+    healthcheck:
+      test: ["CMD", "/healthcheck.sh"]
+      interval: 15s
+      timeout: 8s
+      retries: 8
+      start_period: 90s
+    environment:
+      TZ: Asia/Shanghai
+      SNS_META_DB: /app/data/meta.db
+      APP_ROLE: worker
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+    dns:
+      - 223.5.5.5
+      - 8.8.8.8
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+
+  # ── UI：web(3020) + api(8020)，轻量上限 ──
+  app:
+    image: poillysky/sehua-next-web:1.2.28
+    container_name: sehua-next-web
+    restart: always
+    mem_limit: 2g
+    memswap_limit: 2g
+    cpu_shares: 1024
+    depends_on:
+      postgres:
+        condition: service_healthy
+      scrape-worker:
+        condition: service_healthy
+    ports:
+      - "3020:3020"
+    environment:
+      TZ: Asia/Shanghai
+      SNS_META_DB: /app/data/meta.db
+      APP_ROLE: ui
+      API_INTERNAL_BASE: http://127.0.0.1:8020
+      WEB_PORT: "3020"
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+    dns:
+      - 223.5.5.5
+      - 8.8.8.8
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
