@@ -4,6 +4,8 @@ import SwiftUI
 struct SearchHomeView: View {
     /// 外部每次递增表示要求聚焦搜索框（例如在影视页点了顶栏搜索）。
     var focusToken: Int = 0
+    /// 外部每次递增表示重复点了「搜索」标签，回到页面顶部。
+    var reselectToken: Int = 0
     /// 顶栏头像使用的名字（保留给调用方兼容，落地页不再展示头像）。
     var name: String = ""
     /// 点击顶栏头像的动作（通常是切到「更多」）。
@@ -19,9 +21,9 @@ struct SearchHomeView: View {
     @State private var handledFocusToken = 0
     @State private var scopeDestination: ScopeDestination?
     @State private var alert: RexAlertInfo?
-    @State private var showsAssistant = false
-    @State private var showsOffline = false
-    @State private var showsBoards = false
+    @State private var toast: RexToastInfo?
+    @State private var sheet: SearchSheet?
+    @State private var assistantOpen = false
 
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -34,18 +36,26 @@ struct SearchHomeView: View {
             landingTop
 
             GeometryReader { proxy in
-                ScrollView {
-                    VStack(spacing: 0) {
-                        hero
+                ScrollViewReader { scrollProxy in
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            hero
+                        }
+                        .padding(.horizontal, RexSpacing.xl)
+                        .padding(.bottom, verticalSizeClass == .compact ? RexSpacing.lg : 120)
+                        .frame(maxWidth: RexLayout.contentMaxWidth)
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: proxy.size.height, alignment: .center)
+                        .id("searchHomeTop")
                     }
-                    .padding(.horizontal, RexSpacing.xl)
-                    .padding(.bottom, verticalSizeClass == .compact ? RexSpacing.lg : 120)
-                    .frame(maxWidth: RexLayout.contentMaxWidth)
-                    .frame(maxWidth: .infinity)
-                    .frame(minHeight: proxy.size.height, alignment: .center)
+                    .scrollDismissesKeyboard(.interactively)
+                    .scrollBounceBehavior(.basedOnSize)
+                    .onChange(of: reselectToken) { _, _ in
+                        withAnimation(RexMotion.standard) {
+                            scrollProxy.scrollTo("searchHomeTop", anchor: .top)
+                        }
+                    }
                 }
-                .scrollDismissesKeyboard(.interactively)
-                .scrollBounceBehavior(.basedOnSize)
             }
         }
         .background(RexPageBackground())
@@ -56,19 +66,22 @@ struct SearchHomeView: View {
         }
         .navigationDestination(item: $scopeDestination) { item in
             ScopeSearchView(keyword: item.keyword, scope: item.scope)
-                .toolbar(.hidden, for: .navigationBar)
+                .rexPushedScreen()
         }
-        .sheet(isPresented: $showsAssistant) {
-            AssistantView()
-                .rexSheetStyle(detents: [.large])
+        .sheet(item: $sheet) { item in
+            Group {
+                switch item {
+                case .offline:
+                    PanOfflineView(isAdmin: isAdmin)
+                case .boards:
+                    BoardsView()
+                }
+            }
+            .rexSheetStyle(detents: [.large])
         }
-        .sheet(isPresented: $showsOffline) {
-            PanOfflineView(isAdmin: isAdmin)
-                .rexSheetStyle(detents: [.large])
-        }
-        .sheet(isPresented: $showsBoards) {
-            BoardsView()
-                .rexSheetStyle(detents: [.large])
+        // AI 助手是独立整页，不再用半屏卡片，保持聊天页沉浸感。
+        .fullScreenCover(isPresented: $assistantOpen) {
+            AssistantView(userName: name)
         }
         .onAppear {
             guard focusToken != handledFocusToken else { return }
@@ -80,6 +93,7 @@ struct SearchHomeView: View {
             focusField()
         }
         .rexAlert($alert)
+        .rexToast($toast)
     }
 
     // MARK: - 顶部（品牌 + 快捷胶囊）
@@ -90,7 +104,7 @@ struct SearchHomeView: View {
                 RexLogoMark(size: 28, hasShadow: true)
 
                 Text("RexHub")
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .font(.system(.body, design: .rounded, weight: .bold))
                     .foregroundStyle(RexColor.primaryText)
             }
 
@@ -98,12 +112,12 @@ struct SearchHomeView: View {
 
             HStack(spacing: RexSpacing.sm) {
                 topChip(title: "板块", symbol: "square.grid.2x2") {
-                    showsBoards = true
+                    sheet = .boards
                 }
 
                 if isAdmin {
                     topChip(title: "转存", symbol: "doc.on.clipboard") {
-                        showsOffline = true
+                        sheet = .offline
                     }
                 }
             }
@@ -117,7 +131,7 @@ struct SearchHomeView: View {
     private var assistantFAB: some View {
         Button {
             RexHaptics.tap()
-            showsAssistant = true
+            assistantOpen = true
         } label: {
             ZStack {
                 Circle()
@@ -126,7 +140,7 @@ struct SearchHomeView: View {
                     .shadow(color: RexColor.brandBlue.opacity(0.32), radius: 14, y: 6)
 
                 Image(systemName: "sparkles")
-                    .font(.system(size: 22, weight: .semibold))
+                    .font(.system(.title2, weight: .semibold))
                     .foregroundStyle(.white)
             }
             .overlay {
@@ -146,15 +160,15 @@ struct SearchHomeView: View {
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: symbol)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(.caption, weight: .semibold))
                     .foregroundStyle(RexColor.brandBlue)
 
                 Text(title)
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(.system(.caption, weight: .semibold))
                     .foregroundStyle(RexColor.primaryText)
             }
             .padding(.horizontal, 11)
-            .frame(height: 32)
+            .frame(minHeight: 32)
             .background(
                 RexColor.surface.opacity(0.88),
                 in: Capsule(style: .continuous)
@@ -164,7 +178,7 @@ struct SearchHomeView: View {
                     .strokeBorder(RexColor.cardBorder, lineWidth: 0.5)
             }
             .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
-            .contentShape(Capsule(style: .continuous))
+            .rexTapTarget()
         }
         .buttonStyle(PressableButtonStyle())
     }
@@ -190,11 +204,11 @@ struct SearchHomeView: View {
 
             VStack(spacing: 6) {
                 Text("RexHub")
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                    .font(.system(.title, design: .rounded, weight: .bold))
                     .foregroundStyle(RexColor.primaryText)
 
                 Text("片名 · 番号 · 关键词 · 多源同搜")
-                    .font(.system(size: 13, weight: .regular))
+                    .font(.system(.footnote, weight: .regular))
                     .foregroundStyle(RexColor.secondaryText)
             }
         }
@@ -240,7 +254,7 @@ struct SearchHomeView: View {
 
     private func showToast(_ text: String) {
         RexHaptics.warning()
-        alert = .notice(text)
+        toast = .warning(text)
     }
 }
 
@@ -255,7 +269,6 @@ private struct SearchPillField: View {
     var onSubmit: () -> Void
 
     @FocusState private var isFocused: Bool
-    @State private var showsScopeMenu = false
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.displayScale) private var displayScale
 
@@ -280,7 +293,6 @@ private struct SearchPillField: View {
                 .autocorrectionDisabled()
                 .submitLabel(.search)
                 .onSubmit {
-                    showsScopeMenu = false
                     onSubmit()
                 }
                 .accessibilityLabel(placeholder)
@@ -292,9 +304,9 @@ private struct SearchPillField: View {
                     withAnimation(RexMotion.quick) { text = "" }
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 16))
+                        .font(.system(.callout))
                         .foregroundStyle(RexColor.tertiaryText)
-                        .frame(width: 28, height: 44)
+                        .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -307,7 +319,7 @@ private struct SearchPillField: View {
                 onSubmit()
             } label: {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.system(.body, weight: .semibold))
                     .foregroundStyle(.white.opacity(canSubmit ? 1 : 0.55))
                     .frame(width: 42, height: 42)
                     .background {
@@ -353,88 +365,38 @@ private struct SearchPillField: View {
         .animation(RexMotion.quick, value: isFocused)
         .animation(RexMotion.quick, value: canSubmit)
         .onChange(of: focusToken) { _, _ in isFocused = true }
-        .onChange(of: isFocused) { _, focused in
-            if focused { showsScopeMenu = false }
-        }
     }
 
-    /// 搜索范围下拉：与 PWA 的 SourceSwitch 一致，嵌在输入框左侧。
-    /// 用自绘小弹层而非系统 Menu，避免系统菜单的最小宽度把弹层拉宽、留出大片空白。
+    /// 搜索范围切换：点一下在「影视 / 片商」之间直接切换，不弹菜单。
     private var scopeMenu: some View {
         Button {
-            RexHaptics.tap()
+            RexHaptics.selection()
             withAnimation(RexMotion.quick) {
-                showsScopeMenu.toggle()
+                onScopeChange(scope == .movie ? .maker : .movie)
             }
         } label: {
-            HStack(spacing: 2) {
-                Text(scopeTitle)
-                    .font(.system(size: 13, weight: .semibold))
-
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .bold))
-            }
-            .foregroundStyle(RexColor.primaryText)
-            .padding(.leading, RexSpacing.md)
-            .padding(.trailing, RexSpacing.sm)
-            .frame(height: 40)
-            .contentShape(Rectangle())
+            Text(scopeTitle)
+                .font(.system(.footnote, weight: .semibold))
+                .foregroundStyle(RexColor.brandBlue)
+                .contentTransition(.opacity)
+                .padding(.horizontal, 14)
+                .frame(height: 34)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(RexColor.brandBlue.opacity(colorScheme == .light ? 0.10 : 0.18))
+                )
+                .overlay {
+                    Capsule(style: .continuous)
+                        .strokeBorder(RexColor.brandBlue.opacity(0.18), lineWidth: 0.75)
+                }
+                .frame(minHeight: 44)
+                .contentShape(Capsule(style: .continuous))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("搜索范围：\(scopeTitle)")
-        .accessibilityAddTraits(showsScopeMenu ? .isSelected : [])
-        .overlay(alignment: .topLeading) {
-            if showsScopeMenu {
-                scopeMenuPanel
-                    .offset(y: 46)
-                    .zIndex(3)
-                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .topLeading)))
-            }
-        }
-    }
-
-    private var scopeMenuPanel: some View {
-        VStack(spacing: 0) {
-            ForEach(SearchScope.allCases) { item in
-                Button {
-                    showsScopeMenu = false
-                    guard item != scope else { return }
-                    RexHaptics.selection()
-                    onScopeChange(item)
-                } label: {
-                    HStack(spacing: RexSpacing.sm) {
-                        Text(item.title)
-                            .font(.system(size: 13, weight: item == scope ? .semibold : .regular))
-                            .foregroundStyle(RexColor.primaryText)
-
-                        Spacer(minLength: 0)
-
-                        if item == scope {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundStyle(RexColor.brandBlue)
-                        }
-                    }
-                    .padding(.horizontal, RexSpacing.md)
-                    .frame(width: 108, height: 38)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-
-                if item != SearchScope.allCases.last {
-                    Rectangle()
-                        .fill(RexColor.divider)
-                        .frame(height: 1 / displayScale)
-                        .padding(.horizontal, RexSpacing.md)
-                }
-            }
-        }
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(RexColor.cardBorder, lineWidth: 0.75)
-        }
-        .shadow(color: .black.opacity(0.12), radius: 16, y: 6)
+        .padding(.leading, RexSpacing.sm)
+        .accessibilityLabel("搜索范围：\(scopeTitle)，点按切换")
+        .accessibilityHint("在影视和片商之间切换")
+        .accessibilityAddTraits(.isButton)
     }
 }
 
@@ -444,6 +406,14 @@ private struct ScopeDestination: Identifiable, Hashable {
     let scope: SearchScope
 
     var id: String { scope.rawValue + "|" + keyword }
+}
+
+/// 搜索页的两个全屏面板，合并为单一 sheet 状态，避免多个布尔互相覆盖。
+private enum SearchSheet: String, Identifiable {
+    case offline
+    case boards
+
+    var id: String { rawValue }
 }
 
 /// 搜索范围选择的本地记忆：下次打开搜索页沿用上次选的范围。

@@ -130,6 +130,9 @@ def makers_browse(
     tag_ids: str = Query("", max_length=400, description="逗号分隔多选标签"),
     actor_id: str = Query("", max_length=64),
     year: str = Query("", max_length=4),
+    main_filter: str = Query("", max_length=120, description="基本组多选，逗号分隔"),
+    month: str = Query("", max_length=32),
+    duration: str = Query("", max_length=64),
     maker_id: str = Query("", max_length=64, description="片商 id"),
     director_id: str = Query("", max_length=64, description="导演 id"),
     list_id: str = Query("", max_length=64, description="片单 id"),
@@ -153,6 +156,9 @@ def makers_browse(
         tag_ids,
         actor_id,
         year,
+        main_filter,
+        month,
+        duration,
         maker_id,
         director_id,
         list_id,
@@ -242,7 +248,7 @@ def makers_movie_play_sources(
     number: str = Query("", max_length=40),
     title: str = Query("", max_length=200),
 ) -> dict[str, Any]:
-    """在线播放源聚合：片商类插件 / Stremio 社区插件 / AVDB 播放源。"""
+    """在线播放源聚合：片商类插件 / AVDB 播放源。"""
     return service.fetch_play_sources(movie_id, number, title)
 
 

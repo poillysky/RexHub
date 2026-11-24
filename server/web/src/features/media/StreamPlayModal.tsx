@@ -2,7 +2,7 @@
 
 /**
  * 片源弹层：列表 + 页面内 <video>。
- * 影视详情页（聚合全部插件）与插件详情页（只看单个插件）共用。
+ * 影视详情页使用，片源来自插件中心的 MorePlay 能力。
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -10,20 +10,9 @@ import { Copy, ExternalLink, LoaderCircle, Play, RefreshCw } from 'lucide-react'
 import { AppCenterModal } from '@/components/ui/AppCenterModal';
 import { useOverlay } from '@/components/overlay/OverlayContext';
 import { copyText } from '@/lib/clipboard';
-import {
-  mediaStreamProxyUrl,
-  mediaSubtitleProxyUrl,
-  type MediaStream,
-  type MediaSubtitle,
-} from '@/lib/api';
+import { mediaStreamProxyUrl, type MediaStream } from '@/lib/api';
 
 const MAX_ROWS = 40;
-
-/** `srcLang` 只接受合法的语言标签，上游偶尔给 "Chinese" 之类的名字。 */
-function trackLang(lang: string) {
-  const value = String(lang || '').trim();
-  return /^[a-z]{2,3}(-[a-z0-9]{2,8})*$/i.test(value) ? value : 'und';
-}
 
 /** Safari 可直接播 m3u8；其他浏览器交给 hls.js，不能同时设置 src。 */
 const NATIVE_HLS =
@@ -54,9 +43,6 @@ export function StreamPlayModal({
   error = '',
   hint = '',
   footerHint = '',
-  subtitles = [],
-  subtitleLoading = false,
-  subtitleReason = '',
   season,
   episode,
   onSeasonChange,
@@ -76,9 +62,6 @@ export function StreamPlayModal({
   error?: string;
   hint?: string;
   footerHint?: string;
-  subtitles?: MediaSubtitle[];
-  subtitleLoading?: boolean;
-  subtitleReason?: string;
   /** 剧集选择：传入回调才显示季/集输入 */
   season?: number;
   episode?: number;
@@ -232,32 +215,12 @@ export function StreamPlayModal({
             onError={() => {
               void describePlayError(playing.url).then(setPlayError);
             }}
-          >
-            {subtitles.map((track, index) => (
-              <track
-                key={`${track.url}-${index}`}
-                kind="subtitles"
-                src={mediaSubtitleProxyUrl(track.url)}
-                srcLang={trackLang(track.lang)}
-                label={track.label || track.lang || '字幕'}
-                default={index === 0}
-              />
-            ))}
-          </video>
+          />
           <div className="stream-player__meta">
             <p className="stream-player__title allow-select">
               {playing.filename || playing.title || playing.name || '未命名片源'}
             </p>
-            <p className="stream-player__sub">
-              {playing.addon}
-              {subtitles.length > 0
-                ? ` · 字幕 ${subtitles.length} 条`
-                : subtitleLoading
-                  ? ' · 正在匹配字幕…'
-                  : subtitleReason
-                    ? ` · ${subtitleReason}`
-                    : ''}
-            </p>
+            <p className="stream-player__sub">{playing.addon}</p>
           </div>
           {playError ? <p className="stream-modal__error">{playError}</p> : null}
           <div className="stream-modal__actions">

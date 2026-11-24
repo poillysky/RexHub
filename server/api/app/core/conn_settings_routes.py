@@ -3,7 +3,6 @@
 
 import logging
 import re
-import threading
 from typing import Any
 from urllib.parse import urlparse
 
@@ -478,8 +477,9 @@ def put_p115(
     )
     # 顶层 folder_* 与 targets.search 是同一份数据（旧字段只是镜像）
     search = stored_targets["search"]
-    folder_cid = str(search.get("folderCid") or "0").strip() or "0"
-    folder_name = str(search.get("folderName") or "").strip()
+    # _targets_for_store 统一回写 snake_case（落库格式），这里两种写法都兼容
+    folder_cid = str(search.get("folder_cid") or search.get("folderCid") or "0").strip() or "0"
+    folder_name = str(search.get("folder_name") or search.get("folderName") or "").strip()
     # label 是可选展示名：未提交时保留旧值，避免保存目录时把名称清空
     label = (body.label or "").strip() or str(prev.get("label") or "").strip()
 
@@ -500,8 +500,8 @@ def put_p115(
         if not folder_name:
             folder_name = str(check.get("folderName") or "")
             stored_targets["search"] = {
-                "folderCid": folder_cid,
-                "folderName": folder_name,
+                "folder_cid": folder_cid,
+                "folder_name": folder_name,
             }
         quota = check.get("quota")
         quota_total = check.get("quotaTotal")
@@ -757,26 +757,6 @@ def _friendly_probe_error(exc: BaseException) -> str:
     return msg
 
 
-def _restart_proxied_plugins() -> None:
-    """代理配置变化后重启走代理的插件，让其进程拿到新的代理环境变量。
-
-    插件进程只在启动时读取一次代理地址；不重启会一直用旧配置，表现为
-    某些站点（如野果短剧）直连被重置、页面一直不加载。
-    """
-    from app.rexhub.plugin_framework import manager, store
-
-    def run() -> None:
-        for row in store.list_plugins():
-            if not row.get("enabled") or not row.get("proxy"):
-                continue
-            try:
-                manager.restart(str(row["id"]))
-            except Exception:  # noqa: BLE001 - 单个插件失败不影响保存
-                continue
-
-    threading.Thread(target=run, name="restart-proxied-plugins", daemon=True).start()
-
-
 @router.get("/network", response_model=Envelope)
 def get_network(_user: dict[str, Any] = Depends(require_user)) -> Envelope:
     data = _network_public(settings_store.get_setting(settings_store.LIBRARY_KEY))
@@ -838,10 +818,7 @@ def put_network(
         next_val.pop("flare_solverr_enabled", None)
         return next_val
 
-    before_proxy = network_store.proxy_url()
     saved = settings_store.update_setting(settings_store.LIBRARY_KEY, mutate)
-    if network_store.proxy_url() != before_proxy:
-        _restart_proxied_plugins()
     data = _network_public(saved["value"])
     data["updated_at"] = saved["updated_at"]
     return Envelope(data=data, message="saved")

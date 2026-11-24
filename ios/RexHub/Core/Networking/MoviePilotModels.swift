@@ -18,6 +18,16 @@ struct MpItem: Decodable, Identifiable, Hashable, Sendable {
     var uniqueID: String { "\(source):\(id)" }
     var isTV: Bool { mediaType == "tv" }
 
+    /// 海报卡左上角类别字，对齐 PWA 的 `MEDIA_CATEGORY_MARK`。
+    var categoryMark: String {
+        switch mediaType {
+        case "tv": "剧"
+        case "anime", "animation": "漫"
+        case "variety": "综"
+        default: "影"
+        }
+    }
+
     private enum CodingKeys: String, CodingKey {
         case source, id, mediaType, title, originalTitle, aka
         case posterUrl, year, rating, overview
@@ -151,6 +161,68 @@ struct MpSearchResult: Decodable, Sendable {
     }
 }
 
+// MARK: - 影人
+
+/// 影视影人资料：`GET /moviepilot/person`。
+struct MpPerson: Decodable, Sendable {
+    let source: String
+    let id: String
+    let name: String
+    let originalName: String?
+    let avatarUrl: String?
+    let birthday: String?
+    let deathday: String?
+    let placeOfBirth: String?
+    let gender: String?
+    let department: String?
+    let aliases: [String]
+    let biography: String?
+    let imdbId: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case source, id, name, originalName, avatarUrl
+        case birthday, deathday, placeOfBirth, gender, department
+        case aliases, biography, imdbId
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        source = container.rexString(.source) ?? ""
+        id = container.rexString(.id) ?? ""
+        name = container.rexString(.name) ?? ""
+        originalName = container.rexString(.originalName)
+        avatarUrl = container.rexString(.avatarUrl)
+        birthday = container.rexString(.birthday)
+        deathday = container.rexString(.deathday)
+        placeOfBirth = container.rexString(.placeOfBirth)
+        gender = container.rexString(.gender)
+        department = container.rexString(.department)
+        aliases = container.rexArray(.aliases, as: String.self)
+        biography = container.rexString(.biography)
+        imdbId = container.rexString(.imdbId)
+    }
+}
+
+/// 影人作品分页：`GET /moviepilot/person/credits`。
+struct MpPersonWorksPage: Decodable, Sendable {
+    let personId: String
+    let page: Int
+    let items: [MpItem]
+    let hasMore: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case personId, page, items, hasMore
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        personId = container.rexString(.personId) ?? ""
+        page = container.rexInt(.page) ?? 1
+        items = container.rexArray(.items, as: MpItem.self)
+        hasMore = container.rexBool(.hasMore) ?? false
+    }
+}
+
 // MARK: - 影视片源
 
 struct MediaStreamItem: Decodable, Identifiable, Hashable, Sendable {
@@ -210,6 +282,219 @@ struct MediaStreamsResult: Decodable, Sendable {
         total = container.rexInt(.total) ?? streams.count
         addons = container.rexInt(.addons) ?? 0
         reason = container.rexString(.reason) ?? ""
+    }
+}
+
+/// 流式片源的 NDJSON 事件：命中一个站点下发一批线路，最后 `done` 带上结束原因。
+enum MediaStreamsLiveEvent: Decodable, Sendable {
+    case site([MediaStreamItem])
+    case done(reason: String)
+
+    private enum CodingKeys: String, CodingKey {
+        case type, reason, streams
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let type = (try? container.decode(String.self, forKey: .type)) ?? ""
+        switch type {
+        case "site":
+            let items = (try? container.decode([MediaStreamItem].self, forKey: .streams)) ?? []
+            self = .site(items)
+        case "done":
+            self = .done(reason: (try? container.decode(String.self, forKey: .reason)) ?? "")
+        default:
+            throw DecodingError.dataCorrupted(
+                .init(codingPath: container.codingPath, debugDescription: "unknown event \(type)")
+            )
+        }
+    }
+}
+
+// MARK: - PT 资源搜索
+
+/// 合并资源下的单个站点来源：支持查看各站体积/做种，并从指定站点单独下载。
+struct MpTorrentSource: Decodable, Identifiable, Sendable {
+    let site: String
+    let size: Double?
+    let seeders: Int
+    let peers: Int
+    let volumeFactor: String?
+    let downloadVolumeFactor: Double?
+    let hitAndRun: Bool
+    let pageUrl: String?
+    let downloadKey: String?
+
+    var id: String {
+        if let downloadKey, !downloadKey.isEmpty { return downloadKey }
+        return "\(site)|\(size ?? 0)"
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case site, size, seeders, peers, volumeFactor
+        case downloadVolumeFactor, hitAndRun, pageUrl, downloadKey
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        site = container.rexString(.site) ?? ""
+        size = container.rexDouble(.size)
+        seeders = container.rexInt(.seeders) ?? 0
+        peers = container.rexInt(.peers) ?? 0
+        volumeFactor = container.rexString(.volumeFactor)
+        downloadVolumeFactor = container.rexDouble(.downloadVolumeFactor)
+        hitAndRun = container.rexBool(.hitAndRun) ?? false
+        pageUrl = container.rexString(.pageUrl)
+        downloadKey = container.rexString(.downloadKey)
+    }
+}
+
+/// PT 站点返回的单条资源：`GET /moviepilot/search`。
+struct MpTorrentItem: Decodable, Identifiable, Sendable {
+    let site: String
+    let sites: [String]
+    let variants: [MpTorrentSource]
+    let title: String
+    let description: String?
+    let category: String?
+    let size: Double?
+    let seeders: Int
+    let peers: Int
+    let grabs: Int
+    let pubdate: String?
+    let dateElapsed: String?
+    let volumeFactor: String?
+    let seasonEpisode: String?
+    let releaseGroup: String?
+    let webSource: String?
+    let edition: String?
+    let resolution: String?
+    let videoCode: String?
+    let downloadVolumeFactor: Double?
+    let hitAndRun: Bool
+    let labels: [String]
+    let pageUrl: String?
+    let downloadUrl: String?
+    let downloadKey: String?
+
+    /// 跨站合并后的站点列表：优先 `sites`，回退 `site`。
+    var siteNames: [String] {
+        let merged = sites.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        if !merged.isEmpty { return merged }
+        return site.isEmpty ? [] : [site]
+    }
+
+    var id: String {
+        if let downloadKey, !downloadKey.isEmpty { return downloadKey }
+        return "\(site)|\(title)|\(size ?? 0)"
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case site, sites, variants, title, description, category, size
+        case seeders, peers, grabs, pubdate, dateElapsed, volumeFactor
+        case seasonEpisode, releaseGroup, webSource, edition
+        case resolution, videoCode, downloadVolumeFactor
+        case hitAndRun, labels, pageUrl, downloadUrl, downloadKey
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        site = container.rexString(.site) ?? ""
+        sites = container.rexArray(.sites, as: String.self)
+        variants = container.rexArray(.variants, as: MpTorrentSource.self)
+        title = container.rexString(.title) ?? ""
+        description = container.rexString(.description)
+        category = container.rexString(.category)
+        size = container.rexDouble(.size)
+        seeders = container.rexInt(.seeders) ?? 0
+        peers = container.rexInt(.peers) ?? 0
+        grabs = container.rexInt(.grabs) ?? 0
+        pubdate = container.rexString(.pubdate)
+        dateElapsed = container.rexString(.dateElapsed)
+        volumeFactor = container.rexString(.volumeFactor)
+        seasonEpisode = container.rexString(.seasonEpisode)
+        releaseGroup = container.rexString(.releaseGroup)
+        webSource = container.rexString(.webSource)
+        edition = container.rexString(.edition)
+        resolution = container.rexString(.resolution)
+        videoCode = container.rexString(.videoCode)
+        downloadVolumeFactor = container.rexDouble(.downloadVolumeFactor)
+        hitAndRun = container.rexBool(.hitAndRun) ?? false
+        labels = container.rexArray(.labels, as: String.self)
+        pageUrl = container.rexString(.pageUrl)
+        downloadUrl = container.rexString(.downloadUrl)
+        downloadKey = container.rexString(.downloadKey)
+    }
+}
+
+/// PT 搜索结果：`GET /moviepilot/search`。
+struct MpTorrentSearchResult: Decodable, Sendable {
+    let keyword: String
+    let mode: String
+    let page: Int
+    let items: [MpTorrentItem]
+    let total: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case keyword, mode, page, items, total
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        keyword = container.rexString(.keyword) ?? ""
+        mode = container.rexString(.mode) ?? ""
+        page = container.rexInt(.page) ?? 1
+        items = container.rexArray(.items, as: MpTorrentItem.self)
+        total = container.rexInt(.total) ?? items.count
+    }
+}
+
+/// 提交下载结果：`POST /moviepilot/download`。
+struct MpDownloadTask: Decodable, Sendable {
+    let downloadId: String
+    let title: String
+    let site: String
+
+    private enum CodingKeys: String, CodingKey {
+        case downloadId, title, site
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        downloadId = container.rexString(.downloadId) ?? ""
+        title = container.rexString(.title) ?? ""
+        site = container.rexString(.site) ?? ""
+    }
+}
+
+/// 下载任务状态：`GET /moviepilot/download/status`。
+struct MpDownloadStatus: Decodable, Sendable {
+    let found: Bool
+    let hash: String?
+    let title: String?
+    let state: String?
+    let progress: Double?
+    let size: Double?
+    let downloader: String?
+    let dlspeed: String?
+    let leftTime: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case found, hash, title, state, progress, size
+        case downloader, dlspeed, leftTime
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        found = container.rexBool(.found) ?? false
+        hash = container.rexString(.hash)
+        title = container.rexString(.title)
+        state = container.rexString(.state)
+        progress = container.rexDouble(.progress)
+        size = container.rexDouble(.size)
+        downloader = container.rexString(.downloader)
+        dlspeed = container.rexString(.dlspeed)
+        leftTime = container.rexString(.leftTime)
     }
 }
 

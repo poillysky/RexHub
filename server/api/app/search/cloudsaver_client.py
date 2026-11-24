@@ -41,9 +41,8 @@ def cloud_label(type_key: str) -> str:
     return CLOUD_TYPE_LABELS.get(k) or (type_key or "其他")
 
 
-# 游标翻页：单次「加载更多」最多翻几轮、单关键词累计上限、缓存条目与 TTL
-_POOL_ROUNDS = 3
-_POOL_ITEMS_MAX = 200
+# 游标翻页：单次「加载更多」最多翻几轮、缓存条目与 TTL
+_POOL_ROUNDS = 20
 _POOL_MAX = 32
 _POOL_TTL_S = 120.0
 
@@ -395,7 +394,7 @@ def search(keyword: str, *, min_items: int = 0) -> dict[str, Any]:
         raise CloudSaverError("关键词为空")
 
     # 首屏一次请求；随后按频道游标翻页，直到够 min_items 条或上游没有更多
-    want = 0 if min_items <= 0 else min(int(min_items), _POOL_ITEMS_MAX)
+    want = 0 if min_items <= 0 else int(min_items)
     key = f"{base}|{kw.lower()}"
     token = login(force=False)
     for attempt in (0, 1):
@@ -437,7 +436,7 @@ def search(keyword: str, *, min_items: int = 0) -> dict[str, Any]:
             token = login(force=True)
             continue
         _pool_put(key, state)
-        items = state["items"][:_POOL_ITEMS_MAX]
+        items = state["items"]
         host = urlparse(base).netloc or base
         return {
             "keyword": kw,

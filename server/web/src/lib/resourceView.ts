@@ -244,10 +244,20 @@ export function linksForResourceHash(
   hash: string | null | undefined,
   ed2kLinks?: string[] | null,
   fallbackLink?: string | null,
-  opts?: { filename?: string | null; title?: string | null },
+  opts?: {
+    filename?: string | null;
+    title?: string | null;
+    /** API 返回的 ed2k_links 已由服务端按库内实际情况收敛过，直接信任 */
+    authoritative?: boolean;
+  },
 ): string[] {
   const primary = (fallbackLink || "").trim();
   const fromMeta = normalizeEd2kLinks(ed2kLinks, null);
+  if (opts?.authoritative && fromMeta.length) {
+    // 服务端已判定该行是真合集（兄弟 hash 无独立资源行）或已拆分，
+    // 前端不再按 hash 二次过滤，否则会把合集链接砍成 1 条。
+    return fromMeta;
+  }
   const out: string[] = [];
   const push = (link: string) => {
     if (!link || out.includes(link)) return;
@@ -719,7 +729,7 @@ export function normalizeResourceView(item: ResourceItem): ResourceItem {
     item.hash,
     item.ed2k_links,
     item.ed2k_link,
-    { filename: item.name, title: item.title },
+    { filename: item.name, title: item.title, authoritative: true },
   );
   const primary = links[0] || item.ed2k_link || "";
   const name = (item.name || "").trim();

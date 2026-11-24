@@ -9,8 +9,6 @@ import {
   Film,
   HardDrive,
   MessagesSquare,
-  Package,
-  Blocks,
   Search,
   Sparkles,
   Palette,
@@ -32,8 +30,6 @@ import { AvdbPanel } from './AvdbPanel';
 import { MoviePilotPanel } from './MoviePilotPanel';
 import { MoreplayPanel } from './MoreplayPanel';
 import { AppearancePanel } from './AppearancePanel';
-import { PluginCenterPanel } from './PluginCenterPanel';
-import { StremioPanel } from './plugins/StremioPanel';
 
 type Panel =
   | 'hub'
@@ -46,8 +42,6 @@ type Panel =
   | 'avdb'
   | 'moviepilot'
   | 'moreplay'
-  | 'plugin-center'
-  | 'stremio'
   | 'network'
   | 'ai';
 type Accent = 'blue' | 'orange' | 'teal' | 'indigo' | 'green' | 'pink';
@@ -163,28 +157,6 @@ const SECTIONS: Section[] = [
         Icon: Clapperboard,
         accent: 'blue',
         logo: '/brand/moreplay.png',
-      },
-    ],
-  },
-  {
-    id: 'plugin',
-    label: '插件',
-    items: [
-      {
-        id: 'plugin-center',
-        title: '插件中心',
-        desc: '市场 · 安装 · 更新 · 配置',
-        Icon: Blocks,
-        accent: 'blue',
-        logo: '/brand/plugin-center.svg',
-      },
-      {
-        id: 'stremio',
-        title: 'Stremio 插件库',
-        desc: '订阅仓库与 addon 详情',
-        Icon: Package,
-        accent: 'green',
-        logo: '/brand/stremio.svg',
       },
     ],
   },
@@ -328,12 +300,6 @@ export function SettingsScreen() {
       ) : null}
       {panel === 'moreplay' ? (
         <MoreplayPanel onBack={() => setPanel('hub')} />
-      ) : null}
-      {panel === 'plugin-center' ? (
-        <PluginCenterPanel onBack={() => setPanel('hub')} />
-      ) : null}
-      {panel === 'stremio' ? (
-        <StremioPanel onBack={() => setPanel('hub')} />
       ) : null}
       {panel === 'ai' && isAdmin ? (
         <AiModelsPanel onBack={() => setPanel('hub')} />

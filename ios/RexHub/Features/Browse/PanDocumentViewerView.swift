@@ -14,31 +14,40 @@ struct PanDocumentViewerView: View {
     @State private var showPreview = false
 
     var body: some View {
-        ZStack {
-            if let errorText {
-                RexStateCard(
-                    symbol: "doc.badge.ellipsis",
-                    title: "无法预览文件",
-                    message: errorText,
-                    tone: .warning,
-                    actionTitle: "重试"
-                ) {
-                    RexHaptics.tap()
-                    Task { await load() }
+        VStack(spacing: 0) {
+            // 下载可能失败，必须留可点的退出入口。
+            RexNavBar(
+                title: "文档预览",
+                leading: .text("关闭", action: { dismiss() }),
+                isScrolled: false
+            )
+
+            ZStack {
+                if let errorText {
+                    RexStateCard(
+                        symbol: "doc.badge.ellipsis",
+                        title: "无法预览文件",
+                        message: errorText,
+                        tone: .warning,
+                        actionTitle: "重试"
+                    ) {
+                        RexHaptics.tap()
+                        Task { await load() }
+                    }
+                } else {
+                    RexStateCard(
+                        symbol: "doc.text.magnifyingglass",
+                        title: "正在准备预览",
+                        message: "文件会先下载到临时目录，预览结束后自动清理。",
+                        tone: .brand,
+                        isLoading: true
+                    )
                 }
-            } else {
-                RexStateCard(
-                    symbol: "doc.text.magnifyingglass",
-                    title: "正在准备预览",
-                    message: "文件会先下载到临时目录，预览结束后自动清理。",
-                    tone: .brand,
-                    isLoading: true
-                )
             }
+            .padding(.horizontal, RexSpacing.xl)
+            .frame(maxWidth: RexLayout.contentMaxWidth)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding(.horizontal, RexSpacing.xl)
-        .frame(maxWidth: RexLayout.contentMaxWidth)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(RexPageBackground())
         .toolbar(.hidden, for: .navigationBar)
         .task { await load() }

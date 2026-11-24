@@ -21,16 +21,11 @@ const SOURCE_LABELS: Record<string, string> = {
   avdb: 'AVDB',
 };
 
-/** 结果列表区：筛选、提示、错误/空态、卡片列表、无限滚动 / 分页 */
+/** 结果列表区：筛选、提示、错误/空态、卡片列表、连续加载状态 */
 export function HomeResultsBody({ h, scrollBodyRef, sentinelRef }: Props) {
   const sourceErrorText = Object.entries(h.scopeSourceErrors)
     .map(([key, value]) => `${SOURCE_LABELS[key] ?? key}：${value}`)
     .join('；');
-
-  function goScopePage(next: number) {
-    h.setScopePage(Math.max(1, next));
-    scrollBodyRef.current?.scrollTo({ top: 0 });
-  }
 
   return (
     <div className="app-body home-search-body" ref={scrollBodyRef}>
@@ -82,12 +77,11 @@ export function HomeResultsBody({ h, scrollBodyRef, sentinelRef }: Props) {
           <>
             <ScopeResultList
               items={h.scopeItems}
-              page={h.scopePage}
               hasMore={h.scopeHasMore}
               loadingMore={h.scopeFetching}
+              loadError={h.scopeLoadMoreError}
               saveSource={h.searchScope === 'maker' ? 'maker' : 'media'}
-              onPrev={() => goScopePage(h.scopePage - 1)}
-              onNext={() => goScopePage(h.scopePage + 1)}
+              onLoadMore={h.scopeLoadMore}
               onOpenDetail={h.openScopeDetail}
             />
             {sourceErrorText ? (

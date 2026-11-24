@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { useUiPreferences } from '@/hooks/useUiPreferences';
 import { useEdgeSwipeBack } from '@/hooks/useEdgeSwipeBack';
+import { navDirection } from '@/shell/nav/urlNav';
 import {
   clearScrollPosition,
   restoreScrollPosition,
@@ -45,6 +46,8 @@ export function AppPush({
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
+  // 返回时上一页是「重新出现」而不是「新推进来」：改走淡入，避免方向反了
+  const [backEnter] = useState(() => navDirection() === 'back');
   const [{ restoreScrollOnBack }] = useUiPreferences();
   const memoryKey = (scrollKey || `push:${title}`).trim();
   const pinTop = scrollMode === 'top';
@@ -123,15 +126,25 @@ export function AppPush({
     restoreScrollPosition(el, memoryKey);
 
     let alive = true;
-    const deadline = Date.now() + 400;
+    // 列表数据可能晚于首帧到位：持续观察 1.2s，期间用户主动滚动则立即让位
+    const deadline = Date.now() + 1200;
     const reapply = () => {
       if (!alive || Date.now() > deadline) return;
       restoreScrollPosition(el, memoryKey);
     };
+    const cancel = () => {
+      alive = false;
+    };
+    el.addEventListener('touchstart', cancel, { passive: true });
+    el.addEventListener('wheel', cancel, { passive: true });
+    el.addEventListener('keydown', cancel);
+
     const raf1 = requestAnimationFrame(reapply);
     const raf2 = requestAnimationFrame(() => requestAnimationFrame(reapply));
     const t1 = window.setTimeout(reapply, 50);
     const t2 = window.setTimeout(reapply, 180);
+    const t3 = window.setTimeout(reapply, 420);
+    const t4 = window.setTimeout(reapply, 900);
 
     let ro: ResizeObserver | null = null;
     if (typeof ResizeObserver !== 'undefined') {
@@ -141,10 +154,15 @@ export function AppPush({
 
     return () => {
       alive = false;
+      el.removeEventListener('touchstart', cancel);
+      el.removeEventListener('wheel', cancel);
+      el.removeEventListener('keydown', cancel);
       cancelAnimationFrame(raf1);
       cancelAnimationFrame(raf2);
       window.clearTimeout(t1);
       window.clearTimeout(t2);
+      window.clearTimeout(t3);
+      window.clearTimeout(t4);
       ro?.disconnect();
       if (el.scrollTop > 0) saveScrollPosition(memoryKey, el.scrollTop);
     };
@@ -154,7 +172,11 @@ export function AppPush({
     <div
       ref={rootRef}
       className={
-        skipEnterAnimation ? 'app-push app-push--settled' : 'app-push'
+        skipEnterAnimation
+          ? 'app-push app-push--settled'
+          : backEnter
+            ? 'app-push app-push--back'
+            : 'app-push'
       }
       role="region"
       aria-label={title}

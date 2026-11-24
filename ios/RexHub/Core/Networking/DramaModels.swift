@@ -154,6 +154,32 @@ struct DramaSeries: Decodable, Sendable {
     }
 }
 
+// MARK: - 播放
+
+/// 播放解析结果：服务端只给地址，播放流量由客户端直连 CDN 或插件端口。
+struct DramaPlayInfo: Decodable, Sendable {
+    let url: URL
+    let headers: [String: String]
+    /// `hls` 走系统播放器（AVPlayer 原生支持 HLS + AES-128），`mp4` 交给现有路由判断。
+    let kind: String
+
+    private enum CodingKeys: String, CodingKey {
+        case url, headers, kind
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        guard let url = URL(string: container.rexString(.url) ?? "") else {
+            throw DecodingError.dataCorrupted(
+                .init(codingPath: container.codingPath, debugDescription: "播放地址为空")
+            )
+        }
+        self.url = url
+        headers = (try? container.decode([String: String].self, forKey: .headers)) ?? [:]
+        kind = container.rexString(.kind) ?? ""
+    }
+}
+
 // MARK: - 榜单
 
 struct DramaRankFilterOption: Decodable, Identifiable, Hashable, Sendable {
@@ -180,4 +206,19 @@ struct DramaRankGroup: Decodable, Identifiable, Hashable, Sendable {
 
 struct DramaRankListResponse: Decodable, Sendable {
     let groups: [DramaRankGroup]
+}
+
+// MARK: - 分类
+
+/// 插件自带的分类维度，如「全部背景」「全部主题」。
+struct DramaCategoryDimension: Decodable, Identifiable, Hashable, Sendable {
+    let key: String
+    let title: String
+    let items: [DramaRankFilterOption]
+
+    var id: String { key }
+}
+
+struct DramaCategoryResponse: Decodable, Sendable {
+    let dimensions: [DramaCategoryDimension]
 }

@@ -6,7 +6,7 @@ enum PanRemoteFile {
     /// 下载到临时目录，文件名保留原扩展名，方便 QuickLook / 解压识别。
     static func download(item: PanItem, client: APIClient) async throws -> URL {
         let request = try await makeRequest(item: item, client: client, timeout: 300)
-        let (tempURL, response) = try await URLSession.shared.download(for: request)
+        let (tempURL, response) = try await HTTPTransport.transfer.download(for: request)
 
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
             throw APIError.server(status: http.statusCode)
@@ -25,7 +25,7 @@ enum PanRemoteFile {
 
     static func imageData(item: PanItem, client: APIClient) async throws -> Data {
         let request = try await makeRequest(item: item, client: client, timeout: 60)
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await HTTPTransport.transfer.data(for: request)
 
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
             throw APIError.server(status: http.statusCode)

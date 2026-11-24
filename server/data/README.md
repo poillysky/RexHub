@@ -9,7 +9,6 @@ data/
     account.json        # 管理台/App 账号
     secret.key          # Bearer token 签名密钥
     plugins.json        # 已安装的 ForwardWidget 插件
-    addons.json         # Stremio 插件缓存
     services.json       # 资源服务配置
     network.json        # 网络/代理设置
     progress.json       # 播放进度

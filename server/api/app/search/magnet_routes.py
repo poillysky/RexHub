@@ -6,11 +6,12 @@ import re
 from typing import Any
 from urllib.parse import quote
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 import app.search.bitmagnet_client as bitmagnet_client
 from app.auth.routes import require_user
-from app.core.outbound_http import httpx_client
+from app.core.outbound_http import httpx_client, resolve_proxy_url
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["magnet"])
@@ -89,6 +90,34 @@ def magnet_resolve(
     )
 
 
+def _whatslink_fetch(url: str) -> tuple[Any | None, str]:
+    """拉 WhatsLink 预览数据。
+
+    面板启用了代理就优先走代理（whatslink 在直连网络下多半不通），
+    代理失败再直连兜底；两者都失败返回 `(None, 错误文本)`。
+    """
+    modes = ("proxy", "direct") if resolve_proxy_url() else ("direct",)
+    last_err = ""
+    for mode in modes:
+        try:
+            if mode == "proxy":
+                with httpx_client(timeout=8.0) as client:
+                    resp = client.get(url)
+            else:
+                with httpx.Client(
+                    timeout=8.0, trust_env=False, follow_redirects=True
+                ) as client:
+                    resp = client.get(url)
+            if resp.status_code >= 400:
+                last_err = f"status {resp.status_code}"
+                continue
+            return resp.json(), ""
+        except Exception as e:
+            last_err = str(e)
+            log.info("whatslink %s failed: %s", mode, e)
+    return None, last_err
+
+
 @router.get("/magnet/preview")
 def magnet_preview(
     hash: str = Query(..., min_length=8, max_length=64),
@@ -113,30 +142,10 @@ def magnet_preview(
     magnet = f"magnet:?xt=urn:btih:{h}"
     url = f"https://whatslink.info/api/v1/link?url={quote(magnet, safe='')}"
 
-    raw: Any = None
-    # 先直连（多数环境更快）；失败再走刮削代理
-    try:
-        import httpx
-
-        with httpx.Client(timeout=8.0, trust_env=False, follow_redirects=True) as client:
-            resp = client.get(url)
-        if resp.status_code < 400:
-            raw = resp.json()
-    except Exception as e:
-        log.info("whatslink direct failed: %s", e)
-
+    raw, err = _whatslink_fetch(url)
     if raw is None:
-        try:
-            with httpx_client(timeout=8.0) as client:
-                resp = client.get(url)
-            if resp.status_code >= 400:
-                empty["error"] = f"status {resp.status_code}"
-                return _wrap(empty, "empty")
-            raw = resp.json()
-        except Exception as e:
-            log.warning("whatslink proxy failed: %s", e)
-            empty["error"] = str(e)
-            return _wrap(empty, "empty")
+        empty["error"] = err
+        return _wrap(empty, "empty")
 
     if not isinstance(raw, dict) or raw.get("error"):
         empty["error"] = str((raw or {}).get("error") or "invalid")

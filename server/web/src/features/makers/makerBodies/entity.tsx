@@ -21,15 +21,24 @@ const ENTITY_LABEL: Record<MakerEntityKind, string> = {
 export function MakerEntityBody({
   kind,
   id,
+  initialPage = 1,
+  onPageChange,
   onOpenMovie,
 }: {
   kind: MakerEntityKind;
   id: string;
+  /** 从影片详情返回时恢复页码 */
+  initialPage?: number;
+  onPageChange?: (page: number) => void;
   onOpenMovie: (movie: MakerMovie) => void;
 }) {
   const entity = useMakerEntity(kind, id);
   const info = entity.data;
-  const [page, setPage] = useState(1);
+  const [page, setPageState] = useState(() => Math.max(1, initialPage));
+  const setPage = (next: number) => {
+    setPageState(next);
+    onPageChange?.(next);
+  };
   // 系列详情需要 series_type（实体接口返回 type），否则默认按「系列」查询
   const seriesType = kind === 'series' && info?.type != null ? String(info.type) : '0';
   const dims =
@@ -102,13 +111,22 @@ export function MakerEntityBody({
 
 export function MakerActorDetailBody({
   id,
+  initialPage = 1,
+  onPageChange,
   onOpenMovie,
 }: {
   id: string;
+  /** 从影片详情返回时恢复页码 */
+  initialPage?: number;
+  onPageChange?: (page: number) => void;
   onOpenMovie: (movie: MakerMovie) => void;
 }) {
   const actor = useMakerActorDetail(id);
-  const [page, setPage] = useState(1);
+  const [page, setPageState] = useState(() => Math.max(1, initialPage));
+  const setPage = (next: number) => {
+    setPageState(next);
+    onPageChange?.(next);
+  };
   const browse = useMakerBrowse('0', '', '', id, page);
   const items = browse.data?.items || [];
   const hasMore = !!browse.data?.hasMore;

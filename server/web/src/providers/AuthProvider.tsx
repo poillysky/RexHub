@@ -17,7 +17,7 @@ import {
 } from '@/lib/api';
 import type { AuthUser } from '@/types/resource';
 
-type Status = 'loading' | 'anonymous' | 'authenticated';
+type Status = 'loading' | 'anonymous' | 'authenticated' | 'offline';
 
 type AuthContextValue = {
   status: Status;
@@ -42,8 +42,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(me);
       setStatus(me ? 'authenticated' : 'anonymous');
     } catch {
-      setUser(null);
-      setStatus('anonymous');
+      // 只有 401 才算未登录；网络抖动 / 服务端异常进入 offline，避免把已登录用户踢回登录页
+      setStatus((prev) => (prev === 'authenticated' ? prev : 'offline'));
     }
   }, []);
 
@@ -55,7 +55,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setStatus(me ? 'authenticated' : 'anonymous');
     };
     // 挂载后异步拉一次会话；setState 在回调里，避免同步渲染级联
-    authMe().then(apply, () => apply(null));
+    authMe().then(apply, () => {
+      if (alive) setStatus((prev) => (prev === 'authenticated' ? prev : 'offline'));
+    });
     return () => {
       alive = false;
     };

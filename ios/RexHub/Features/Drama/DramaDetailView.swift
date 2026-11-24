@@ -8,11 +8,19 @@ struct DramaDetailView: View {
     @Environment(\.apiClient) private var apiClient
     @Environment(\.dismiss) private var dismiss
 
+    private let playerSettings = PlayerSettingsStore.shared
+
     @State private var series: DramaSeries?
     @State private var isLoading = true
     @State private var errorText: String?
     @State private var isScrolled = false
     @State private var playing: DramaPlayRequest?
+    @State private var episodePage = 0
+    @State private var preparingEpisodeID: String?
+    @State private var playError: RexAlertInfo?
+
+    /// 每页最多展示的集数。
+    private let episodesPerPage = 50
 
     var body: some View {
         VStack(spacing: 0) {
@@ -23,40 +31,54 @@ struct DramaDetailView: View {
             )
 
             ScrollView {
-                VStack(alignment: .leading, spacing: RexSpacing.xl) {
-                    hero
+                VStack(alignment: .leading, spacing: 0) {
+                    cover
 
-                    if let series, !series.description.isEmpty {
-                        Text(series.description)
-                            .font(RexFont.body)
-                            .foregroundStyle(RexColor.secondaryText)
-                            .lineSpacing(3)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                    VStack(alignment: .leading, spacing: RexSpacing.xl) {
+                        hero
 
-                    if let series {
-                        episodesSection(series)
-                    } else if isLoading {
-                        ForEach(0..<3, id: \.self) { _ in
-                            RexSkeleton(width: .infinity, height: 90, cornerRadius: RexRadius.card)
+                        if !synopsisText.isEmpty {
+                            VStack(alignment: .leading, spacing: RexSpacing.md) {
+                                sectionHeader("简介")
+
+                                RexExpandableText(text: synopsisText, collapsedLines: 3)
+                            }
                         }
-                    } else if let errorText {
-                        RexStateCard(
-                            symbol: "wifi.exclamationmark",
-                            title: "详情加载失败",
-                            message: errorText,
-                            tone: .warning,
-                            actionTitle: "重试"
-                        ) {
-                            Task { await load() }
+
+                        if let series, !series.episodes.isEmpty {
+                            playButton(series)
+                        }
+
+                        if let series {
+                            episodesSection(series)
+                        } else if isLoading {
+                            VStack(alignment: .leading, spacing: RexSpacing.md) {
+                                sectionHeader("选集")
+
+                                LazyVGrid(columns: episodeColumns, alignment: .leading, spacing: RexSpacing.sm) {
+                                    ForEach(0..<12, id: \.self) { _ in
+                                        RexSkeleton(width: .infinity, height: 42, cornerRadius: 11)
+                                    }
+                                }
+                            }
+                        } else if let errorText {
+                            RexStateCard(
+                                symbol: "wifi.exclamationmark",
+                                title: "详情加载失败",
+                                message: errorText,
+                                tone: .warning,
+                                actionTitle: "重试"
+                            ) {
+                                Task { await load() }
+                            }
                         }
                     }
+                    .padding(.horizontal, RexSpacing.xl)
+                    .padding(.top, RexSpacing.md)
+                    .padding(.bottom, RexSpacing.huge)
+                    .frame(maxWidth: RexLayout.contentMaxWidth)
+                    .frame(maxWidth: .infinity)
                 }
-                .padding(.horizontal, RexSpacing.xl)
-                .padding(.top, RexSpacing.md)
-                .padding(.bottom, RexSpacing.huge)
-                .frame(maxWidth: RexLayout.contentMaxWidth)
-                .frame(maxWidth: .infinity)
                 .background(RexScrollOffsetReader(space: "dramaDetailScroll"))
             }
             .rexScrollTracking("dramaDetailScroll", isScrolled: $isScrolled)
@@ -64,90 +86,202 @@ struct DramaDetailView: View {
             .refreshable { await load() }
         }
         .background(RexPageBackground())
-        .toolbar(.hidden, for: .navigationBar)
-        .task { await load() }
+        .rexPushedScreen()
+        .task {
+            // 从播放器返回时保留已加载内容，不重新请求。
+            if series == nil { await load() }
+        }
         .fullScreenCover(item: $playing) { request in
             RexPlayerView(item: request.item, playlist: [], directSource: request.info)
         }
+        .rexAlert($playError)
     }
 
-    private var hero: some View {
-        HStack(alignment: .top, spacing: RexSpacing.lg) {
-            MakerArtwork(card.cover, width: 360)
-                .frame(width: 108, height: 144)
-                .clipShape(RoundedRectangle(cornerRadius: RexRadius.small, style: .continuous))
+    // MARK: - 顶部全宽封面
 
-            VStack(alignment: .leading, spacing: RexSpacing.sm) {
+    /// 顶部封面：贴屏幕左右边，高度按原图比例，完整显示不裁切（竖图自然更高）。
+    private var cover: some View {
+        MakerFullWidthArtwork(coverURL, width: 1080)
+    }
+
+    private var coverURL: String? {
+        for candidate in [series?.cover, card.cover] {
+            if let text = candidate?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+                return text
+            }
+        }
+        return nil
+    }
+
+    // MARK: - 头部（标题 + 徽标）
+
+    private var hero: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            DramaTitleRow(spacing: 8, lineSpacing: 10) {
                 Text(card.title)
-                    .font(.system(size: 19, weight: .bold, design: .rounded))
+                    .font(.system(size: 25, weight: .bold))
+                    .tracking(-0.6)
                     .foregroundStyle(RexColor.primaryText)
                     .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                HStack(spacing: RexSpacing.sm) {
-                    if !card.siteName.isEmpty {
-                        MakerBadge(text: card.siteName, tint: RexColor.brandBlue)
-                    }
-                    if card.episodeCount > 0 {
-                        MakerBadge(text: "\(card.episodeCount) 集", tint: RexColor.success)
-                    }
-                    if let series {
-                        MakerBadge(text: series.complete ? "已完结" : "连载中", tint: RexColor.warning)
-                    }
+                if !card.siteName.isEmpty {
+                    MakerBadge(text: card.siteName, tint: RexColor.brandBlue)
                 }
+                if card.episodeCount > 0 {
+                    MakerBadge(text: "\(card.episodeCount) 集", tint: RexColor.success)
+                }
+                if let series {
+                    MakerBadge(text: series.complete ? "已完结" : "连载中", tint: RexColor.warning)
+                }
+            }
+        }
+        .padding(.top, RexSpacing.sm)
+        .padding(.bottom, RexSpacing.sm)
+    }
 
-                if let first = series?.episodes.first(where: { !$0.disabled }) {
-                    Button {
-                        play(first)
-                    } label: {
-                        HStack(spacing: RexSpacing.sm) {
+    /// 主播放入口：位于简介与选集之间。
+    private func playButton(_ series: DramaSeries) -> some View {
+        let target = resumeEpisode ?? series.episodes.first(where: { !$0.disabled })
+        let isResume = resumeEpisode != nil
+
+        return Group {
+            if let target {
+                Button {
+                    play(target)
+                } label: {
+                    HStack(spacing: RexSpacing.sm) {
+                        if preparingEpisodeID == target.id {
+                            ProgressView()
+                                .controlSize(.small)
+                                .tint(RexColor.onBrand)
+                        } else {
                             Image(systemName: "play.fill")
-                                .font(.system(size: 13, weight: .bold))
-                            Text("播放第一集")
-                                .font(.system(.subheadline, weight: .semibold))
+                                .font(.system(.footnote, weight: .bold))
                         }
-                        .foregroundStyle(RexColor.onBrand)
-                        .padding(.horizontal, RexSpacing.lg)
-                        .frame(height: 40)
-                        .background(
-                            RexColor.brandGradient,
-                            in: Capsule(style: .continuous)
-                        )
+
+                        Text(isResume ? "继续观看 第 \(target.episode) 集" : "播放第一集")
+                            .font(.system(.subheadline, weight: .semibold))
                     }
-                    .buttonStyle(PressableButtonStyle())
-                    .padding(.top, RexSpacing.xs)
+                    .foregroundStyle(RexColor.onBrand)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 46)
+                    .background(
+                        RexColor.brandGradient,
+                        in: RoundedRectangle(cornerRadius: RexRadius.control, style: .continuous)
+                    )
                 }
+                .buttonStyle(PressableButtonStyle())
             }
         }
     }
 
-    private func episodesSection(_ series: DramaSeries) -> some View {
-        VStack(alignment: .leading, spacing: RexSpacing.sm) {
-            Text("选集")
-                .font(RexFont.section)
-                .foregroundStyle(RexColor.secondaryText)
+    // MARK: - 播放进度
 
-            LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 68), spacing: RexSpacing.sm, alignment: .leading)],
-                alignment: .leading,
-                spacing: RexSpacing.sm
-            ) {
-                ForEach(series.episodes) { episode in
+    /// 与播放器写入进度用的 key 保持一致。
+    private func progressKey(_ episode: DramaEpisode) -> String {
+        "drama:\(card.site):\(episode.id)"
+    }
+
+    /// 最近观看且未看完的一集，用于「继续观看」。
+    private var resumeEpisode: DramaEpisode? {
+        guard let series else { return nil }
+        return resumeEpisode(in: series)
+    }
+
+    private func resumeEpisode(in series: DramaSeries) -> DramaEpisode? {
+        series.episodes
+            .filter { !$0.disabled && playerSettings.playbackProgress(for: progressKey($0)) != nil }
+            .max {
+                playerSettings.progressUpdatedAt(for: progressKey($0))
+                    < playerSettings.progressUpdatedAt(for: progressKey($1))
+            }
+    }
+
+    /// 选集方块底部的进度条。
+    private func progressBar(_ ratio: Double) -> some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(RexColor.cardBorder.opacity(0.7))
+
+                Capsule()
+                    .fill(RexColor.brandBlue)
+                    .frame(width: max(proxy.size.width * min(max(ratio, 0), 1), 3))
+            }
+        }
+        .frame(height: 3)
+        .padding(.horizontal, 9)
+        .padding(.bottom, 6)
+        .allowsHitTesting(false)
+    }
+
+    // MARK: - 简介
+
+    private var synopsisText: String {
+        for candidate in [series?.description, card.description] {
+            if let text = candidate?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+                return text
+            }
+        }
+        return ""
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        HStack(spacing: 8) {
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [Color(hex: 0x5AC8FA), RexColor.brandBlue],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .frame(width: 3, height: 15)
+
+            Text(title)
+                .font(.system(.title3, weight: .bold))
+                .foregroundStyle(RexColor.primaryText)
+        }
+    }
+
+    // MARK: - 选集
+
+    private var episodeColumns: [GridItem] {
+        [GridItem(.adaptive(minimum: 54), spacing: RexSpacing.sm, alignment: .leading)]
+    }
+
+    private func episodesSection(_ series: DramaSeries) -> some View {
+        VStack(alignment: .leading, spacing: RexSpacing.md) {
+            sectionHeader("选集")
+
+            if episodePages.count > 1 {
+                episodeRangeChips
+            }
+
+            LazyVGrid(columns: episodeColumns, alignment: .leading, spacing: RexSpacing.sm) {
+                ForEach(pagedEpisodes(series)) { episode in
                     Button {
                         play(episode)
                     } label: {
-                        Text(episode.title.isEmpty ? "第 \(episode.episode) 集" : episode.title)
-                            .font(.system(.footnote, weight: .medium))
+                        Text("\(episode.episode)")
+                            .font(.system(.subheadline, design: .rounded, weight: .semibold))
+                            .monospacedDigit()
                             .foregroundStyle(episode.disabled ? RexColor.tertiaryText : RexColor.primaryText)
                             .lineLimit(1)
-                            .padding(.horizontal, RexSpacing.sm)
-                            .frame(maxWidth: .infinity, minHeight: 38)
+                            .frame(maxWidth: .infinity, minHeight: 44)
                             .background(
-                                RexColor.surface,
-                                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                episode.disabled ? RexColor.field : RexColor.surface,
+                                in: RoundedRectangle(cornerRadius: 11, style: .continuous)
                             )
                             .overlay {
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                RoundedRectangle(cornerRadius: 11, style: .continuous)
                                     .strokeBorder(RexColor.cardBorder, lineWidth: 0.75)
+                            }
+                            .overlay(alignment: .bottom) {
+                                if let progress = playerSettings.playbackProgress(for: progressKey(episode)) {
+                                    progressBar(progress.ratio)
+                                }
                             }
                     }
                     .buttonStyle(PressableButtonStyle())
@@ -160,6 +294,50 @@ struct DramaDetailView: View {
                 RexNote(text: "该短剧暂无可用剧集。")
             }
         }
+        .padding(.top, 10)
+    }
+
+    /// 按每页 50 集切分后的页码范围。
+    private var episodePages: [Range<Int>] {
+        let total = series?.episodes.count ?? 0
+        guard total > 0 else { return [] }
+        return stride(from: 0, to: total, by: episodesPerPage).map {
+            $0..<min($0 + episodesPerPage, total)
+        }
+    }
+
+    private func pagedEpisodes(_ series: DramaSeries) -> [DramaEpisode] {
+        let pages = episodePages
+        guard pages.indices.contains(episodePage) else { return series.episodes }
+        return Array(series.episodes[pages[episodePage]])
+    }
+
+    private var episodeRangeChips: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: RexSpacing.sm) {
+                ForEach(Array(episodePages.enumerated()), id: \.offset) { index, range in
+                    let selected = episodePage == index
+                    Button {
+                        guard !selected else { return }
+                        RexHaptics.selection()
+                        episodePage = index
+                    } label: {
+                        Text("\(range.lowerBound + 1)-\(range.upperBound)")
+                            .font(.system(.caption, weight: selected ? .semibold : .regular))
+                            .monospacedDigit()
+                            .foregroundStyle(selected ? RexColor.brandBlue : RexColor.tertiaryText)
+                            .padding(.horizontal, RexSpacing.md)
+                            .frame(height: 26)
+                            .background(
+                                selected ? RexColor.brandBlue.opacity(0.10) : RexColor.field,
+                                in: Capsule(style: .continuous)
+                            )
+                    }
+                    .buttonStyle(PressableButtonStyle())
+                }
+            }
+        }
+        .scrollIndicators(.hidden)
     }
 
     private func load() async {
@@ -172,33 +350,140 @@ struct DramaDetailView: View {
         defer { isLoading = false }
 
         do {
-            series = try await apiClient.dramaSeries(site: card.site, id: card.id)
+            let loaded = try await apiClient.dramaSeries(site: card.site, id: card.id)
+            series = loaded
             errorText = nil
+
+            // 有观看进度时，选集默认落在该集所在的分页。
+            if let resume = resumeEpisode(in: loaded),
+               let index = loaded.episodes.firstIndex(where: { $0.id == resume.id }) {
+                episodePage = index / episodesPerPage
+            }
         } catch {
             if let apiError = error as? APIError, apiError == .cancelled { return }
             errorText = error.localizedDescription
         }
     }
 
+    /// 播放前先向服务端解析地址：服务端只返回 CDN 直链或插件端口，播放流量不经过服务端。
     private func play(_ episode: DramaEpisode) {
-        guard let apiClient,
-              let url = apiClient.dramaStreamURL(site: card.site, episodeID: episode.id) else { return }
-
-        let key = "drama:\(card.site):\(episode.id)"
-        let item = PanItem(
-            id: key,
-            name: "\(card.title) 第 \(episode.episode) 集",
-            isDir: false,
-            size: 0,
-            pickcode: key,
-            sha1: "",
-            updatedAt: 0
-        )
-        playing = DramaPlayRequest(
-            item: item,
-            info: PanPlayInfo(url: url, headers: [:], expiresIn: 0)
-        )
+        guard let apiClient, preparingEpisodeID == nil else { return }
+        preparingEpisodeID = episode.id
         RexHaptics.tap()
+
+        Task {
+            defer { preparingEpisodeID = nil }
+            do {
+                let resolved = try await apiClient.dramaPlayInfo(site: card.site, episodeID: episode.id)
+                let key = progressKey(episode)
+                let item = PanItem(
+                    id: key,
+                    name: "\(card.title) 第 \(episode.episode) 集",
+                    isDir: false,
+                    size: 0,
+                    pickcode: key,
+                    sha1: "",
+                    updatedAt: 0
+                )
+                playing = DramaPlayRequest(
+                    item: item,
+                    info: PanPlayInfo(
+                        url: resolved.url,
+                        headers: resolved.headers,
+                        expiresIn: 0,
+                        kind: resolved.kind
+                    )
+                )
+            } catch {
+                if let apiError = error as? APIError, apiError == .cancelled { return }
+                playError = .failure(error.localizedDescription, title: "播放失败")
+            }
+        }
+    }
+}
+
+/// 标题与徽标同行排布：徽标紧跟在标题后面，宽度不够时自动换行。
+private struct DramaTitleRow: Layout {
+    var spacing: CGFloat = 8
+    var lineSpacing: CGFloat = 10
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
+        guard let title = subviews.first else { return .zero }
+        let maxWidth = proposal.width ?? .infinity
+        let titleIdeal = title.sizeThatFits(.unspecified)
+
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+
+        if titleIdeal.width <= maxWidth {
+            x = titleIdeal.width
+            rowHeight = titleIdeal.height
+        } else {
+            let titleSize = title.sizeThatFits(ProposedViewSize(width: maxWidth, height: nil))
+            y = titleSize.height + lineSpacing
+        }
+
+        for subview in subviews.dropFirst() {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > 0, x + spacing + size.width > maxWidth {
+                x = 0
+                y += rowHeight + lineSpacing
+                rowHeight = 0
+            }
+            if x > 0 { x += spacing }
+            x += size.width
+            rowHeight = max(rowHeight, size.height)
+        }
+
+        let width = maxWidth.isFinite ? maxWidth : max(0, x)
+        return CGSize(width: width, height: y + rowHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) {
+        guard let title = subviews.first else { return }
+        let titleIdeal = title.sizeThatFits(.unspecified)
+
+        var x = bounds.minX
+        var y = bounds.minY
+        var rowHeight: CGFloat = 0
+
+        if titleIdeal.width <= bounds.width {
+            title.place(
+                at: CGPoint(x: x, y: y),
+                anchor: .topLeading,
+                proposal: ProposedViewSize(titleIdeal)
+            )
+            x += titleIdeal.width
+            rowHeight = titleIdeal.height
+        } else {
+            let titleSize = title.sizeThatFits(ProposedViewSize(width: bounds.width, height: nil))
+            title.place(
+                at: CGPoint(x: x, y: y),
+                anchor: .topLeading,
+                proposal: ProposedViewSize(width: bounds.width, height: titleSize.height)
+            )
+            x = bounds.minX
+            y += titleSize.height + lineSpacing
+        }
+
+        for subview in subviews.dropFirst() {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > bounds.minX, x + spacing + size.width > bounds.maxX {
+                x = bounds.minX
+                y += rowHeight + lineSpacing
+                rowHeight = 0
+            }
+            if x > bounds.minX { x += spacing }
+            let offset = max(0, (rowHeight - size.height) / 2)
+            subview.place(
+                at: CGPoint(x: x, y: y + offset),
+                anchor: .topLeading,
+                proposal: ProposedViewSize(size)
+            )
+            x += size.width
+            rowHeight = max(rowHeight, size.height)
+        }
     }
 }
 
@@ -297,7 +582,7 @@ struct DramaRankView: View {
             .scrollBounceBehavior(.basedOnSize)
         }
         .background(RexPageBackground())
-        .toolbar(.hidden, for: .navigationBar)
+        .rexPushedScreen()
         .task { await loadLists() }
     }
 
@@ -318,7 +603,7 @@ struct DramaRankView: View {
                             .font(.system(.footnote, weight: selected ? .semibold : .regular))
                             .foregroundStyle(selected ? RexColor.onBrand : RexColor.secondaryText)
                             .padding(.horizontal, RexSpacing.md)
-                            .frame(height: 30)
+                            .frame(minHeight: 30)
                             .background(
                                 selected ? AnyShapeStyle(RexColor.brandGradient) : AnyShapeStyle(RexColor.surface),
                                 in: Capsule(style: .continuous)
@@ -329,7 +614,7 @@ struct DramaRankView: View {
                                         .strokeBorder(RexColor.cardBorder, lineWidth: 0.75)
                                 }
                             }
-                            .contentShape(Capsule(style: .continuous))
+                            .rexTapTarget()
                     }
                     .buttonStyle(PressableButtonStyle())
                     .accessibilityAddTraits(selected ? .isSelected : [])
@@ -530,7 +815,7 @@ struct DramaSearchResultsView: View {
             .refreshable { await search(reset: true) }
         }
         .background(RexPageBackground())
-        .toolbar(.hidden, for: .navigationBar)
+        .rexPushedScreen()
         .task {
             if !active.isEmpty { await search(reset: true) }
         }
@@ -539,7 +824,7 @@ struct DramaSearchResultsView: View {
     private var searchField: some View {
         HStack(spacing: RexSpacing.sm) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 15, weight: .medium))
+                .font(.system(.subheadline, weight: .medium))
                 .foregroundStyle(RexColor.secondaryText)
 
             TextField("搜索短剧标题", text: $draft)
@@ -555,9 +840,9 @@ struct DramaSearchResultsView: View {
                     draft = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 15))
+                        .font(.system(.subheadline))
                         .foregroundStyle(RexColor.tertiaryText)
-                        .frame(width: 30, height: 30)
+                        .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("清空关键词")

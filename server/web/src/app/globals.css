@@ -197,11 +197,13 @@ html[data-standalone='1'] body > * {
   min-height: var(--app-height, 100vh);
 }
 
-/* env(safe-area) 偶发为 0：standalone / native 给底栏保底 */
+/* env(safe-area) 偶发为 0：standalone / native 给底栏保底。
+   顶部不再保底：状态栏改为 default 后内容本就在状态栏下方，
+   env(safe-area-inset-top) 为 0 是正常值，再补 20px 会多出一条空带。 */
 html[data-standalone='1'],
 html[data-shell='native'] {
   --sab: max(env(safe-area-inset-bottom, 0px), 20px);
-  --sat: max(env(safe-area-inset-top, 0px), 20px);
+  --sat: max(env(safe-area-inset-top, 0px), 0px);
 }
 
 /* 键盘 / 主页锁：钉死壳与主滚动区，禁止跟键盘被顶走 */
@@ -427,7 +429,8 @@ body::before {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  z-index: 9999;
+  /* 只做页面质感：压在内容之上，但让弹窗 / 搜索层（100 / 1100）保持干净 */
+  z-index: 30;
   opacity: 0.018;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   background-repeat: repeat;

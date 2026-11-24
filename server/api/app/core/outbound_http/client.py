@@ -377,10 +377,11 @@ def _fetch_page_unlocked(
     if not skip_direct:
         attempts: list[dict[str, Any]] = []
         if proxy:
-            attempts.append({"proxy": proxy, "verify": False})
+            # 先校验证书；证书异常才降级到不校验（并在成功时打警告）
             attempts.append({"proxy": proxy, "verify": True})
-        attempts.append({"proxy": None, "verify": False})
+            attempts.append({"proxy": proxy, "verify": False})
         attempts.append({"proxy": None, "verify": True})
+        attempts.append({"proxy": None, "verify": False})
         seen: set[str] = set()
         # 同站闸只包直连；成功即返回，失败后释放再进过盾
         with _page_slot(url, timeout=90.0):
@@ -419,6 +420,11 @@ def _fetch_page_unlocked(
                         html, final_url, via, opts=opts, direct_to=direct_to
                     )
                     if accepted:
+                        if not opts.get("verify"):
+                            log.warning(
+                                "tls-verify-off host=%s（证书校验失败后降级放行）",
+                                _host_key(url),
+                            )
                         if has_clearance:
                             mark_prefer_flare(url, False)
                             log.info(

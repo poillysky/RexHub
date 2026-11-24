@@ -87,13 +87,13 @@
 }
 
 .media-hub__search-btn {
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 35px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 999px;
+  border-radius: 12px;
   /* 顶栏已有 chrome blur：按钮不再套 backdrop-filter，避免 WebKit 双层合成缝闪竖线 */
   background: rgba(255, 255, 255, 0.78);
   color: var(--text-tertiary);

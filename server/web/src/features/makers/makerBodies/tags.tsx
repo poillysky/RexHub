@@ -185,10 +185,15 @@ function TagRowView({
 
 export function MakerTagsBody({
   category,
+  initialPage = 1,
+  onPageChange,
   onSelectCategory,
   onOpenMovie,
 }: {
   category: MakerCategoryId;
+  /** 从影片详情返回时恢复页码 */
+  initialPage?: number;
+  onPageChange?: (page: number) => void;
   /** 「类型」组：切换类别 */
   onSelectCategory: (category: MakerCategoryId) => void;
   /** 点击影片封面打开详情 */
@@ -200,11 +205,14 @@ export function MakerTagsBody({
     category: MakerCategoryId;
     filter: TagFilter;
     page: number;
-  }>({ category, filter: ALL_FILTER, page: 1 });
+  }>({ category, filter: ALL_FILTER, page: Math.max(1, initialPage) });
   const stale = view.category !== category;
   const filter = stale ? ALL_FILTER : view.filter;
   const page = stale ? 1 : view.page;
-  const setPage = (next: number) => setView({ category, filter, page: next });
+  const setPage = (next: number) => {
+    setView({ category, filter, page: next });
+    onPageChange?.(next);
+  };
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const err = error instanceof Error ? error.message : error ? '加载失败' : '';
   const active = filter;
@@ -229,6 +237,7 @@ export function MakerTagsBody({
 
   const apply = (next: TagFilter) => {
     setView({ category, filter: next, page: 1 });
+    onPageChange?.(1);
   };
   const reset = () => apply(ALL_FILTER);
 

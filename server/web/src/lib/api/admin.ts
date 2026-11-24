@@ -1,11 +1,10 @@
 /**
- * PWA 管理接口：Stremio 插件库、NAS 服务卡片、115 网盘。
+ * PWA 管理接口：NAS 服务卡片、115 网盘。
  *
  * 后端原 /admin HTML 管理台已移除，写操作改由这里调用 /api/admin/*（Web 会话 Cookie）。
  * 对外统一从 `@/lib/api` 导入。
  */
 import { apiFetch, parseError } from './client';
-import type { MediaStream } from './media';
 
 async function json<T>(res: Promise<Response> | Response): Promise<T> {
   const r = await res;
@@ -19,179 +18,6 @@ function send(path: string, method: string, body?: unknown): Promise<Response> {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 }
-
-// ---------- Stremio 插件库 ----------
-
-export type StremioAddon = {
-  slug: string;
-  id?: string;
-  transport?: string;
-  manifest_url?: string;
-  manifest?: {
-    name?: string;
-    description?: string;
-    types?: string[];
-    version?: string;
-    logo?: string;
-    catalogs?: { type?: string; id?: string; name?: string }[];
-    resources?: (string | { name?: string })[];
-  };
-  repository?: string;
-  enabled?: boolean;
-  error?: string;
-  updated_at?: number;
-};
-
-export type StremioRepository = {
-  url: string;
-  title?: string;
-  count?: number;
-  error?: string;
-  fetched_at?: number;
-  /** add_repository 的返回：粘贴单个 manifest 时会作为 addon 接入 */
-  kind?: 'repository' | 'addon';
-};
-
-export type StremioCatalog = {
-  repositories: StremioRepository[];
-  addons: StremioAddon[];
-  stats: { repositories: number; addons: number; enabled: number };
-};
-
-export const getStremioCatalog = () => json<StremioCatalog>(apiFetch('/admin/stremio'));
-
-export const addStremioRepository = (url: string, title = '') =>
-  json<StremioRepository>(send('/admin/stremio/repositories', 'POST', { url, title }));
-
-export const refreshStremioRepository = (url: string) =>
-  json<StremioRepository>(send('/admin/stremio/repositories/refresh', 'POST', { url }));
-
-export const deleteStremioRepository = (url: string) =>
-  json<{ ok: boolean }>(
-    send(`/admin/stremio/repositories?url=${encodeURIComponent(url)}`, 'DELETE'),
-  );
-
-export const addStremioAddon = (url: string) =>
-  json<StremioAddon>(send('/admin/stremio/addons', 'POST', { url }));
-
-export const testStremioAddon = (slug: string) =>
-  json<{ ok: boolean; message?: string }>(
-    send(`/admin/stremio/addons/${encodeURIComponent(slug)}/test`, 'POST'),
-  );
-
-export const setStremioAddonEnabled = (slug: string, enabled: boolean) =>
-  json<{ ok: boolean }>(
-    send(`/admin/stremio/addons/${encodeURIComponent(slug)}/enabled`, 'PUT', { enabled }),
-  );
-
-export const deleteStremioAddon = (slug: string) =>
-  json<{ ok: boolean }>(
-    send(`/admin/stremio/addons/${encodeURIComponent(slug)}`, 'DELETE'),
-  );
-
-// ---------- 单个 addon 的内容浏览 ----------
-
-export type AddonCatalogEntry = {
-  key: string;
-  type: string;
-  id: string;
-  name: string;
-  extraSupported: string[];
-  extraRequired: string[];
-  hasSearch: boolean;
-  hasGenre: boolean;
-  hasSkip: boolean;
-  genres: string[];
-};
-
-export type AddonCatalogs = {
-  slug: string;
-  name: string;
-  hasStream: boolean;
-  hasMeta: boolean;
-  hasSubtitles: boolean;
-  resources: string[];
-  catalogs: AddonCatalogEntry[];
-};
-
-export type AddonMeta = {
-  id: string;
-  type: string;
-  name: string;
-  poster: string;
-  background: string;
-  releaseInfo: string;
-  rating: string;
-  description: string;
-};
-
-export type AddonVideo = {
-  id: string;
-  season: number;
-  episode: number;
-  name: string;
-  overview: string;
-  thumbnail: string;
-  released: string;
-};
-
-export type AddonMetaDetail = {
-  meta: AddonMeta | null;
-  videos: AddonVideo[];
-  addon: string;
-  reason: string;
-};
-
-export type AddonCatalogPage = {
-  items: AddonMeta[];
-  total: number;
-  hasMore: boolean;
-  name: string;
-  type: string;
-  id: string;
-};
-
-export type AddonStreams = {
-  streams: MediaStream[];
-  total: number;
-  addon: string;
-  reason: string;
-};
-
-export const getAddonCatalogs = (slug: string) =>
-  json<AddonCatalogs>(apiFetch(`/admin/stremio/addons/${encodeURIComponent(slug)}/catalogs`));
-
-export const getAddonCatalogItems = (
-  slug: string,
-  opts: { mediaType: string; id: string; genre?: string; search?: string; skip?: number },
-) => {
-  const params = new URLSearchParams({ mediaType: opts.mediaType, id: opts.id });
-  if (opts.genre) params.set('genre', opts.genre);
-  if (opts.search) params.set('search', opts.search);
-  if (opts.skip) params.set('skip', String(opts.skip));
-  return json<AddonCatalogPage>(
-    apiFetch(`/admin/stremio/addons/${encodeURIComponent(slug)}/catalog?${params}`),
-  );
-};
-
-export const getAddonStreams = (
-  slug: string,
-  opts: { mediaType: string; id: string; season?: number; episode?: number },
-) => {
-  const params = new URLSearchParams({ mediaType: opts.mediaType, id: opts.id });
-  if (opts.season) params.set('season', String(opts.season));
-  if (opts.episode) params.set('episode', String(opts.episode));
-  return json<AddonStreams>(
-    apiFetch(`/admin/stremio/addons/${encodeURIComponent(slug)}/streams?${params}`),
-  );
-};
-
-export const getAddonMeta = (slug: string, opts: { mediaType: string; id: string }) => {
-  const params = new URLSearchParams({ mediaType: opts.mediaType, id: opts.id });
-  return json<AddonMetaDetail>(
-    apiFetch(`/admin/stremio/addons/${encodeURIComponent(slug)}/meta?${params}`),
-  );
-};
 
 // ---------- 115 网盘 ----------
 
@@ -219,4 +45,75 @@ export async function getPan115Snapshot(): Promise<Pan115Account | null> {
   return data && data.bound !== false ? data : null;
 }
 
-// ---------- NAS 服务卡片 ----------
+// ---------- NAS 服务卡片 / 内容源 ----------
+
+/** 服务条目：NAS 服务与内容源共用一套结构，靠 source_kind 区分。 */
+export type ServiceItem = {
+  id: string;
+  name: string;
+  category: string;
+  categoryLabel?: string;
+  section?: string;
+  host: string;
+  port: number;
+  url: string;
+  api_base?: string;
+  source_kind?: string;
+  enabled?: boolean;
+  endpoints?: Record<string, unknown>;
+  ui?: Record<string, unknown>;
+  notes: string;
+  updated_at?: number;
+  online?: boolean | null;
+  latency?: number | null;
+};
+
+export type ServiceListPayload = {
+  items: ServiceItem[];
+  categories: { key: string; label: string }[];
+  sourceKinds: { key: string; label: string }[];
+};
+
+export type ServiceSaveBody = {
+  id?: string;
+  name: string;
+  category?: string;
+  section?: string;
+  host?: string;
+  port?: number;
+  url?: string;
+  api_base?: string;
+  source_kind?: string;
+  enabled?: boolean;
+  notes?: string;
+  username?: string;
+  password?: string;
+  database?: string;
+  api_key?: string;
+  endpoints?: Record<string, unknown>;
+  ui?: Record<string, unknown>;
+};
+
+export async function getServices(): Promise<ServiceListPayload> {
+  return json<ServiceListPayload>(apiFetch('/admin/services'));
+}
+
+export async function saveService(
+  body: ServiceSaveBody,
+): Promise<{ ok: boolean; id: string; created: boolean }> {
+  return json(send('/admin/services', 'POST', body));
+}
+
+export async function deleteService(id: string): Promise<{ ok: boolean }> {
+  return json(send(`/admin/services/${encodeURIComponent(id)}`, 'DELETE'));
+}
+
+/** 保存前试连：有主机端口走 socket，否则按 HTTP 地址探测。 */
+export async function probeService(body: {
+  host?: string;
+  port?: number;
+  api_base?: string;
+  url?: string;
+}): Promise<{ online: boolean; latency: number | null }> {
+  return json(send('/admin/services/probe', 'POST', body));
+}

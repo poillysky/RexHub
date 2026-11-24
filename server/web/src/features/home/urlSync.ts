@@ -28,7 +28,7 @@ export function syncDetailUrl(hash: string | null, source?: FeedSource) {
       `${window.location.pathname}${window.location.search}${window.location.hash}` !==
       next
     ) {
-      window.history.replaceState(null, '', next);
+      window.history.replaceState(window.history.state, '', next);
     }
   } catch {
     /* ignore */
@@ -72,7 +72,7 @@ export function syncSearchUrl(opts: {
     if (ds === 'bitmagnet') url.searchParams.set('ds', 'bitmagnet');
     const next = `${url.pathname}${url.search}${url.hash}`;
     const cur = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-    if (cur !== next) window.history.replaceState(null, '', next);
+    if (cur !== next) window.history.replaceState(window.history.state, '', next);
   } catch {
     /* ignore */
   }

@@ -35,12 +35,12 @@ struct SplashView: View {
 
             VStack(spacing: RexSpacing.sm) {
                 Text("RexHub")
-                    .font(.system(size: 31, weight: .semibold))
+                    .font(.system(.title, weight: .semibold))
                     .tracking(0.4)
                     .foregroundStyle(RexColor.primaryText)
 
                 Text("连接你的数字生活")
-                    .font(.system(size: 13, weight: .regular))
+                    .font(.system(.footnote, weight: .regular))
                     .tracking(2.2)
                     .foregroundStyle(RexColor.secondaryText)
             }
@@ -67,6 +67,182 @@ struct SplashView: View {
             endPoint: .bottom
         )
         .ignoresSafeArea()
+    }
+}
+
+// MARK: - 连接页
+
+/// 第 2 页：拿本地会话连一次服务器。连上之前一直停在这里；
+/// 凭证失效由 `AppState` 直接切回登录页，连不上则停在本页给出重试与退出登录。
+struct ConnectingView: View {
+    let isFailed: Bool
+    var onRetry: () -> Void
+    var onSignOut: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+
+    var body: some View {
+        ZStack {
+            background
+            WaveField(intensity: 1.1)
+
+            VStack(spacing: RexSpacing.xl) {
+                RexLogoMark(size: verticalSizeClass == .compact ? 76 : 100)
+
+                VStack(spacing: RexSpacing.md) {
+                    Text("RexHub")
+                        .font(.system(.title, weight: .semibold))
+                        .tracking(0.4)
+                        .foregroundStyle(RexColor.primaryText)
+
+                    LoadingHint(text: isFailed ? "连接失败" : "正在连接...", isAnimating: !isFailed)
+                }
+
+                if isFailed {
+                    retryButton
+                        .padding(.top, RexSpacing.md)
+                        .transition(.opacity)
+                }
+            }
+            .offset(y: -RexSpacing.xl)
+
+            VStack {
+                Spacer()
+                signOutButton
+                    .padding(.bottom, RexSpacing.huge)
+            }
+        }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: isFailed)
+    }
+
+    private var retryButton: some View {
+        Button {
+            RexHaptics.tap()
+            onRetry()
+        } label: {
+            Text("重试")
+                .font(RexFont.button)
+                .foregroundStyle(RexColor.onBrand)
+                .frame(width: 132)
+                .frame(minHeight: 48)
+                .background(
+                    RexColor.brandGradient,
+                    in: RoundedRectangle(cornerRadius: RexRadius.card, style: .continuous)
+                )
+        }
+        .buttonStyle(PressableButtonStyle())
+    }
+
+    private var signOutButton: some View {
+        Button {
+            RexHaptics.tap()
+            onSignOut()
+        } label: {
+            Text("退出登录")
+                .font(RexFont.body)
+                .foregroundStyle(RexColor.secondaryText)
+                .rexTapTarget(minWidth: 120)
+        }
+        .buttonStyle(PressableButtonStyle())
+    }
+
+    /// 与品牌页完全同色，两页切换时只有加载态在变，背景不跳。
+    private var background: some View {
+        LinearGradient(
+            stops: colorScheme == .dark
+                ? [
+                    .init(color: RexColor.surface, location: 0),
+                    .init(color: RexColor.surface, location: 0.45),
+                    .init(color: RexColor.brandBlue.opacity(0.10), location: 1)
+                ]
+                : [
+                    .init(color: RexColor.surface, location: 0),
+                    .init(color: RexColor.surface, location: 0.38),
+                    .init(color: RexColor.lightBlue.opacity(0.55), location: 1)
+                ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .ignoresSafeArea()
+    }
+}
+
+/// 加载态：六点水波 + 一行状态文案。
+private struct LoadingHint: View {
+    let text: String
+    var isAnimating: Bool = true
+
+    var body: some View {
+        VStack(spacing: RexSpacing.md) {
+            WaveLoadingDots(isAnimating: isAnimating)
+
+            Text(text)
+                .font(RexFont.footnote)
+                .foregroundStyle(RexColor.tertiaryText)
+                .tracking(0.6)
+                .contentTransition(.opacity)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(text)
+    }
+}
+
+/// 六个点沿正弦波依次起伏：波峰从左向右推进，同时带轻微放大与提亮。
+/// 开启「减弱动态效果」时静止成一条水平点列。
+private struct WaveLoadingDots: View {
+    var isAnimating: Bool = true
+    var dotCount: Int = 6
+    var dotSize: CGFloat = 6.5
+    var color: Color = RexColor.brandBlue
+    /// 相邻点的相位差（弧度）：越大波形越陡，推进感越强。
+    var phaseStep: Double = 0.68
+    /// 一个完整波形扫过的时间（秒）。
+    var period: Double = 1.05
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var isMoving: Bool { isAnimating && !reduceMotion }
+
+    var body: some View {
+        Group {
+            if isMoving {
+                // 用时间轴驱动，相位连续推进，避免 repeatForever 在两点之间来回弹跳的顿感。
+                TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: false)) { context in
+                    dots(phase: phase(at: context.date), animated: true)
+                }
+            } else {
+                dots(phase: 0, animated: false)
+            }
+        }
+        .frame(height: dotSize * 3.4)
+        .accessibilityHidden(true)
+    }
+
+    private func phase(at date: Date) -> Double {
+        let elapsed = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: period)
+        return elapsed / period * 2 * .pi
+    }
+
+    private func dots(phase: Double, animated: Bool) -> some View {
+        HStack(spacing: dotSize * 1.15) {
+            ForEach(0..<dotCount, id: \.self) { index in
+                dot(index: index, phase: phase, animated: animated)
+            }
+        }
+    }
+
+    private func dot(index: Int, phase: Double, animated: Bool) -> some View {
+        let wave = animated ? sin(phase - Double(index) * phaseStep) : 0
+        let level = (wave + 1) / 2
+
+        return Circle()
+            .fill(color.opacity(0.26 + 0.64 * level))
+            .frame(width: dotSize, height: dotSize)
+            .scaleEffect(CGFloat(0.76 + 0.36 * level))
+            .offset(y: -CGFloat(wave) * dotSize * 1.05)
+            .shadow(color: color.opacity(0.30 * level), radius: dotSize * 0.55)
     }
 }
 

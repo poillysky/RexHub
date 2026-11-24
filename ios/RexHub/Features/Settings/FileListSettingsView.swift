@@ -158,40 +158,37 @@ private struct FolderThemeSettingsView: View {
     private func themeRow(_ theme: FileFolderTheme) -> some View {
         let isSelected = settings.folderTheme == theme
 
-        return Button {
+        return HStack(spacing: RexSpacing.md) {
+            FileIconView(kind: theme.iconKind, theme: previewTheme(for: theme), size: 34)
+
+            Text(theme.title)
+                .font(RexFont.row)
+                .foregroundStyle(RexColor.primaryText)
+                .lineLimit(1)
+
+            Spacer(minLength: RexSpacing.sm)
+
+            if isSelected {
+                Image(systemName: "checkmark")
+                    .font(.system(.subheadline, weight: .semibold))
+                    .foregroundStyle(RexColor.brandBlue)
+                    .transition(.scale.combined(with: .opacity))
+            }
+        }
+        .padding(.horizontal, RexSpacing.lg)
+        .frame(minHeight: RexLayout.rowHeight)
+        .background {
+            // 整行铺满底色：中间行保持直角，首末行的圆角由卡片裁剪给出
+            if isSelected {
+                RexColor.selection
+            }
+        }
+        .rexRowAction {
             RexHaptics.selection()
             withAnimation(RexMotion.quick) {
                 settings.folderTheme = theme
             }
-        } label: {
-            HStack(spacing: RexSpacing.md) {
-                FileIconView(kind: theme.iconKind, theme: previewTheme(for: theme), size: 34)
-
-                Text(theme.title)
-                    .font(RexFont.row)
-                    .foregroundStyle(RexColor.primaryText)
-                    .lineLimit(1)
-
-                Spacer(minLength: RexSpacing.sm)
-
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(RexColor.brandBlue)
-                        .transition(.scale.combined(with: .opacity))
-                }
-            }
-            .padding(.horizontal, RexSpacing.lg)
-            .frame(minHeight: RexLayout.rowHeight)
-            .background {
-                // 整行铺满底色：中间行保持直角，首末行的圆角由卡片裁剪给出
-                if isSelected {
-                    RexColor.selection
-                }
-            }
-            .contentShape(Rectangle())
         }
-        .buttonStyle(RexRowButtonStyle())
         .accessibilityLabel(theme.title)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
@@ -388,7 +385,7 @@ struct SettingsMenuRow<T: Hashable>: View {
                     .lineLimit(1)
 
                 Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(.caption, weight: .medium))
                     .foregroundStyle(RexColor.tertiaryText)
             }
             .padding(.horizontal, RexSpacing.lg)

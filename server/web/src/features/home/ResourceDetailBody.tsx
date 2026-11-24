@@ -317,7 +317,9 @@ export function ResourceDetailBody({ hash }: { hash: string }) {
               <div className="detail-link-list">
                 {links.map((link, index) => (
                   <div key={`${link}-${index}`} className="detail-link-row">
-                    <span className="detail-link-row__idx">{index + 1}</span>
+                    {links.length > 1 ? (
+                      <span className="detail-link-row__idx">{index + 1}</span>
+                    ) : null}
                     <span className="detail-link-row__url allow-select">
                       {link}
                     </span>

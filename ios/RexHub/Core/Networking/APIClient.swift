@@ -132,11 +132,39 @@ enum APIError: LocalizedError, Equatable {
     }
 }
 
+// MARK: - 会话事件
+
+/// `APIClient` 是值类型、会被各页面复制，凭证失效这类会话级事件统一从这里上报给 `AppState`。
+/// 只有带 token 的请求收到 401 才上报：登录接口的 401 是密码错误，不代表会话失效。
+final class SessionEventSink: @unchecked Sendable {
+    static let shared = SessionEventSink()
+
+    private let lock = NSLock()
+    private var credentialsExpiredHandler: (@Sendable () -> Void)?
+
+    private init() {}
+
+    func setCredentialsExpiredHandler(_ handler: (@Sendable () -> Void)?) {
+        lock.lock()
+        defer { lock.unlock() }
+        credentialsExpiredHandler = handler
+    }
+
+    func reportCredentialsExpired() {
+        lock.lock()
+        let handler = credentialsExpiredHandler
+        lock.unlock()
+        handler?()
+    }
+}
+
 // MARK: - 客户端
 
 struct APIClient: Sendable {
     let baseURL: URL
     var token: String?
+    /// 传输层：默认 `HTTPTransport.api`；测试可注入挂了 `URLProtocol` 桩的 session。
+    var session: URLSession = HTTPTransport.api
     var timeout: TimeInterval = 10
     var maxRetries: Int = 2
     /// 直链解析要等服务端转存 + 取地址，比普通请求慢，单独放宽到 30s。
@@ -149,9 +177,11 @@ struct APIClient: Sendable {
         return copy
     }
 
-    /// 退出登录 / 切换服务端时取消所有在途请求。
-    static func cancelAllInflight() {
-        URLSession.shared.getAllTasks { tasks in
+    /// 退出登录 / 切换服务端时取消在途请求。
+    /// 只作用于本客户端使用的会话——媒体下载走 `HTTPTransport.transfer`，不会被误伤。
+    func cancelAllInflight() {
+        let session = self.session
+        session.getAllTasks { tasks in
             tasks.forEach { $0.cancel() }
         }
     }
@@ -232,6 +262,47 @@ struct APIClient: Sendable {
         return try decode(ScopeResponse.self, from: data)
     }
 
+    /// Bitmagnet 详情：`{data, message, status}` 信封，data 内同时有 snake 与 camel 字段。
+    func magnetDetail(hash: String) async throws -> MagnetDetail {
+        let data = try await send(
+            path: "api/magnet/detail",
+            method: "GET",
+            query: ["hash": hash],
+            body: nil,
+            authorized: true,
+            retryable: true,
+            requestTimeout: 40
+        )
+        return try decodeEnvelopeRaw(MagnetDetail.self, from: data)
+    }
+
+    /// 磁力截图预览：无图 / 超时一律空列表，不抛错。
+    func magnetPreview(hash: String) async throws -> MagnetPreview {
+        let data = try await send(
+            path: "api/magnet/preview",
+            method: "GET",
+            query: ["hash": hash],
+            body: nil,
+            authorized: true,
+            retryable: false,
+            requestTimeout: 25
+        )
+        return try decodeEnvelopeRaw(MagnetPreview.self, from: data)
+    }
+
+    /// 色花堂资源详情：`{data, message, status}` 信封，data 全 snake。
+    func resourceDetail(hash: String) async throws -> ResourceDetail {
+        let data = try await send(
+            path: "api/resources/\(hash)",
+            method: "GET",
+            body: nil,
+            authorized: true,
+            retryable: true,
+            requestTimeout: 40
+        )
+        return try decodeEnvelopeRaw(ResourceDetail.self, from: data)
+    }
+
     // MARK: 短剧
 
     func dramaSites() async throws -> [DramaSite] {
@@ -246,17 +317,38 @@ struct APIClient: Sendable {
         return try decode(DramaSiteList.self, from: data).items
     }
 
-    func dramaCatalog(site: String, page: Int = 1) async throws -> DramaPage {
+    func dramaCatalog(
+        site: String,
+        page: Int = 1,
+        filters: [String: String] = [:]
+    ) async throws -> DramaPage {
+        var query = ["page": String(page)]
+        for (key, value) in filters where !value.isEmpty {
+            query[key] = value
+        }
         let data = try await send(
             path: "api/shortdrama/\(site)/catalog",
             method: "GET",
-            query: ["page": String(page)],
+            query: query,
             body: nil,
             authorized: true,
             retryable: true,
             requestTimeout: 40
         )
         return try decode(DramaPage.self, from: data)
+    }
+
+    /// 插件自带的分类维度；插件没有该接口时返回空数组。
+    func dramaCategories(site: String) async throws -> [DramaCategoryDimension] {
+        let data = try await send(
+            path: "api/shortdrama/\(site)/categories",
+            method: "GET",
+            body: nil,
+            authorized: true,
+            retryable: true,
+            requestTimeout: 40
+        )
+        return try decode(DramaCategoryResponse.self, from: data).dimensions
     }
 
     /// 不传 `site` 时跨站点全局搜索。
@@ -318,7 +410,21 @@ struct APIClient: Sendable {
         return try decode(DramaSeries.self, from: data)
     }
 
-    /// 播放地址：服务端对 302 的片源直接跳 CDN，其余透传；token 走查询参数。
+    /// 播放解析：服务端只返回可直连地址，播放流量由客户端直连 CDN 或插件端口。
+    /// `kind == "hls"` 时必须用系统播放器（AVPlayer 原生支持 HLS + AES-128）。
+    func dramaPlayInfo(site: String, episodeID: String) async throws -> DramaPlayInfo {
+        let data = try await send(
+            path: "api/shortdrama/\(site)/episodes/\(episodeID)/play",
+            method: "GET",
+            body: nil,
+            authorized: true,
+            retryable: true,
+            requestTimeout: 40
+        )
+        return try decode(DramaPlayInfo.self, from: data)
+    }
+
+    /// 旧播放地址（服务端 302 或透传）。仅 Web 端使用，iOS 走 `dramaPlayInfo`。
     func dramaStreamURL(site: String, episodeID: String) -> URL? {
         var query = ["token": token ?? ""]
         query = query.filter { !$0.value.isEmpty }
@@ -368,6 +474,7 @@ struct APIClient: Sendable {
         )
         let requestURL = url(for: "api/ai/assistant/chat/stream")
         let token = self.token
+        let session = self.session
 
         return AsyncThrowingStream { continuation in
             let task = Task {
@@ -385,22 +492,22 @@ struct APIClient: Sendable {
                         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
                     }
 
-                    let (bytes, response) = try await URLSession.shared.bytes(for: request)
-                    guard let http = response as? HTTPURLResponse else {
-                        throw APIError.decoding
-                    }
-                    guard (200..<300).contains(http.statusCode) else {
-                        switch http.statusCode {
-                        case 401: throw APIError.unauthorized
+                    let stream = try await session.lineStream(for: request)
+                    guard stream.statusCode != 0 else { throw APIError.decoding }
+                    guard (200..<300).contains(stream.statusCode) else {
+                        switch stream.statusCode {
+                        case 401:
+                            if token != nil { SessionEventSink.shared.reportCredentialsExpired() }
+                            throw APIError.unauthorized
                         case 403: throw APIError.forbidden
                         case 404: throw APIError.notFound
                         case 429: throw APIError.rateLimited(retryAfter: nil)
-                        default: throw APIError.server(status: http.statusCode)
+                        default: throw APIError.server(status: stream.statusCode)
                         }
                     }
 
                     let decoder = JSONDecoder()
-                    for try await line in bytes.lines {
+                    for try await line in stream.lines {
                         guard line.hasPrefix("data:") else { continue }
                         let payloadText = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
                         guard let payloadData = payloadText.data(using: .utf8),
@@ -440,148 +547,6 @@ struct APIClient: Sendable {
             }
             continuation.onTermination = { _ in task.cancel() }
         }
-    }
-
-    // MARK: 插件中心 / Stremio
-
-    func installedPlugins() async throws -> [PluginInfo] {
-        let data = try await send(
-            path: "api/admin/plugin-framework/installed",
-            method: "GET",
-            body: nil,
-            authorized: true,
-            retryable: true,
-            requestTimeout: 30
-        )
-        return try decode(PluginListResponse.self, from: data).items
-    }
-
-    func pluginMarket(repository: String = "") async throws -> PluginMarket {
-        var query: [String: String]? = nil
-        if !repository.isEmpty { query = ["repository": repository] }
-        let data = try await send(
-            path: "api/admin/plugin-framework/market",
-            method: "GET",
-            query: query,
-            body: nil,
-            authorized: true,
-            retryable: false,
-            requestTimeout: 60
-        )
-        return try decode(PluginMarket.self, from: data)
-    }
-
-    func pluginUpdates() async throws -> [PluginUpdateInfo] {
-        let data = try await send(
-            path: "api/admin/plugin-framework/updates",
-            method: "GET",
-            body: nil,
-            authorized: true,
-            retryable: false,
-            requestTimeout: 60
-        )
-        return try decode(PluginUpdateResponse.self, from: data).items
-    }
-
-    func installPlugin(repository: String, id: String) async throws {
-        _ = try await send(
-            path: "api/admin/plugin-framework/install",
-            method: "POST",
-            body: try JSONEncoder().encode(PluginInstallBody(repository: repository, id: id)),
-            authorized: true,
-            retryable: false,
-            requestTimeout: 120
-        )
-    }
-
-    func setPluginEnabled(_ pluginID: String, enabled: Bool) async throws {
-        _ = try await send(
-            path: "api/admin/plugin-framework/\(pluginID)/\(enabled ? "enable" : "disable")",
-            method: "POST",
-            body: nil,
-            authorized: true,
-            retryable: false,
-            requestTimeout: 60
-        )
-    }
-
-    func restartPlugin(_ pluginID: String) async throws {
-        _ = try await send(
-            path: "api/admin/plugin-framework/\(pluginID)/restart",
-            method: "POST",
-            body: nil,
-            authorized: true,
-            retryable: false,
-            requestTimeout: 60
-        )
-    }
-
-    func updatePlugin(_ pluginID: String) async throws {
-        _ = try await send(
-            path: "api/admin/plugin-framework/\(pluginID)/update",
-            method: "POST",
-            body: nil,
-            authorized: true,
-            retryable: false,
-            requestTimeout: 120
-        )
-    }
-
-    func pluginLogs(_ pluginID: String, limit: Int = 120) async throws -> [String] {
-        let data = try await send(
-            path: "api/admin/plugin-framework/\(pluginID)/logs",
-            method: "GET",
-            query: ["limit": String(limit)],
-            body: nil,
-            authorized: true,
-            retryable: true
-        )
-        return try decode(PluginLogs.self, from: data).lines
-    }
-
-    func stremioSnapshot() async throws -> StremioSnapshot {
-        let data = try await send(
-            path: "api/admin/stremio",
-            method: "GET",
-            body: nil,
-            authorized: true,
-            retryable: true,
-            requestTimeout: 30
-        )
-        return try decode(StremioSnapshot.self, from: data)
-    }
-
-    func addStremioAddon(url: String) async throws {
-        _ = try await send(
-            path: "api/admin/stremio/addons",
-            method: "POST",
-            body: try JSONEncoder().encode(StremioAddonBody(url: url)),
-            authorized: true,
-            retryable: false,
-            requestTimeout: 60
-        )
-    }
-
-    func setStremioAddonEnabled(slug: String, enabled: Bool) async throws {
-        _ = try await send(
-            path: "api/admin/stremio/addons/\(slug)/enabled",
-            method: "PUT",
-            body: try JSONEncoder().encode(StremioEnabledBody(enabled: enabled)),
-            authorized: true,
-            retryable: false,
-            requestTimeout: 30
-        )
-    }
-
-    func deleteStremioAddon(slug: String) async throws {
-        _ = try await send(
-            path: "api/admin/stremio/addons/\(slug)",
-            method: "DELETE",
-            body: nil,
-            authorized: true,
-            retryable: false,
-            requestTimeout: 30
-        )
     }
 
     // MARK: 色花堂板块
@@ -666,20 +631,99 @@ struct APIClient: Sendable {
         return try decodeEnvelope(MpSearchResult.self, from: data)
     }
 
-    /// 影视片源聚合（插件 + Stremio addon），返回裸 JSON。
-    func mediaStreams(
-        id: String,
-        imdb: String,
-        mediaType: String,
-        season: Int = 0,
-        episode: Int = 0,
-        title: String = ""
-    ) async throws -> MediaStreamsResult {
-        var query = ["id": id, "imdb": imdb, "mediaType": mediaType, "title": title]
-        if season > 0 { query["season"] = String(season) }
-        if episode > 0 { query["episode"] = String(episode) }
+    /// 影人资料：`source` 支持 tmdb / douban / bangumi / anilist。
+    func mpPerson(source: String, id: String) async throws -> MpPerson {
         let data = try await send(
-            path: "api/media/streams",
+            path: "api/moviepilot/person",
+            method: "GET",
+            query: ["source": source, "id": id],
+            body: nil,
+            authorized: true,
+            retryable: true,
+            requestTimeout: 40
+        )
+        return try decodeEnvelope(MpPerson.self, from: data)
+    }
+
+    /// 影人作品：服务端每页 24 条，`hasMore` 表示还有下一页。
+    func mpPersonWorks(source: String, id: String, page: Int = 1) async throws -> MpPersonWorksPage {
+        let data = try await send(
+            path: "api/moviepilot/person/credits",
+            method: "GET",
+            query: ["source": source, "id": id, "page": String(page)],
+            body: nil,
+            authorized: true,
+            retryable: true,
+            requestTimeout: 40
+        )
+        return try decodeEnvelope(MpPersonWorksPage.self, from: data)
+    }
+
+    /// PT 资源搜索：`area` 为 `title` 时用 `keyword`，为 `imdbid` 时用 `id` + `source`。
+    ///
+    /// 服务端会并发请求全部已启用站点（预算 30s），因此超时放宽到 90s 且不重试。
+    func mpPtSearch(
+        keyword: String = "",
+        source: String = "",
+        id: String = "",
+        mediaType: String = "",
+        area: String = "title"
+    ) async throws -> MpTorrentSearchResult {
+        var query = ["area": area]
+        if !keyword.isEmpty { query["keyword"] = keyword }
+        if !source.isEmpty { query["source"] = source }
+        if !id.isEmpty { query["id"] = id }
+        if !mediaType.isEmpty { query["mediaType"] = mediaType }
+        let data = try await send(
+            path: "api/moviepilot/search",
+            method: "GET",
+            query: query,
+            body: nil,
+            authorized: true,
+            retryable: false,
+            requestTimeout: 90
+        )
+        return try decodeEnvelope(MpTorrentSearchResult.self, from: data)
+    }
+
+    /// 提交下载：`key` 来自 PT 搜索结果，服务端缓存约 30 分钟。
+    func mpSubmitDownload(
+        key: String,
+        source: String,
+        mediaId: String,
+        mediaType: String,
+        title: String,
+        originalTitle: String,
+        year: String,
+        posterUrl: String
+    ) async throws -> MpDownloadTask {
+        let body = MpDownloadRequestBody(
+            key: key,
+            source: source,
+            mediaId: mediaId,
+            mediaType: mediaType,
+            title: title,
+            originalTitle: originalTitle,
+            year: year,
+            posterUrl: posterUrl
+        )
+        let data = try await send(
+            path: "api/moviepilot/download",
+            method: "POST",
+            body: try JSONEncoder().encode(body),
+            authorized: true,
+            retryable: false,
+            requestTimeout: 60
+        )
+        return try decodeEnvelope(MpDownloadTask.self, from: data)
+    }
+
+    /// 下载任务状态：优先按 hash 匹配，其次按标题匹配。
+    func mpDownloadStatus(downloadId: String, title: String = "") async throws -> MpDownloadStatus {
+        var query = ["downloadId": downloadId]
+        if !title.isEmpty { query["title"] = title }
+        let data = try await send(
+            path: "api/moviepilot/download/status",
             method: "GET",
             query: query,
             body: nil,
@@ -687,7 +731,111 @@ struct APIClient: Sendable {
             retryable: false,
             requestTimeout: 30
         )
+        return try decodeEnvelope(MpDownloadStatus.self, from: data)
+    }
+
+    /// 在线片源：插件中心的 MorePlay 能力聚合出的网盘原画线路。
+    func mediaStreams(
+        title: String,
+        year: String = "",
+        mediaType: String,
+        season: Int = 0,
+        episode: Int = 0
+    ) async throws -> MediaStreamsResult {
+        var query = ["title": title, "mediaType": mediaType]
+        if !year.isEmpty { query["year"] = year }
+        if season > 0 { query["season"] = String(season) }
+        if episode > 0 { query["episode"] = String(episode) }
+        let data = try await send(
+            path: "api/media/moreplay/streams",
+            method: "GET",
+            query: query,
+            body: nil,
+            authorized: true,
+            retryable: false,
+            requestTimeout: 60
+        )
         return try decode(MediaStreamsResult.self, from: data)
+    }
+
+    /// 在线片源（流式 NDJSON）：服务端每命中一个站点就下发一批线路，不必等全部聚合完。
+    func mediaStreamsLive(
+        title: String,
+        year: String = "",
+        mediaType: String,
+        season: Int = 0,
+        episode: Int = 0
+    ) -> AsyncThrowingStream<MediaStreamsLiveEvent, Error> {
+        var query = ["title": title, "mediaType": mediaType]
+        if !year.isEmpty { query["year"] = year }
+        if season > 0 { query["season"] = String(season) }
+        if episode > 0 { query["episode"] = String(episode) }
+
+        let requestURL = url(for: "api/media/moreplay/streams/live", query: query)
+        let token = self.token
+        let session = self.session
+
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    var request = URLRequest(url: requestURL)
+                    request.httpMethod = "GET"
+                    request.timeoutInterval = 60
+                    request.setValue("application/x-ndjson", forHTTPHeaderField: "Accept")
+                    if let token {
+                        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                    }
+
+                    let stream = try await session.lineStream(for: request)
+                    guard stream.statusCode != 0 else { throw APIError.decoding }
+                    guard (200..<300).contains(stream.statusCode) else {
+                        switch stream.statusCode {
+                        case 401:
+                            if token != nil { SessionEventSink.shared.reportCredentialsExpired() }
+                            throw APIError.unauthorized
+                        case 403: throw APIError.forbidden
+                        case 404: throw APIError.notFound
+                        case 429: throw APIError.rateLimited(retryAfter: nil)
+                        default: throw APIError.server(status: stream.statusCode)
+                        }
+                    }
+
+                    let decoder = JSONDecoder()
+                    decoder.keyDecodingStrategy = .convertFromSnakeCase
+                    for try await line in stream.lines {
+                        let text = line.trimmingCharacters(in: .whitespaces)
+                        guard !text.isEmpty, let data = text.data(using: .utf8) else { continue }
+                        guard let event = try? decoder.decode(MediaStreamsLiveEvent.self, from: data) else {
+                            continue
+                        }
+                        continuation.yield(event)
+                    }
+                    continuation.finish()
+                } catch is CancellationError {
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    /// 后端下发的同源地址（如 `/api/media/moreplay-proxy?key=…`）转绝对地址。
+    func absoluteURL(forSameOriginPath path: String) -> URL? {
+        guard !path.isEmpty else { return nil }
+        if path.hasPrefix("http://") || path.hasPrefix("https://") {
+            return URL(string: path)
+        }
+        guard path.hasPrefix("/") else { return nil }
+        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+        components.path = ""
+        components.query = nil
+        components.fragment = nil
+        guard let root = components.url else { return nil }
+        return URL(string: path, relativeTo: root)?.absoluteURL
     }
 
     /// 片源走同源代理，避免直链的防盗链与跨域问题；鉴权头随播放器携带。
@@ -1030,6 +1178,34 @@ struct APIClient: Sendable {
         return try decode(MakerMoviePage.self, from: data)
     }
 
+    /// 片商 / 导演 / 系列详情（名称、作品数、AVDB 原始条目）。
+    func makerEntity(kind: MakerEntityKind, id: String) async throws -> MakerEntity {
+        let data = try await send(
+            path: "api/makers/entity",
+            method: "GET",
+            query: ["kind": kind.rawValue, "id": id],
+            body: nil,
+            authorized: true,
+            retryable: true,
+            requestTimeout: 25
+        )
+        return try decode(MakerEntity.self, from: data)
+    }
+
+    /// TOP250 年份下拉选项（`GET /makers/years`，降序）。
+    func makerYears() async throws -> [String] {
+        let data = try await send(
+            path: "api/makers/years",
+            method: "GET",
+            query: [:],
+            body: nil,
+            authorized: true,
+            retryable: true,
+            requestTimeout: 25
+        )
+        return try decode(MakerYearOptions.self, from: data).years
+    }
+
     /// TOP250：不传年份时为按类别榜，传年份时为该年度榜。
     func makerTop(category: MakerCategory, page: Int = 1, year: String? = nil) async throws -> MakerMoviePage {
         var query = ["category": category.rawValue, "page": String(page)]
@@ -1074,6 +1250,34 @@ struct APIClient: Sendable {
         return try decode(MakerActorPage.self, from: data)
     }
 
+    /// 推荐演员（新人 / 月榜 / FANZA 推荐三组）。
+    func makerActorRecommend() async throws -> MakerActorRecommend {
+        let data = try await send(
+            path: "api/makers/actor-recommend",
+            method: "GET",
+            query: [:],
+            body: nil,
+            authorized: true,
+            retryable: true,
+            requestTimeout: 25
+        )
+        return try decode(MakerActorRecommend.self, from: data)
+    }
+
+    /// 演员详情：资料 + 特色标签。
+    func makerActorDetail(id: String) async throws -> MakerActorDetail {
+        let data = try await send(
+            path: "api/makers/actor-detail",
+            method: "GET",
+            query: ["id": id],
+            body: nil,
+            authorized: true,
+            retryable: true,
+            requestTimeout: 25
+        )
+        return try decode(MakerActorDetail.self, from: data)
+    }
+
     /// 分类标签：按组返回标签，用于「分类」页。
     func makerTags(category: MakerCategory) async throws -> MakerTagsPage {
         let data = try await send(
@@ -1094,12 +1298,32 @@ struct APIClient: Sendable {
         group: String = "",
         tagId: String = "",
         actorID: String = "",
+        makerID: String = "",
+        directorID: String = "",
+        seriesID: String = "",
+        seriesType: String = "",
+        listID: String = "",
+        tagIds: [String] = [],
+        mainFilters: [String] = [],
+        year: String = "",
+        month: String = "",
+        duration: String = "",
         page: Int = 1
     ) async throws -> MakerMoviePage {
         var query = ["category": category.rawValue, "page": String(page), "limit": "24"]
         if !group.isEmpty { query["group"] = group }
         if !tagId.isEmpty { query["tag_id"] = tagId }
+        if !tagIds.isEmpty { query["tag_ids"] = tagIds.joined(separator: ",") }
+        if !mainFilters.isEmpty { query["main_filter"] = mainFilters.joined(separator: ",") }
+        if !year.isEmpty { query["year"] = year }
+        if !month.isEmpty { query["month"] = month }
+        if !duration.isEmpty { query["duration"] = duration }
         if !actorID.isEmpty { query["actor_id"] = actorID }
+        if !makerID.isEmpty { query["maker_id"] = makerID }
+        if !directorID.isEmpty { query["director_id"] = directorID }
+        if !seriesID.isEmpty { query["series_id"] = seriesID }
+        if !seriesType.isEmpty { query["series_type"] = seriesType }
+        if !listID.isEmpty { query["list_id"] = listID }
         let data = try await send(
             path: "api/makers/browse",
             method: "GET",
@@ -1138,7 +1362,35 @@ struct APIClient: Sendable {
         return try decode(MakerMovieDetail.self, from: data)
     }
 
-    /// 在线播放源聚合：AVDB 播放源 + 片商插件 + Stremio 插件。
+    /// 影片评论：`api/makers/reviews`，按页拉取。
+    func makerReviews(movieID: String, page: Int = 1, limit: Int = 20) async throws -> MakerReviewPage {
+        let data = try await send(
+            path: "api/makers/reviews",
+            method: "GET",
+            query: ["movie_id": movieID, "page": String(page), "limit": String(limit)],
+            body: nil,
+            authorized: true,
+            retryable: true,
+            requestTimeout: 25
+        )
+        return try decode(MakerReviewPage.self, from: data)
+    }
+
+    /// 影片相关片单。
+    func makerRelatedLists(movieID: String, limit: Int = 10) async throws -> [MakerRelatedList] {
+        let data = try await send(
+            path: "api/makers/lists/related",
+            method: "GET",
+            query: ["movie_id": movieID, "page": "1", "limit": String(limit)],
+            body: nil,
+            authorized: true,
+            retryable: true,
+            requestTimeout: 25
+        )
+        return try decode(MakerRelatedListPage.self, from: data).items
+    }
+
+    /// 在线播放源聚合：AVDB 播放源 + 片商插件。
     func makerPlaySources(movieID: String, number: String, title: String) async throws -> MakerPlaySources {
         let data = try await send(
             path: "api/makers/movie/\(movieID)/play-sources",
@@ -1170,16 +1422,88 @@ struct APIClient: Sendable {
         return try decode(MakerMoviePage.self, from: data)
     }
 
+    /// AVDB 站内搜索：片商 / 演员 / 片单 / 系列 / 导演 / 番号前缀。
+    func makerSearch(keyword: String, type: String = "maker") async throws -> [MakerSearchItem] {
+        let data = try await send(
+            path: "api/makers/search",
+            method: "GET",
+            query: ["q": keyword, "type": type],
+            body: nil,
+            authorized: true,
+            retryable: true,
+            requestTimeout: 25
+        )
+        return try decode(MakerSearchResult.self, from: data).items
+    }
+
+    /// AVDB 自有种子库检索。
+    func makerTorrents(keyword: String, page: Int = 1, exact: Bool = false) async throws -> MakerTorrentPage {
+        let data = try await send(
+            path: "api/makers/torrents",
+            method: "GET",
+            query: [
+                "keyword": keyword,
+                "page": String(page),
+                "limit": "24",
+                "exact": exact ? "true" : "false",
+            ],
+            body: nil,
+            authorized: true,
+            retryable: true,
+            requestTimeout: 25
+        )
+        return try decode(MakerTorrentPage.self, from: data)
+    }
+
     /// AVDB 图片统一走服务端代理（封面 CDN 是加扰字节流）。
     func makerImageURL(raw: String, width: Int = 400) -> URL? {
         guard !raw.isEmpty else { return nil }
         return url(for: "api/makers/image", query: ["url": raw, "w": String(width)])
     }
 
-    /// 离线转存：磁力 / ED2K 直存 115 目标目录（后端按来源选目录）。
-    func panOffline(urls: [String], password: String = "") async throws -> PanOfflineResult {
+    /// 通用封面地址：同源相对路径走受保护代理，
+    /// 其余外链仍交给 AVDB 图片代理解码。
+    func artworkURL(raw: String, width: Int = 400) -> URL? {
+        let text = raw.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return nil }
+        if text.hasPrefix("/") {
+            return remoteAssetURL(text)
+        }
+        return makerImageURL(raw: text, width: width)
+    }
+
+    /// 影视封面统一走服务端代理：豆瓣 / 图床有防盗链，客户端直连会被拒。
+    func mediaCoverURL(raw: String) -> URL? {
+        var text = raw.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return nil }
+        if text.hasPrefix("//") { text = "https:" + text }
+        guard text.hasPrefix("http://") || text.hasPrefix("https://") else { return nil }
+        return url(for: "api/media/cover-proxy", query: ["url": text])
+    }
+
+    /// 服务端受保护资源（短剧 logo 等）走同源代理；图片加载器带不了请求头，token 放查询参数。
+    func remoteAssetURL(_ path: String) -> URL? {
+        guard !path.isEmpty else { return nil }
+        if path.hasPrefix("http://") || path.hasPrefix("https://") {
+            return URL(string: path)
+        }
+        var base = baseURL.absoluteString
+        while base.hasSuffix("/") { base.removeLast() }
+        var raw = base + (path.hasPrefix("/") ? path : "/" + path)
+        if let token, !token.isEmpty {
+            raw += (raw.contains("?") ? "&" : "?") + "token=" + token
+        }
+        return URL(string: raw)
+    }
+
+    /// 离线转存：磁力 / ED2K 直存 115 目标目录，`source` 决定落点（search / media / maker）。
+    func panOffline(urls: [String], password: String = "", source: String? = nil) async throws -> PanOfflineResult {
         let body = try JSONEncoder().encode(
-            PanOfflineBody(urls: urls, password: password.isEmpty ? nil : password)
+            PanOfflineBody(
+                urls: urls,
+                password: password.isEmpty ? nil : password,
+                source: (source?.isEmpty == false) ? source : nil
+            )
         )
         let data = try await send(
             path: "api/pan/offline",
@@ -1240,7 +1564,7 @@ struct APIClient: Sendable {
 
         if !offline.isEmpty {
             do {
-                let result = try await panOffline(urls: offline, password: password)
+                let result = try await panOffline(urls: offline, password: password, source: source)
                 added += result.added
                 failures += result.failed
                 if destName.isEmpty { destName = result.destName }
@@ -1461,7 +1785,7 @@ struct APIClient: Sendable {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await URLSession.shared.upload(for: request, fromFile: tempURL)
+            (data, response) = try await session.upload(for: request, fromFile: tempURL)
         } catch let error as URLError {
             throw Self.map(error)
         } catch is CancellationError {
@@ -1473,6 +1797,7 @@ struct APIClient: Sendable {
         case 200..<300:
             return
         case 401:
+            if token != nil { SessionEventSink.shared.reportCredentialsExpired() }
             throw APIError.unauthorized
         case 403:
             throw APIError.forbidden
@@ -1515,6 +1840,7 @@ struct APIClient: Sendable {
             } catch let error as APIError {
                 guard retryable, error.isRetryable, attempt < maxRetries else { throw error }
                 attempt += 1
+                RexLog.network.notice("retry \(path, privacy: .public) #\(attempt, privacy: .public) after \(String(describing: error), privacy: .public)")
                 let base = error.retryDelay ?? pow(2, Double(attempt - 1)) * 0.3
                 let jitter = Double.random(in: 0...0.15)
                 try await Task.sleep(for: .seconds(base + jitter))
@@ -1530,6 +1856,7 @@ struct APIClient: Sendable {
         authorized: Bool,
         requestTimeout: TimeInterval?
     ) async throws -> Data {
+        let startedAt = Date()
         var request = URLRequest(url: url(for: path, query: query))
         request.httpMethod = method
         request.timeoutInterval = requestTimeout ?? timeout
@@ -1548,12 +1875,17 @@ struct APIClient: Sendable {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: request)
+            (data, response) = try await session.data(for: request)
         } catch let error as URLError {
-            throw Self.map(error)
+            let mapped = Self.map(error)
+            RexLog.network.error("\(method, privacy: .public) \(path, privacy: .public) → \(String(describing: mapped), privacy: .public)")
+            throw mapped
         } catch is CancellationError {
             throw APIError.cancelled
         }
+
+        let elapsed = Int(Date().timeIntervalSince(startedAt) * 1000)
+        RexLog.network.debug("\(method, privacy: .public) \(path, privacy: .public) \(httpStatusText(response), privacy: .public) \(elapsed, privacy: .public)ms")
 
         guard let http = response as? HTTPURLResponse else { throw APIError.decoding }
 
@@ -1561,6 +1893,7 @@ struct APIClient: Sendable {
         case 200..<300:
             return data
         case 401:
+            if authorized { SessionEventSink.shared.reportCredentialsExpired() }
             throw APIError.unauthorized
         case 403:
             throw APIError.forbidden
@@ -1590,6 +1923,11 @@ struct APIClient: Sendable {
         return components.url ?? baseURL
     }
 
+    private func httpStatusText(_ response: URLResponse) -> String {
+        guard let http = response as? HTTPURLResponse else { return "?" }
+        return "\(http.statusCode)"
+    }
+
     private func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -1606,6 +1944,15 @@ struct APIClient: Sendable {
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         do {
             return try decoder.decode(SettingsEnvelope<T>.self, from: data).data
+        } catch {
+            throw APIError.decoding
+        }
+    }
+
+    /// 拆信封但保留服务端原始键名：给同时存在 `created_at` / `createdAt` 的接口用。
+    private func decodeEnvelopeRaw<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
+        do {
+            return try JSONDecoder().decode(SettingsEnvelope<T>.self, from: data).data
         } catch {
             throw APIError.decoding
         }
@@ -1649,6 +1996,18 @@ private struct ChangePasswordBody: Encodable {
         case currentPassword = "current_password"
         case newPassword = "new_password"
     }
+}
+
+/// PT 下载提交体：服务端字段为 camelCase，直接同名编码。
+private struct MpDownloadRequestBody: Encodable {
+    let key: String
+    let source: String
+    let mediaId: String
+    let mediaType: String
+    let title: String
+    let originalTitle: String
+    let year: String
+    let posterUrl: String
 }
 
 /// 通用响应信封：`{data, message, status}`。
@@ -1705,6 +2064,27 @@ struct PanPlayInfo: Decodable, Sendable {
     let url: URL
     let headers: [String: String]
     let expiresIn: Int
+    /// 服务端标注的媒体类型：`hls` 强制系统播放器，其余按扩展名判断。
+    var kind: String = ""
+
+    init(url: URL, headers: [String: String], expiresIn: Int, kind: String = "") {
+        self.url = url
+        self.headers = headers
+        self.expiresIn = expiresIn
+        self.kind = kind
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case url, headers, expiresIn, kind
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        url = try container.decode(URL.self, forKey: .url)
+        headers = (try? container.decode([String: String].self, forKey: .headers)) ?? [:]
+        expiresIn = (try? container.decode(Int.self, forKey: .expiresIn)) ?? 0
+        kind = (try? container.decode(String.self, forKey: .kind)) ?? ""
+    }
 }
 
 /// 跨设备观看进度。`updatedAt` 为服务端写入时间（Unix 秒），本地比它新时不覆盖。
@@ -1720,12 +2100,25 @@ struct ServiceCard: Decodable, Identifiable, Hashable, Sendable {
     let name: String
     let category: String
     let categoryLabel: String
+    let section: String
     let host: String
     let port: Int
     let url: String
+    /// 内容源的上游 API 根地址；NAS 服务为空。
+    let apiBase: String
+    /// 内容源类型，例如 `shortdrama`；普通服务为空。
+    let sourceKind: String
+    let enabled: Bool
     let notes: String
     let online: Bool?
     let latency: Int?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, category, categoryLabel, section, host, port, url
+        case enabled, notes, online, latency
+        case apiBase = "api_base"
+        case sourceKind = "source_kind"
+    }
 }
 
 struct ServiceListResponse: Decodable, Sendable {
@@ -1838,6 +2231,7 @@ struct PanOfflineFailure: Sendable {
 private struct PanOfflineBody: Encodable {
     let urls: [String]
     let password: String?
+    let source: String?
 }
 
 private struct PanShareBody: Encodable {

@@ -10,6 +10,9 @@ import os
 import re
 import socket
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
@@ -26,8 +29,14 @@ CATEGORIES = {
     "media": "媒体服务",
     "playback": "在线播放",
     "download": "下载器",
+    "source": "内容源",
     "api": "接口服务",
     "other": "其他",
+}
+
+# 内容源类型：目前只有短剧源，后续新增类型只需在这里登记。
+SOURCE_KINDS = {
+    "shortdrama": "短剧源",
 }
 
 # 不预置任何服务：避免把内网地址与数据库口令写进代码。首次部署由管理台录入。
@@ -78,6 +87,26 @@ def _text(payload: dict, key: str, limit: int = 200) -> str:
     return value.strip()[:limit]
 
 
+def _clean_bool(value: Any, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in {"1", "true", "yes", "on"}:
+            return True
+        if text in {"0", "false", "no", "off"}:
+            return False
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return default
+
+
+def _clean_map(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    return {str(key): item for key, item in value.items() if isinstance(key, str)}
+
+
 def category_label(key: str) -> str:
     return CATEGORIES.get(key, CATEGORIES["other"])
 
@@ -86,17 +115,42 @@ def list_services() -> list[dict[str, Any]]:
     return _read()
 
 
+def get_service(sid: str) -> dict[str, Any] | None:
+    for item in _read():
+        if item.get("id") == sid:
+            return item
+    return None
+
+
+def list_sources(kind: str) -> list[dict[str, Any]]:
+    """按内容源类型取启用的服务行（短剧源用 ``shortdrama``）。"""
+    return [
+        item
+        for item in _read()
+        if str(item.get("source_kind") or "") == kind
+        and _clean_bool(item.get("enabled"), True)
+    ]
+
+
 def save_service(payload: dict[str, Any]) -> dict[str, Any]:
     items = _read()
     sid = _text(payload, "id", 64)
     name = _text(payload, "name", 64)
     if not name:
         raise ValueError("请填写服务名称")
+
+    # 内容源（外部 HTTP API）只需要一个地址，无需主机 + 端口；
+    # 传统 NAS 服务仍按 host + port 录入，两者互不强制。
+    api_base = (_text(payload, "api_base", 300) or _text(payload, "url", 300)).rstrip("/")
     host = _text(payload, "host", 128)
-    if not host:
-        raise ValueError("请填写主机地址")
     port = _clean_port(payload.get("port"))
-    if not port:
+    if not host and api_base:
+        parsed = urllib.parse.urlparse(api_base)
+        host = parsed.hostname or ""
+        port = port or _clean_port(parsed.port)
+    if not host and not api_base:
+        raise ValueError("请填写主机地址或服务地址")
+    if not port and not api_base:
         raise ValueError("请填写有效端口")
 
     row: dict[str, Any] | None = None
@@ -117,14 +171,38 @@ def save_service(payload: dict[str, Any]) -> dict[str, Any]:
             "category": _text(payload, "category", 24) or "other",
             "host": host,
             "port": port,
-            "username": _text(payload, "username", 128),
-            "database": _text(payload, "database", 128),
-            "api_key": _text(payload, "api_key", 256),
             "url": _text(payload, "url", 300),
+            "api_base": api_base,
+            "source_kind": _text(payload, "source_kind", 32),
             "notes": _text(payload, "notes", 300),
             "updated_at": int(time.time()),
         }
     )
+    # 凭据字段不由通用编辑面板下发，空值不覆盖已保存的账号。
+    for key, limit in (
+        ("username", 128),
+        ("database", 128),
+        ("api_key", 256),
+    ):
+        value = _text(payload, key, limit)
+        if value:
+            row[key] = value
+    section = _text(payload, "section", 24)
+    if section:
+        row["section"] = section
+    elif "section" in payload:
+        row.pop("section", None)
+    endpoints = _clean_map(payload.get("endpoints"))
+    if endpoints:
+        row["endpoints"] = endpoints
+    elif "endpoints" in payload:
+        row.pop("endpoints", None)
+    ui = _clean_map(payload.get("ui"))
+    if ui:
+        row["ui"] = ui
+    elif "ui" in payload:
+        row.pop("ui", None)
+    row["enabled"] = _clean_bool(payload.get("enabled"), _clean_bool(row.get("enabled"), True))
     password = payload.get("password")
     if isinstance(password, str) and password.strip():
         row["password"] = password.strip()[:200]
@@ -154,12 +232,48 @@ def _probe_host(host: str, port: int) -> dict[str, Any]:
         return {"online": False, "latency": None}
 
 
+def _probe_http(url: str) -> dict[str, Any]:
+    """无端口的 HTTP 服务源：有响应即视为在线（含 4xx/5xx）。"""
+    if not url.startswith(("http://", "https://")):
+        return {"online": False, "latency": None}
+    started = time.time()
+    request = urllib.request.Request(url, method="HEAD", headers={"Accept": "*/*"})
+    try:
+        with urllib.request.urlopen(request, timeout=PROBE_TIMEOUT):
+            return {"online": True, "latency": int((time.time() - started) * 1000)}
+    except urllib.error.HTTPError:
+        return {"online": True, "latency": int((time.time() - started) * 1000)}
+    except (urllib.error.URLError, OSError, ValueError):
+        return {"online": False, "latency": None}
+
+
+def probe_target(host: str, port: int = 0, api_base: str = "", url: str = "") -> dict[str, Any]:
+    """不落库的连通性测试：有主机 + 端口走 socket，否则按 HTTP 地址探测。"""
+    clean_host = str(host or "").strip()
+    clean_port = _clean_port(port)
+    if clean_host and clean_port:
+        return _probe_host(clean_host, clean_port)
+    target = str(api_base or url or "").strip().rstrip("/")
+    if not target and clean_host:
+        target = f"http://{clean_host}"
+    if not clean_port and target:
+        parsed = urllib.parse.urlparse(target)
+        if parsed.port:
+            return _probe_host(parsed.hostname or "", parsed.port)
+    return _probe_http(target)
+
+
 def _probe(item: dict[str, Any]) -> dict[str, Any]:
     now = time.time()
     cached = _probe_cache.get(item["id"])
     if cached and now - cached["at"] < PROBE_TTL:
         return cached
-    result = _probe_host(str(item.get("host") or ""), _clean_port(item.get("port")))
+    host = str(item.get("host") or "")
+    port = _clean_port(item.get("port"))
+    if host and port:
+        result = _probe_host(host, port)
+    else:
+        result = _probe_http(str(item.get("api_base") or item.get("url") or ""))
     result["at"] = now
     _probe_cache[item["id"]] = result
     return result

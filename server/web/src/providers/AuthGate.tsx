@@ -11,7 +11,7 @@ import { useAuth } from './AuthProvider';
  * 避免从 /login 添加到主屏幕导致 PWA scope 异常。
  */
 export function AuthGate({ children }: { children: React.ReactNode }) {
-  const { status } = useAuth();
+  const { status, refresh } = useAuth();
   const pathname = usePathname() || '/';
   const router = useRouter();
 
@@ -35,6 +35,26 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     return (
       <AppFrame>
         <div className="auth-boot" aria-busy="true" aria-label="加载中" />
+      </AppFrame>
+    );
+  }
+
+  if (status === 'offline') {
+    return (
+      <AppFrame>
+        <div className="auth-viewport">
+          <div className="auth-offline" role="alert">
+            <p className="auth-offline__title">无法连接服务器</p>
+            <p className="auth-offline__hint">请检查网络，或确认服务端是否在线。</p>
+            <button
+              type="button"
+              className="auth-offline__retry"
+              onClick={() => void refresh()}
+            >
+              重试
+            </button>
+          </div>
+        </div>
       </AppFrame>
     );
   }

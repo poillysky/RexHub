@@ -7,12 +7,14 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import unquote
 
+import app.core.pg as pg
 from app.search.pack_bleed import (
     gallery_preview_images,
     is_pack_bleed_item,
     is_public_download_link,
     is_unsplit_multi_hash_row,
     links_for_resource_hash,
+    normalize_ed2k_links,
     parse_ed2k_link,
     parse_magnet_link,
     pick_previews_for_resource,
@@ -246,6 +248,55 @@ def _magnet_hashes_from_row(row: dict[str, Any]) -> list[str]:
     return out
 
 
+def _download_hashes(row: dict[str, Any]) -> list[str]:
+    raw = normalize_ed2k_links(
+        row.get("ed2k_links"), (row.get("ed2k_link") or "").strip()
+    )
+    out: list[str] = []
+    for link in raw:
+        ed2k = parse_ed2k_link(link)
+        link_hash = str(ed2k["hash"]).upper() if ed2k and ed2k.get("hash") else ""
+        if not link_hash:
+            magnet = parse_magnet_link(link)
+            link_hash = (
+                str(magnet["hash"]).upper() if magnet and magnet.get("hash") else ""
+            )
+        if link_hash:
+            out.append(link_hash)
+    return list(dict.fromkeys(out))
+
+
+def pack_unsplit_hashes(rows: list[dict[str, Any]]) -> set[str]:
+    """合集行里的兄弟 hash 没有独立资源行时，说明库未拆分，链接要全部保留。
+
+    一次 IN 查询批量判定；查询异常时退回旧启发式（按已拆分处理）。
+    """
+    cand: dict[str, list[str]] = {}
+    for row in rows:
+        hashes = _download_hashes(row)
+        if len(hashes) > 1:
+            cand[str(row.get("hash") or "").upper()] = hashes
+    if not cand:
+        return set()
+    all_hashes = sorted({h for hs in cand.values() for h in hs})
+    try:
+        found = {
+            str(r.get("hash") or "").upper()
+            for r in pg.query(
+                "SELECT hash FROM ed2k_resources WHERE hash = ANY(%s)", (all_hashes,)
+            )
+        }
+    except Exception as exc:
+        log.debug("pack unsplit check skipped: %s", exc)
+        return set()
+    return {h for h, hs in cand.items() if any(x not in found for x in hs)}
+
+
+def pack_row_unsplit(row: dict[str, Any]) -> bool:
+    """单行版本：兄弟 hash 缺独立资源行 → 库未拆分。"""
+    return str(row.get("hash") or "").upper() in pack_unsplit_hashes([row])
+
+
 def format_resources(
     rows: list[dict[str, Any]],
     *,
@@ -268,8 +319,15 @@ def format_resources(
                 torrent_meta.prefetch_infohashes(hashes)
             except Exception as e:
                 log.debug("torrent prefetch skip: %s", e)
+    # 与详情同口径：库内确认未拆分的合集行，链接全量返回
+    unsplit_hashes = pack_unsplit_hashes(rows)
     return [
-        format_resource(r, enrich_magnets=prefetch_torrents) for r in rows
+        format_resource(
+            r,
+            enrich_magnets=prefetch_torrents,
+            keep_all_links=str(r.get("hash") or "").upper() in unsplit_hashes,
+        )
+        for r in rows
     ]
 
 
@@ -277,6 +335,7 @@ def format_resource(
     row: dict[str, Any],
     *,
     enrich_magnets: bool = True,
+    keep_all_links: bool = False,
 ) -> dict[str, Any]:
     raw_title = (row.get("title") or "").strip() or None
     raw_desc = (row.get("description") or "").strip() or None
@@ -309,6 +368,8 @@ def format_resource(
         raw_link,
         filename=filename,
         title=raw_title,
+        # 库里确认合集未拆分时，兄弟链接没有独立资源行，必须全部保留。
+        unsplit=True if keep_all_links else None,
     )
     primary = (
         (

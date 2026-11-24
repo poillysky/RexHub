@@ -108,7 +108,9 @@ export function ScopeDetailBody({
                     key={`${row.url}-${index}`}
                     className="detail-link-row"
                   >
-                    <span className="detail-link-row__idx">{index + 1}</span>
+                    {rows.length > 1 ? (
+                      <span className="detail-link-row__idx">{index + 1}</span>
+                    ) : null}
                     <span className="detail-link-row__url allow-select">
                       {row.url}
                     </span>

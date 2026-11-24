@@ -5,16 +5,12 @@
 
 from __future__ import annotations
 
-import asyncio
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 from urllib.parse import urlsplit
 
 from fastapi import HTTPException
-
-from app.rexhub.addons_store import streams as addon_streams
-from app.rexhub.plugin_framework import dispatcher
 
 from app.makers.normalize import (
     _bool,
@@ -524,6 +520,9 @@ def fetch_browse(
     tag_ids: str,
     actor_id: str,
     year: str,
+    main_filter: str,
+    month: str,
+    duration: str,
     maker_id: str,
     director_id: str,
     list_id: str,
@@ -545,12 +544,25 @@ def fetch_browse(
     gid = group.strip()
     param = TAG_GROUP_PARAM.get(gid, "tag_id")
     multi = [t.strip() for t in tag_ids.split(",") if t.strip()]
-    if multi and param == "tag_id":
-        params["tag_ids"] = ",".join(multi)
+    if multi:
+        if param == "tag_id":
+            params["tag_ids"] = ",".join(multi)
+        elif param == "main_filter":
+            # 「基本」组可多选：可播放 / 可下载 / 含字幕 同时生效。
+            params["main_filter"] = ",".join(multi)
+        else:
+            params[param] = multi[0]
     elif tag_id.strip():
         params[param] = tag_id.strip()
     if year.strip():
         params["year"] = year.strip()
+    # 跨分组同时筛选：基本组多选、月份、时长各自独立下发。
+    if main_filter.strip():
+        params["main_filter"] = main_filter.strip()
+    if month.strip():
+        params["month"] = month.strip()
+    if duration.strip():
+        params["duration"] = duration.strip()
     if actor_id.strip():
         params["actor_id"] = actor_id.strip()
     # 维度筛选：片商 / 导演 / 片单 / 发行商 / 系列
@@ -1131,35 +1143,42 @@ def _stream(
     }
 
 
-def _plugin_play_sources(keyword: str) -> dict[str, Any]:
-    """插件仓库里片商类（category=studio/provider）插件的在线播放源。
-
-    只取「片商」分组插件，影视 / 短剧类插件不参与片商页的播放源聚合。
-    """
-    data = dispatcher.playable_streams(("studio", "provider"), keyword)
-    streams = [
-        {**item, "source": "plugin"}
-        for item in (data.get("streams") or [])
-        if isinstance(item, dict)
-    ]
-    return {"streams": streams, "reason": str(data.get("reason") or "")}
+_STREAM_URL_KEYS = (
+    "m3u8",
+    "play_url",
+    "playUrl",
+    "stream_url",
+    "streamUrl",
+    "src",
+    "url",
+    "link",
+)
 
 
-def _stremio_play_sources(keyword: str) -> dict[str, Any]:
-    """Stremio 社区插件聚合源：用番号直接查询 addon。"""
-    try:
-        data = asyncio.run(addon_streams.collect("movie", keyword, any_id=True))
-    except RuntimeError as e:
-        return {"streams": [], "reason": f"社区插件查询失败：{e}"}
-    if not isinstance(data, dict):
-        return {"streams": [], "reason": "社区插件返回异常"}
-    streams = [
-        {**item, "source": "stremio"}
-        for item in (data.get("streams") or [])
-        if isinstance(item, dict)
-    ]
-    reason = "" if streams else str(data.get("reason") or "")
-    return {"streams": streams, "reason": reason}
+def _http_url(value: Any) -> str:
+    return value if isinstance(value, str) and value.startswith(("http://", "https://")) else ""
+
+
+def _play_url(data: Any) -> str:
+    """从任意播放响应里递归找出第一个播放地址。"""
+    if isinstance(data, str):
+        return _http_url(data)
+    if isinstance(data, dict):
+        for key in _STREAM_URL_KEYS:
+            found = _http_url(data.get(key))
+            if found:
+                return found
+        for value in data.values():
+            found = _play_url(value)
+            if found:
+                return found
+        return ""
+    if isinstance(data, list):
+        for item in data:
+            found = _play_url(item)
+            if found:
+                return found
+    return ""
 
 
 def _avdb_play_sources(movie_id: str) -> dict[str, Any]:
@@ -1187,7 +1206,7 @@ def _avdb_play_sources(movie_id: str) -> dict[str, Any]:
         except AvdbError as e:
             reasons.append(f"AVDB {name}: {e}")
             continue
-        url = dispatcher.play_url(played)
+        url = _play_url(played)
         if not url:
             reasons.append(f"AVDB {name}: 未获取到播放地址")
             continue
@@ -1196,15 +1215,11 @@ def _avdb_play_sources(movie_id: str) -> dict[str, Any]:
 
 
 def fetch_play_sources(movie_id: str, number: str = "", title: str = "") -> dict[str, Any]:
-    """聚合在线播放源：片商类插件 / Stremio 社区插件 / AVDB 播放源。"""
+    """聚合在线播放源：AVDB 播放源。"""
     mid = movie_id.strip()
-    keyword = number.strip() or title.strip()
     results: list[dict[str, Any]] = []
     if mid:
         results.append(_avdb_play_sources(mid))
-    if keyword:
-        results.append(_plugin_play_sources(keyword))
-        results.append(_stremio_play_sources(keyword))
 
     streams: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -1217,8 +1232,8 @@ def fetch_play_sources(movie_id: str, number: str = "", title: str = "") -> dict
             streams.append(stream)
 
     reasons: list[str] = []
-    if not keyword:
-        reasons.append("缺少番号，无法匹配插件片源")
+    if not mid:
+        reasons.append("缺少影片 ID，无法匹配片源")
     for result in results:
         reason = str(result.get("reason") or "").strip()
         if reason and reason not in reasons:

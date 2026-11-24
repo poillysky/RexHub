@@ -666,10 +666,10 @@ export async function fetchMakerTorrents(opts: {
   return (await res.json()) as MakerTorrentPage;
 }
 
-/** 在线播放源：片商类插件 / Stremio 插件 / AVDB 播放源聚合 */
+/** 在线播放源：片商类插件 / AVDB 播放源聚合 */
 export type MakerPlaySource = MediaStream & {
-  /** plugin 片商类插件 / stremio 社区插件 / avdb AVDB 播放源 */
-  source: 'plugin' | 'stremio' | 'avdb' | string;
+  /** plugin 片商类插件 / avdb AVDB 播放源 */
+  source: 'plugin' | 'avdb' | string;
 };
 
 export type MakerPlaySources = {

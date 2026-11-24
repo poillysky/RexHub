@@ -38,10 +38,10 @@ SOURCE_LABELS: dict[str, str] = {
     "avdb": "AVDB",
 }
 
-# 深翻页保护：单次最多为每个源取这么多条，避免 page 很大时打爆上游
-_MAX_FETCH = 200
-# 多源聚合总预算：到点未完成的源标记超时，保证请求按时返回
+# 多源聚合总预算：到点未完成的源标记超时，保证请求按时返回。
+# 深翻页时单次要取的前缀更长，预算随页码线性放宽，避免深层结果被整体判超时。
 _SCOPE_BUDGET_S = 25.0
+_SCOPE_BUDGET_MAX_S = 60.0
 
 _TIME_CUTOFF_SECONDS = {
     "gt-1day": 86400,
@@ -193,16 +193,18 @@ def _bitmagnet_items(
 ) -> list[dict[str, Any]]:
     if len(keyword) < 2:
         return []
-    # 一次取够 want 条（不再按 Bitmagnet 每页 10 条逐页拉，深翻页会重复扫库）
+    # 一次取够 want 条（不再按 Bitmagnet 每页 10 条逐页拉，深翻页会重复扫库）；
+    # 多取 20 条补偿同名同体积去重带来的前缀损耗。
     data = bitmagnet_client.search(
         keyword,
-        limit=want,
+        limit=want + 20,
         sort_type=sort_type,
         filter_time=filter_time,
         filter_size=filter_size,
     )
     out: list[dict[str, Any]] = []
     seen: set[str] = set()
+    seen_pairs: set[tuple[str, int]] = set()
     for row in data.get("items") or []:
         if not isinstance(row, dict):
             continue
@@ -210,12 +212,18 @@ def _bitmagnet_items(
         if not info_hash or info_hash in seen:
             continue
         seen.add(info_hash)
+        title = str(row.get("name") or row.get("title") or info_hash)
+        # 与其它源一致：同名同体积只保留一条，避免重复项占掉分页窗口
+        pair = (title.strip().lower(), int(row.get("size") or 0))
+        if pair in seen_pairs:
+            continue
+        seen_pairs.add(pair)
         out.append(
             _make_item(
                 source="bitmagnet",
                 category="torrent",
                 item_id=info_hash,
-                title=str(row.get("name") or row.get("title") or info_hash),
+                title=title,
                 size_bytes=row.get("size"),
                 published=_parse_datetime(row.get("created_at")),
                 magnet=str(row.get("magnet") or row.get("magnet_uri") or "") or None,
@@ -233,8 +241,9 @@ def _cloudsaver_items(
     filter_time: str,
     filter_size: str,
 ) -> list[dict[str, Any]]:
-    # 有筛选条件时提前多取一些，避免「先截断再过滤」把有效结果漏掉
-    fetch_want = want if filter_time == "all" and filter_size == "all" else min(200, want * 3)
+    # 有筛选条件时提前多取一些，避免「先截断再过滤」把有效结果漏掉；
+    # 再额外多取 20 条补偿按链接类型/重复标题过滤造成的损耗。
+    fetch_want = (want if filter_time == "all" and filter_size == "all" else want * 3) + 20
     # 「中文，English」拆词分别搜再合并（CloudSaver 自身不支持多词 OR）；
     # 多词并行请求，总耗时按最慢的一路算。
     terms = _keyword_terms(keyword)
@@ -319,16 +328,19 @@ def _sehuatang_items(
 ) -> list[dict[str, Any]]:
     if len(keyword) < 2:
         return []
-    # 合并前各源都要给出「从头到 want」的连续前缀，深页才能正确切片；
-    # 单次最多 80 条，因此按页累积，避免第 5 页起该源静默返回空。
+    # 合并前各源都要给出「从头到 want」的连续前缀，深页才能正确切片。
+    # 分页大小必须固定：上游按 (page-1)*ps 取窗口，ps 每次变化会让下一页和前页重叠，
+    # 去重后条目数不增，hasMore 就会误判「没有更多」。
     items: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    seen_pairs: set[tuple[str, int]] = set()
     page = 1
-    while len(items) < want and page <= 4:
-        page_size = min(max(want - len(items), 1), 80)
+    step = 80
+    while len(items) < want:
         data = resource_service.search_resources(
             keyword=keyword,
             p=page,
-            ps=page_size,
+            ps=step,
             sort_type=sort_type,
             filter_time=filter_time,
             filter_size=filter_size,
@@ -345,13 +357,21 @@ def _sehuatang_items(
                 (str(x) for x in magnets if str(x).startswith("magnet:")), ""
             )
             hard_id = str(row.get("hash") or "").strip() or link or str(row.get("name") or "")
+            title = str(row.get("title") or row.get("name") or hard_id)
+            # 同一资源会被不同频道重复搬运（hash 不同、标题与体积相同）：
+            # 在源内先去重，保证「前缀长度」和最终展示条数一致，避免翻页越走越空。
+            pair = (title.strip().lower(), int(row.get("size") or 0))
+            if not hard_id or hard_id in seen or pair in seen_pairs:
+                continue
+            seen.add(hard_id)
+            seen_pairs.add(pair)
             previews = row.get("preview_images") or []
             items.append(
                 _make_item(
                     source="sehuatang",
                     category="torrent",
                     item_id=hard_id,
-                    title=str(row.get("title") or row.get("name") or hard_id),
+                    title=title,
                     size_bytes=row.get("size"),
                     published=_parse_datetime(row.get("created_at")),
                     magnet=magnet or (link if link.startswith("magnet:") else None),
@@ -360,7 +380,7 @@ def _sehuatang_items(
                     info_hash=str(row.get("hash") or "").strip(),
                 )
             )
-        if len(rows) < page_size:
+        if len(rows) < step:
             break
         page += 1
     return items[:want]
@@ -375,12 +395,16 @@ def _avdb_items(
     filter_size: str,
 ) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    seen_pairs: set[tuple[str, int]] = set()
     page = 1
-    while len(items) < want and page <= 20:
+    # 分页大小固定，避免 (page-1)*limit 的窗口随 limit 变化而重叠
+    step = TORRENT_LIMIT_MAX
+    while len(items) < want:
         data = fetch_torrents(
             keyword=keyword,
             page=page,
-            limit=min(TORRENT_LIMIT_MAX, max(want - len(items), 1)),
+            limit=step,
             exact=False,
         )
         rows = data.get("items") or []
@@ -388,6 +412,16 @@ def _avdb_items(
             if not isinstance(row, dict):
                 continue
             download = str(row.get("downloadUrl") or "").strip()
+            dedupe_key = str(row.get("id") or download or row.get("number") or "").strip()
+            title = str(row.get("title") or row.get("number") or "未命名资源")
+            pair = (title.strip().lower(), int(row.get("sizeBytes") or 0))
+            if dedupe_key:
+                if dedupe_key in seen:
+                    continue
+                seen.add(dedupe_key)
+            if pair in seen_pairs:
+                continue
+            seen_pairs.add(pair)
             links = (
                 [{"label": "下载", "url": download, "password": ""}]
                 if download and not download.startswith(("magnet:", "ed2k://"))
@@ -397,7 +431,7 @@ def _avdb_items(
                 source="avdb",
                 category="torrent",
                 item_id=f"{row.get('id') or download or row.get('number') or 'item'}#{len(items)}",
-                title=str(row.get("title") or row.get("number") or "未命名资源"),
+                title=title,
                 size_bytes=row.get("sizeBytes"),
                 published=_parse_datetime(row.get("postTime")),
                 magnet=download if download.startswith("magnet:") else None,
@@ -437,7 +471,7 @@ def search_scope(
     scope: str = Query("movie"),
     keyword: str = Query(..., min_length=1),
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=50),
+    page_size: int = Query(20, ge=1),
     sort_type: str = Query("relevance"),
     filter_time: str = Query("all"),
     filter_size: str = Query("all"),
@@ -448,7 +482,8 @@ def search_scope(
     scope_key = scope if scope in SCOPE_SOURCES else "movie"
     kw = keyword.strip()
     # 多取 1 条才能判断「还有下一页」（各源取到 want，合并后 > start+page_size 即 hasMore）
-    want = min(page * page_size + 1, _MAX_FETCH)
+    want = page * page_size + 1
+    budget_s = min(_SCOPE_BUDGET_MAX_S, _SCOPE_BUDGET_S + (page - 1) * 2.0)
     sources = SCOPE_SOURCES[scope_key]
     if source != "all" and source in sources:
         sources = (source,)
@@ -470,7 +505,7 @@ def search_scope(
         for name in sources
     }
     try:
-        done, pending = wait(futures, timeout=_SCOPE_BUDGET_S)
+        done, pending = wait(futures, timeout=budget_s)
         for future in done:
             name = futures[future]
             try:
@@ -481,15 +516,30 @@ def search_scope(
         for future in pending:
             name = futures[future]
             future.cancel()
-            log.warning("scope search %s timed out after %.0fs", name, _SCOPE_BUDGET_S)
+            log.warning("scope search %s timed out after %.0fs", name, budget_s)
             source_errors[name] = "搜索超时"
     finally:
         # 不等未完成线程：到预算就返回，后端线程自行收尾
         pool.shutdown(wait=False, cancel_futures=True)
 
     merged: list[dict[str, Any]] = []
-    for name in sources:
-        merged.extend(results.get(name) or [])
+    if sort_key == "relevance":
+        # 各源的相关度分数不可比：按源轮转交错，让每个来源从第一页就出现。
+        # 否则排在前面的源（AVDB、Bitmagnet）会占满前面几十页，其它源看起来像没结果。
+        queues = [results.get(name) or [] for name in sources]
+        row = 0
+        while True:
+            appended = False
+            for queue in queues:
+                if row < len(queue):
+                    merged.append(queue[row])
+                    appended = True
+            if not appended:
+                break
+            row += 1
+    else:
+        for name in sources:
+            merged.extend(results.get(name) or [])
 
     seen: set[tuple[str, int, str]] = set()
     deduped: list[dict[str, Any]] = []
@@ -519,11 +569,16 @@ def search_scope(
     for item in page_items:
         item.pop("_published", None)
 
+    # 去重会压缩前缀：同一资源被多个频道/种子重复发布时，deduped 会比 want 短，
+    # 只看 deduped 长度会在第 2 页就误判「没有更多」。只要还有来源能凑满 want，
+    # 就说明它没取完，必须继续翻页。
+    raw_more = any(len(results.get(name) or []) >= want for name in sources)
+
     return {
         "scope": scope_key,
         "keyword": kw,
         "page": page,
         "sourceErrors": source_errors,
         "items": page_items,
-        "hasMore": len(deduped) > offset + len(page_items),
+        "hasMore": len(deduped) > offset + len(page_items) or raw_more,
     }

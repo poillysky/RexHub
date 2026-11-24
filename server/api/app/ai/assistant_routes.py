@@ -660,8 +660,6 @@ def assistant_meta(
         sources.append("media")
     if tools.get("av_search") or tools.get("av_movie") or tools.get("av_actor_works"):
         sources.append("av")
-    if tools.get("media_streams"):
-        sources.append("stream")
     if tools.get("cloudsaver_search") or tools.get("p115_save"):
         sources.append("cloud")
     if tools.get("web_search") and web.get("enabled") and web.get("configured"):

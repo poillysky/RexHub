@@ -136,12 +136,12 @@ struct MusicPlayerView: View {
 
             VStack(spacing: 2) {
                 Text("正在播放")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(.caption2, weight: .semibold))
                     .tracking(1.5)
                     .foregroundStyle(.white.opacity(0.45))
 
                 Text(Self.displayName(for: activeItem))
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(.footnote, weight: .medium))
                     .foregroundStyle(.white.opacity(0.85))
                     .lineLimit(1)
             }
@@ -160,7 +160,7 @@ struct MusicPlayerView: View {
             action()
         } label: {
             Image(systemName: systemImage)
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(.subheadline, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 40, height: 40)
                 .background(.white.opacity(0.12), in: Circle())
@@ -233,7 +233,7 @@ struct MusicPlayerView: View {
                 Spacer()
                 Text(timeText(duration))
             }
-            .font(.system(size: 12, weight: .medium))
+            .font(.system(.caption, weight: .medium))
             .foregroundStyle(.white.opacity(0.55))
             .monospacedDigit()
         }
@@ -298,7 +298,7 @@ struct MusicPlayerView: View {
                         .tint(.black)
                 } else {
                     Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 26, weight: .semibold))
+                        .font(.system(.title, weight: .semibold))
                         .foregroundStyle(.black)
                         .offset(x: isPlaying ? 0 : 2)
                 }
@@ -317,7 +317,7 @@ struct MusicPlayerView: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 22, weight: .medium))
+                .font(.system(.title2, weight: .medium))
                 .foregroundStyle(.white.opacity(isEnabled ? 0.85 : 0.25))
                 .frame(width: 44, height: 48)
         }
@@ -334,10 +334,10 @@ struct MusicPlayerView: View {
         Button(action: action) {
             VStack(spacing: 1) {
                 Image(systemName: direction == .backward ? "gobackward" : "goforward")
-                    .font(.system(size: 22, weight: .medium))
+                    .font(.system(.title2, weight: .medium))
 
                 Text("\(seconds)")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(.caption2, weight: .semibold))
             }
             .foregroundStyle(.white.opacity(0.8))
             .frame(width: 44, height: 48)
@@ -364,14 +364,14 @@ struct MusicPlayerView: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "speedometer")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(.footnote, weight: .medium))
 
                     Text("倍速 \(PlayerSettingsStore.rateText(settings.playbackRate))")
                         .font(.system(.footnote, weight: .medium))
                 }
                 .foregroundStyle(.white.opacity(0.72))
                 .padding(.horizontal, RexSpacing.md)
-                .frame(height: 36)
+                .frame(minHeight: 36)
                 .background(.white.opacity(0.10), in: Capsule(style: .continuous))
                 .frame(minHeight: RexLayout.minTouch)
             }
@@ -388,7 +388,7 @@ struct MusicPlayerView: View {
     private func failure(_ message: String) -> some View {
         VStack(spacing: RexSpacing.md) {
             Text(message)
-                .font(.system(size: 13))
+                .font(.system(.footnote))
                 .foregroundStyle(.white.opacity(0.7))
                 .multilineTextAlignment(.center)
                 .lineSpacing(2)
@@ -438,7 +438,7 @@ struct MusicPlayerView: View {
 
                             if track.id == activeItem.id {
                                 Image(systemName: "speaker.wave.2.fill")
-                                    .font(.system(size: 13, weight: .semibold))
+                                    .font(.system(.footnote, weight: .semibold))
                                     .foregroundStyle(RexColor.brandBlue)
                             }
                         }
@@ -537,19 +537,22 @@ struct MusicPlayerView: View {
             forInterval: CMTime(seconds: 0.25, preferredTimescale: 600),
             queue: .main
         ) { time in
-            guard !isScrubbing else { return }
+            // 回调指定在主队列执行，这里显式声明主 actor 隔离。
+            MainActor.assumeIsolated {
+                guard !isScrubbing else { return }
 
-            let seconds = time.seconds
-            guard seconds.isFinite else { return }
-            currentTime = seconds
+                let seconds = time.seconds
+                guard seconds.isFinite else { return }
+                currentTime = seconds
 
-            if let itemDuration = player.currentItem?.duration.seconds,
-               itemDuration.isFinite,
-               itemDuration > 0 {
-                duration = itemDuration
+                if let itemDuration = player.currentItem?.duration.seconds,
+                   itemDuration.isFinite,
+                   itemDuration > 0 {
+                    duration = itemDuration
+                }
+
+                isPlaying = player.rate > 0
             }
-
-            isPlaying = player.rate > 0
         }
     }
 
@@ -570,13 +573,15 @@ struct MusicPlayerView: View {
             object: current,
             queue: .main
         ) { _ in
-            isPlaying = false
+            MainActor.assumeIsolated {
+                isPlaying = false
 
-            if let next = nextItem {
-                activeItem = next
-            } else {
-                player.seek(to: .zero)
-                currentTime = 0
+                if let next = nextItem {
+                    activeItem = next
+                } else {
+                    player.seek(to: .zero)
+                    currentTime = 0
+                }
             }
         }
     }

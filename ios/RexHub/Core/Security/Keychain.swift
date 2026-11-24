@@ -31,9 +31,41 @@ enum Keychain {
         delete(passwordAccount)
     }
 
+    // MARK: - 多账号密码
+
+    /// 历史账号按「服务端 + 账号」各存一份密码，互不覆盖。
+    static func password(forKey key: String) -> String? {
+        read("auth.password.\(key)")
+    }
+
+    static func savePassword(_ password: String, forKey key: String) {
+        write(password, account: "auth.password.\(key)")
+    }
+
+    static func deletePassword(forKey key: String) {
+        delete("auth.password.\(key)")
+    }
+
+    /// 通用安全字符串读写：用于保存账号、历史记录等不宜落在 UserDefaults 的数据。
+    static func string(forKey key: String) -> String? {
+        read("app.\(key)")
+    }
+
+    static func saveString(_ value: String, forKey key: String) {
+        write(value, account: "app.\(key)")
+    }
+
+    static func deleteString(forKey key: String) {
+        delete("app.\(key)")
+    }
+
     // MARK: - 基础操作
 
     private static func read(_ account: String) -> String? {
+        keychainRead(account) ?? fallbackRead(account)
+    }
+
+    private static func keychainRead(_ account: String) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -55,9 +87,19 @@ enum Keychain {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecValueData as String: Data(value.utf8),
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
+            // 首次解锁后可用（后台播放取流需要），但不随 iCloud 钥匙串或加密备份迁移到别的设备。
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         ]
-        SecItemAdd(query as CFDictionary, nil)
+        let status = SecItemAdd(query as CFDictionary, nil)
+        if status == errSecSuccess {
+            UserDefaults.standard.removeObject(forKey: fallbackKey(account))
+        } else {
+            RexLog.session.error("Keychain 写入失败 status=\(status)")
+            #if targetEnvironment(simulator)
+            // 只有模拟器在缺少 keychain 授权时才退回沙盒存储，真机绝不把密码写进 UserDefaults。
+            fallbackWrite(value, account: account)
+            #endif
+        }
     }
 
     private static func delete(_ account: String) {
@@ -67,5 +109,24 @@ enum Keychain {
             kSecAttrAccount as String: account
         ]
         SecItemDelete(query as CFDictionary)
+        UserDefaults.standard.removeObject(forKey: fallbackKey(account))
+    }
+
+    // MARK: - 无签名环境回退
+
+    private static func fallbackKey(_ account: String) -> String {
+        "rexhub.secureFallback.\(account)"
+    }
+
+    private static func fallbackRead(_ account: String) -> String? {
+        #if targetEnvironment(simulator)
+        UserDefaults.standard.string(forKey: fallbackKey(account))
+        #else
+        nil
+        #endif
+    }
+
+    private static func fallbackWrite(_ value: String, account: String) {
+        UserDefaults.standard.set(value, forKey: fallbackKey(account))
     }
 }

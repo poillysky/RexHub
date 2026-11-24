@@ -21,7 +21,7 @@ struct BoardsView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: RexSpacing.xl) {
                         Text("色花堂")
-                            .font(.system(size: 26, weight: .bold, design: .rounded))
+                            .font(.system(.title, design: .rounded, weight: .bold))
                             .foregroundStyle(RexColor.primaryText)
                             .padding(.horizontal, RexSpacing.xl)
 
@@ -68,7 +68,7 @@ struct BoardsView: View {
                 switch route {
                 case .board(let board):
                     BoardListView(board: board)
-                        .toolbar(.hidden, for: .navigationBar)
+                        .rexPushedScreen()
                 }
             }
         }
@@ -103,7 +103,7 @@ private struct BoardCard: View {
                     .frame(width: 40, height: 40)
                     .overlay {
                         Text(String(board.name.prefix(1)))
-                            .font(.system(size: 17, weight: .bold, design: .rounded))
+                            .font(.system(.body, design: .rounded, weight: .bold))
                             .foregroundStyle(tint)
                     }
 
@@ -149,6 +149,7 @@ private struct BoardListView: View {
     @State private var keyword = ""
     @State private var activeKeyword = ""
     @State private var alert: RexAlertInfo?
+    @State private var toast: RexToastInfo?
     @FocusState private var isFocused: Bool
 
     var body: some View {
@@ -217,14 +218,18 @@ private struct BoardListView: View {
         }
         .background(RexPageBackground())
         .toolbar(.hidden, for: .navigationBar)
-        .task { await load(reset: true) }
+        .task {
+            // 从帖子详情返回时保留已加载内容与滚动位置，不重新翻页。
+            if items.isEmpty { await load(reset: true) }
+        }
         .rexAlert($alert)
+        .rexToast($toast)
     }
 
     private var searchField: some View {
         HStack(spacing: RexSpacing.sm) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 15, weight: .medium))
+                .font(.system(.subheadline, weight: .medium))
                 .foregroundStyle(RexColor.secondaryText)
 
             TextField("在「\(board.name)」中搜索", text: $keyword)
@@ -242,9 +247,9 @@ private struct BoardListView: View {
                     Task { await load(reset: true) }
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 15))
+                        .font(.system(.subheadline))
                         .foregroundStyle(RexColor.tertiaryText)
-                        .frame(width: 30, height: 30)
+                        .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("清空关键词")
@@ -308,7 +313,7 @@ private struct BoardListView: View {
     private func copy(_ text: String) {
         UIPasteboard.general.string = text
         RexHaptics.success()
-        alert = .success("已复制链接")
+        toast = .success("已复制链接")
     }
 
     private func save(_ link: String) async {
@@ -319,7 +324,7 @@ private struct BoardListView: View {
             if let failed = result.failed.first {
                 alert = .failure(failed.message)
             } else {
-                alert = .success(
+                toast = .success(
                     APIClient.is115ShareLink(link) ? "已转存到网盘" : "已提交离线下载"
                 )
             }
@@ -330,7 +335,11 @@ private struct BoardListView: View {
     }
 
     private func showToast(_ text: String, isError: Bool = true) {
-        alert = isError ? .failure(text) : .notice(text)
+        if isError {
+            alert = .failure(text)
+        } else {
+            toast = .notice(text)
+        }
     }
 }
 
@@ -376,11 +385,12 @@ private struct BoardItemCard: View {
                                 ? "square.and.arrow.down"
                                 : "arrow.down.to.line.compact"
                         )
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(.caption, weight: .semibold))
                         .foregroundStyle(RexColor.onBrand)
                         .padding(.horizontal, RexSpacing.md)
-                        .frame(height: 30)
+                        .frame(minHeight: 30)
                         .background(RexColor.brandGradient, in: Capsule(style: .continuous))
+                        .rexTapTarget()
                     }
                     .buttonStyle(PressableButtonStyle())
 
@@ -388,11 +398,12 @@ private struct BoardItemCard: View {
                         onCopy(item.primaryLink)
                     } label: {
                         Text("复制")
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.system(.caption, weight: .medium))
                             .foregroundStyle(RexColor.primaryText)
                             .padding(.horizontal, RexSpacing.md)
-                            .frame(height: 30)
+                            .frame(minHeight: 30)
                             .background(RexColor.field, in: Capsule(style: .continuous))
+                        .rexTapTarget()
                     }
                     .buttonStyle(PressableButtonStyle())
 

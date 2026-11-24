@@ -182,7 +182,7 @@ struct PanAccountView: View {
             VStack(alignment: .leading, spacing: RexSpacing.lg) {
                 HStack(spacing: RexSpacing.md) {
                     Image(systemName: "chart.pie.fill")
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.system(.body, weight: .semibold))
                         .foregroundStyle(RexColor.brandBlue)
                         .frame(width: 40, height: 40)
                         .background(
@@ -333,7 +333,7 @@ struct PanAccountView: View {
     ) -> some View {
         HStack(spacing: RexSpacing.md) {
             Image(systemName: symbol)
-                .font(.system(size: 19, weight: .semibold))
+                .font(.system(.title3, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 42, height: 42)
                 .background(
@@ -352,7 +352,7 @@ struct PanAccountView: View {
             Spacer(minLength: RexSpacing.sm)
 
             Image(systemName: "chevron.right")
-                .font(.system(size: 12.5, weight: .semibold))
+                .font(.system(.caption, weight: .semibold))
                 .foregroundStyle(RexColor.tertiaryText)
         }
         .padding(.horizontal, RexSpacing.lg)
@@ -553,7 +553,7 @@ struct PanFolderList: View {
                         NavigationLink(value: PanFolder(cid: item.id, name: item.name)) {
                             HStack(spacing: RexSpacing.md) {
                                 Image(systemName: "folder.fill")
-                                    .font(.system(size: 14, weight: .semibold))
+                                    .font(.system(.subheadline, weight: .semibold))
                                     .foregroundStyle(Color(hex: 0xF5B54A))
                                     .frame(width: 30, height: 30)
                                     .background(

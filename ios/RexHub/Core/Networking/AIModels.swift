@@ -163,36 +163,52 @@ struct AssistantStreamEvent: Sendable {
 
 struct AiLlmSettings: Decodable, Sendable {
     let enabled: Bool?
+    let chatCompletionSource: String?
+    let apiMode: String?
     let baseUrl: String?
     let model: String?
     let models: [String]?
+    let promptPostProcessing: String?
+    let customIncludeHeaders: String?
     let timeoutSec: Int?
     let configured: Bool?
     let apiKeyHint: String?
     let fromEnv: Bool?
+    let fromEnvKey: Bool?
 
     private enum CodingKeys: String, CodingKey {
-        case enabled, baseUrl, model, models, timeoutSec, configured, apiKeyHint, fromEnv
+        case enabled, chatCompletionSource, apiMode, baseUrl, model, models
+        case promptPostProcessing, customIncludeHeaders, timeoutSec
+        case configured, apiKeyHint, fromEnv, fromEnvKey
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         enabled = container.rexBool(.enabled)
+        chatCompletionSource = container.rexString(.chatCompletionSource)
+        apiMode = container.rexString(.apiMode)
         baseUrl = container.rexString(.baseUrl)
         model = container.rexString(.model)
         models = container.rexArray(.models, as: String.self)
+        promptPostProcessing = container.rexString(.promptPostProcessing)
+        customIncludeHeaders = container.rexString(.customIncludeHeaders)
         timeoutSec = container.rexInt(.timeoutSec)
         configured = container.rexBool(.configured)
         apiKeyHint = container.rexString(.apiKeyHint)
         fromEnv = container.rexBool(.fromEnv)
+        fromEnvKey = container.rexBool(.fromEnvKey)
     }
 }
 
 struct AiLlmSaveBody: Encodable {
     let enabled: Bool
+    let chatCompletionSource: String
+    let apiMode: String
     let baseUrl: String
     let model: String
     let apiKey: String?
+    let promptPostProcessing: String
+    let customIncludeHeaders: String
     let timeoutSec: Int
 }
 
@@ -200,4 +216,176 @@ struct AiLlmTestResult: Decodable, Sendable {
     let ok: Bool?
     let message: String?
     let model: String?
+}
+
+struct AiLlmConnectBody: Encodable {
+    let baseUrl: String
+    let apiKey: String?
+    let customIncludeHeaders: String?
+    let listModels: Bool = true
+}
+
+struct AiLlmConnectResult: Decodable, Sendable {
+    let ok: Bool?
+    let models: [String]
+    let modelCount: Int?
+    let message: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case ok, models, modelCount, message
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        ok = container.rexBool(.ok)
+        models = container.rexArray(.models, as: String.self)
+        modelCount = container.rexInt(.modelCount)
+        message = container.rexString(.message)
+    }
+}
+
+// MARK: - AI 预设
+
+struct AiPresetOption: Decodable, Hashable, Identifiable, Sendable {
+    let value: String
+    let label: String
+    let baseUrl: String?
+    let dim: String?
+
+    var id: String { value }
+
+    init(value: String, label: String, baseUrl: String? = nil, dim: String? = nil) {
+        self.value = value
+        self.label = label
+        self.baseUrl = baseUrl
+        self.dim = dim
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case value, label, baseUrl, dim
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        value = container.rexString(.value) ?? ""
+        label = container.rexString(.label) ?? value
+        baseUrl = container.rexString(.baseUrl)
+        dim = container.rexString(.dim)
+    }
+}
+
+struct AiPresets: Decodable, Sendable {
+    let chatSources: [AiPresetOption]
+    let promptPostProcessing: [AiPresetOption]
+    let webSearchProviders: [AiPresetOption]
+
+    private enum CodingKeys: String, CodingKey {
+        case chatSources, promptPostProcessing, webSearchProviders
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        chatSources = container.rexArray(.chatSources, as: AiPresetOption.self)
+        promptPostProcessing = container.rexArray(.promptPostProcessing, as: AiPresetOption.self)
+        webSearchProviders = container.rexArray(.webSearchProviders, as: AiPresetOption.self)
+    }
+}
+
+// MARK: - 网络搜索服务
+
+struct AiWebSearchSettings: Decodable, Sendable {
+    let enabled: Bool?
+    let provider: String?
+    let baseUrl: String?
+    let configured: Bool?
+    let fromEnv: Bool?
+    let apiKeyHint: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled, provider, baseUrl, configured, fromEnv, apiKeyHint
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = container.rexBool(.enabled)
+        provider = container.rexString(.provider)
+        baseUrl = container.rexString(.baseUrl)
+        configured = container.rexBool(.configured)
+        fromEnv = container.rexBool(.fromEnv)
+        apiKeyHint = container.rexString(.apiKeyHint)
+    }
+}
+
+struct AiWebSearchSaveBody: Encodable {
+    let enabled: Bool
+    let provider: String
+    let apiKey: String?
+    let baseUrl: String
+}
+
+// MARK: - 助手 Agent 设置
+
+struct AiAssistantToolMeta: Decodable, Identifiable, Hashable, Sendable {
+    let id: String
+    let group: String
+    let label: String
+    let desc: String
+
+    private enum CodingKeys: String, CodingKey {
+        case id, group, label, desc
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = container.rexString(.id) ?? ""
+        group = container.rexString(.group) ?? ""
+        label = container.rexString(.label) ?? id
+        desc = container.rexString(.desc) ?? ""
+    }
+}
+
+struct AiAssistantSkillGroup: Decodable, Identifiable, Hashable, Sendable {
+    let id: String
+    let label: String
+    let desc: String
+
+    private enum CodingKeys: String, CodingKey {
+        case id, label, desc
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = container.rexString(.id) ?? ""
+        label = container.rexString(.label) ?? id
+        desc = container.rexString(.desc) ?? ""
+    }
+}
+
+struct AiAssistantSettings: Decodable, Sendable {
+    let model: String?
+    let systemPrompt: String?
+    let suggestChips: [String]
+    let tools: [String: Bool]
+    let toolMeta: [AiAssistantToolMeta]
+    let skillGroups: [AiAssistantSkillGroup]
+
+    private enum CodingKeys: String, CodingKey {
+        case model, systemPrompt, suggestChips, tools, toolMeta, skillGroups
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        model = container.rexString(.model)
+        systemPrompt = container.rexString(.systemPrompt)
+        suggestChips = container.rexArray(.suggestChips, as: String.self)
+        tools = (try? container.decodeIfPresent([String: Bool].self, forKey: .tools)) ?? [:]
+        toolMeta = container.rexArray(.toolMeta, as: AiAssistantToolMeta.self)
+        skillGroups = container.rexArray(.skillGroups, as: AiAssistantSkillGroup.self)
+    }
+}
+
+struct AiAssistantSaveBody: Encodable {
+    let model: String
+    let systemPrompt: String
+    let tools: [String: Bool]
 }

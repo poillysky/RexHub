@@ -2,49 +2,6 @@ import CoreGraphics
 import Foundation
 import Observation
 
-/// 播放内核：AVPlayer 用系统硬解，KSPlayer 支持 MKV 等容器与内嵌字幕。
-enum PlayerKernel: String, CaseIterable, Identifiable {
-    case auto
-    case avPlayer
-    case ksPlayer
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .auto: "自动"
-        case .avPlayer: "AVPlayer"
-        case .ksPlayer: "KSPlayer"
-        }
-    }
-
-    /// 只用于设置页说明，不参与播放决策。
-    var summary: String {
-        switch self {
-        case .auto: "MP4 / MOV / HLS 用 AVPlayer，其余容器走 KSPlayer"
-        case .avPlayer: "系统硬解，功耗低，仅支持 MP4 / MOV / HLS"
-        case .ksPlayer: "FFmpeg 系，支持 MKV / AVI / RMVB 与内嵌字幕"
-        }
-    }
-}
-
-/// 解码路径偏好：系统内核由 AVFoundation 自动决定，偏好留给后续自定义内核使用。
-enum PlayerDecodeMode: String, CaseIterable, Identifiable {
-    case automatic
-    case hardware
-    case software
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .automatic: "自动"
-        case .hardware: "优先硬件"
-        case .software: "优先软件"
-        }
-    }
-}
-
 /// 起播缓冲策略，换算成 `AVPlayerItem.preferredForwardBufferDuration`。
 enum PlayerBufferPolicy: String, CaseIterable, Identifiable {
     case automatic
@@ -67,35 +24,6 @@ enum PlayerBufferPolicy: String, CaseIterable, Identifiable {
         case .automatic: 0
         case .fastStart: 5
         case .smooth: 30
-        }
-    }
-}
-
-/// 起播清晰度上限，交给 `AVPlayerItem.preferredMaximumResolution`。
-enum PlayerResolution: String, CaseIterable, Identifiable {
-    case automatic
-    case p1080
-    case p720
-    case p480
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .automatic: "自动"
-        case .p1080: "1080P"
-        case .p720: "720P"
-        case .p480: "480P"
-        }
-    }
-
-    /// `nil` 表示不限制，由系统按网络情况决定。
-    var maxSize: CGSize? {
-        switch self {
-        case .automatic: nil
-        case .p1080: CGSize(width: 1920, height: 1080)
-        case .p720: CGSize(width: 1280, height: 720)
-        case .p480: CGSize(width: 854, height: 480)
         }
     }
 }
@@ -170,24 +98,15 @@ final class PlayerSettingsStore {
     static let playbackRates: [Double] = [0.5, 0.75, 1, 1.25, 1.5, 2]
 
     private enum Key {
-        static let kernel = "rex.player.kernel"
-        static let decodeMode = "rex.player.decodeMode"
         static let autoPlay = "rex.player.autoPlay"
         static let playbackRate = "rex.player.playbackRate"
-        static let loopPlayback = "rex.player.loopPlayback"
-        static let startMuted = "rex.player.startMuted"
         static let bufferPolicy = "rex.player.bufferPolicy"
         static let keepScreenAwake = "rex.player.keepScreenAwake"
         static let autoLandscape = "rex.player.autoLandscape"
-        static let preferredResolution = "rex.player.preferredResolution"
-        static let waitMinimizeStalling = "rex.player.waitMinimizeStalling"
         static let keepPitch = "rex.player.keepPitch"
         static let resumePlayback = "rex.player.resumePlayback"
-        static let autoCloseOnFinish = "rex.player.autoCloseOnFinish"
         static let autoPlayNext = "rex.player.autoPlayNext"
         static let backgroundAudio = "rex.player.backgroundAudio"
-        static let rememberVolume = "rex.player.rememberVolume"
-        static let rememberBrightness = "rex.player.rememberBrightness"
         static let lastVolume = "rex.player.lastVolume"
         static let lastBrightness = "rex.player.lastBrightness"
         static let skipIntro = "rex.player.skipIntro"
@@ -205,15 +124,6 @@ final class PlayerSettingsStore {
         static let subtitleDelay = "rex.player.subtitleDelay"
     }
 
-    /// 播放内核，下一次起播时生效。
-    var kernel: PlayerKernel {
-        didSet { defaults.set(kernel.rawValue, forKey: Key.kernel) }
-    }
-
-    var decodeMode: PlayerDecodeMode {
-        didSet { defaults.set(decodeMode.rawValue, forKey: Key.decodeMode) }
-    }
-
     /// 解析出直链后是否立即起播。
     var autoPlay: Bool {
         didSet { defaults.set(autoPlay, forKey: Key.autoPlay) }
@@ -221,15 +131,6 @@ final class PlayerSettingsStore {
 
     var playbackRate: Double {
         didSet { defaults.set(playbackRate, forKey: Key.playbackRate) }
-    }
-
-    var loopPlayback: Bool {
-        didSet { defaults.set(loopPlayback, forKey: Key.loopPlayback) }
-    }
-
-    /// 起播时默认静音，交给播放器控制条恢复。
-    var startMuted: Bool {
-        didSet { defaults.set(startMuted, forKey: Key.startMuted) }
     }
 
     var bufferPolicy: PlayerBufferPolicy {
@@ -246,16 +147,6 @@ final class PlayerSettingsStore {
         didSet { defaults.set(autoLandscape, forKey: Key.autoLandscape) }
     }
 
-    /// 起播清晰度上限。
-    var preferredResolution: PlayerResolution {
-        didSet { defaults.set(preferredResolution.rawValue, forKey: Key.preferredResolution) }
-    }
-
-    /// 缓冲不足时先等待而非强行播放。
-    var waitMinimizeStalling: Bool {
-        didSet { defaults.set(waitMinimizeStalling, forKey: Key.waitMinimizeStalling) }
-    }
-
     /// 变速播放时保持原音调。
     var keepPitch: Bool {
         didSet { defaults.set(keepPitch, forKey: Key.keepPitch) }
@@ -266,11 +157,6 @@ final class PlayerSettingsStore {
         didSet { defaults.set(resumePlayback, forKey: Key.resumePlayback) }
     }
 
-    /// 播放到结尾后自动关闭播放页；开着循环播放时以循环为准。
-    var autoCloseOnFinish: Bool {
-        didSet { defaults.set(autoCloseOnFinish, forKey: Key.autoCloseOnFinish) }
-    }
-
     /// 当前目录还有下一个视频时，结束后直接播放下一个。
     var autoPlayNext: Bool {
         didSet { defaults.set(autoPlayNext, forKey: Key.autoPlayNext) }
@@ -279,16 +165,6 @@ final class PlayerSettingsStore {
     /// 退到后台后继续播放声音，依赖 Info.plist 的 audio 后台模式。
     var backgroundAudio: Bool {
         didSet { defaults.set(backgroundAudio, forKey: Key.backgroundAudio) }
-    }
-
-    /// 起播时恢复上次调节的音量，手势调节后自动记录。
-    var rememberVolume: Bool {
-        didSet { defaults.set(rememberVolume, forKey: Key.rememberVolume) }
-    }
-
-    /// 起播时恢复上次调节的屏幕亮度，手势调节后自动记录。
-    var rememberBrightness: Bool {
-        didSet { defaults.set(rememberBrightness, forKey: Key.rememberBrightness) }
     }
 
     var lastVolume: Double {
@@ -359,35 +235,20 @@ final class PlayerSettingsStore {
         durationCache = defaults.dictionary(forKey: Key.positionDurations) as? [String: Double] ?? [:]
         updatedCache = defaults.dictionary(forKey: Key.positionUpdated) as? [String: Double] ?? [:]
 
-        kernel = PlayerKernel(
-            rawValue: defaults.string(forKey: Key.kernel) ?? ""
-        ) ?? .auto
-        decodeMode = PlayerDecodeMode(
-            rawValue: defaults.string(forKey: Key.decodeMode) ?? ""
-        ) ?? .automatic
         autoPlay = Self.bool(defaults, Key.autoPlay, default: true)
 
         let storedRate = defaults.object(forKey: Key.playbackRate) as? Double ?? 1
         playbackRate = Self.playbackRates.contains(storedRate) ? storedRate : 1
 
-        loopPlayback = Self.bool(defaults, Key.loopPlayback, default: false)
-        startMuted = Self.bool(defaults, Key.startMuted, default: false)
         bufferPolicy = PlayerBufferPolicy(
             rawValue: defaults.string(forKey: Key.bufferPolicy) ?? ""
         ) ?? .automatic
         keepScreenAwake = Self.bool(defaults, Key.keepScreenAwake, default: true)
         autoLandscape = Self.bool(defaults, Key.autoLandscape, default: false)
-        preferredResolution = PlayerResolution(
-            rawValue: defaults.string(forKey: Key.preferredResolution) ?? ""
-        ) ?? .automatic
-        waitMinimizeStalling = Self.bool(defaults, Key.waitMinimizeStalling, default: true)
         keepPitch = Self.bool(defaults, Key.keepPitch, default: true)
         resumePlayback = Self.bool(defaults, Key.resumePlayback, default: true)
-        autoCloseOnFinish = Self.bool(defaults, Key.autoCloseOnFinish, default: true)
         autoPlayNext = Self.bool(defaults, Key.autoPlayNext, default: false)
         backgroundAudio = Self.bool(defaults, Key.backgroundAudio, default: false)
-        rememberVolume = Self.bool(defaults, Key.rememberVolume, default: true)
-        rememberBrightness = Self.bool(defaults, Key.rememberBrightness, default: true)
         lastVolume = defaults.object(forKey: Key.lastVolume) as? Double ?? 0.7
         lastBrightness = defaults.object(forKey: Key.lastBrightness) as? Double ?? 0.5
         skipIntro = Self.bool(defaults, Key.skipIntro, default: false)
@@ -449,6 +310,12 @@ final class PlayerSettingsStore {
     func savedDuration(for key: String) -> Double {
         guard !key.isEmpty else { return 0 }
         return durationCache[key] ?? 0
+    }
+
+    /// 进度最后写入时间（Unix 秒），用于挑选最近观看的一集。
+    func progressUpdatedAt(for key: String) -> Double {
+        guard !key.isEmpty else { return 0 }
+        return updatedCache[key] ?? 0
     }
 
     /// 观看进度：已完成比例与剩余秒数，缺少时长记录时返回 `nil`（老数据只能续播、不显示进度）。

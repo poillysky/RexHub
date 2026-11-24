@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -63,16 +64,9 @@ async def lifespan(_app: FastAPI):
         # 仅出现在启动日志，不通过任何匿名接口暴露；注册首个管理员后不再打印。
         log.warning("尚无管理员账号，管理员邀请码：%s", invites["admin"])
     from app.core.outbound_http import start_flare_monitor, stop_flare_monitor
-    from app.rexhub import plugin_framework
-    from app.rexhub.plugin_framework import runtime as plugin_runtime
 
     start_flare_monitor()
-    try:
-        plugin_framework.initialize()
-    except Exception:  # noqa: BLE001
-        log.exception("插件框架初始化失败")
     yield
-    plugin_runtime.stop_all()
     stop_flare_monitor()
     close_pool()
     close_bitmagnet_pool()
@@ -94,6 +88,65 @@ app = FastAPI(title="RexHub API", version=rexhub_pkg.__version__, lifespan=lifes
 async def _handle_avdb_error(_request: Any, exc: AvdbError) -> JSONResponse:
     """AVDB 不可用统一返回 502，避免列表类接口直接抛 500。"""
     return JSONResponse(status_code=502, content={"detail": str(exc)})
+
+
+@app.exception_handler(RequestValidationError)
+async def _handle_validation_error(
+    _request: Any, exc: RequestValidationError
+) -> JSONResponse:
+    """参数校验失败统一转中文。
+
+    Pydantic 默认返回英文原文（如 "List should have at most 50 items
+    after validation, not 60"），直接透到前端会让用户看不出该怎么做。
+    这里保留 422 状态码与 errors 明细，只把 detail 换成可操作的中文。
+    """
+    errors = exc.errors()
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": _validation_message(errors),
+            "errors": [
+                {
+                    "loc": [str(p) for p in e.get("loc", ())],
+                    "type": str(e.get("type") or ""),
+                    "msg": str(e.get("msg") or ""),
+                }
+                for e in errors
+            ],
+        },
+    )
+
+
+def _validation_message(errors: list[dict[str, Any]]) -> str:
+    """把首条校验错误翻成中文提示。"""
+    if not errors:
+        return "请求参数不合法"
+    first = errors[0]
+    etype = str(first.get("type") or "")
+    loc = [str(p) for p in first.get("loc", ()) if p != "body"]
+    field = ".".join(loc) or "参数"
+    ctx = first.get("ctx") or {}
+
+    if etype == "too_long" and "max_length" in ctx:
+        limit = ctx["max_length"]
+        if field == "urls":
+            return f"单批链接过多（上限 {limit} 条），请分批提交"
+        return f"{field} 过长（上限 {limit}）"
+    if etype == "too_short" and "min_length" in ctx:
+        limit = ctx["min_length"]
+        if field == "urls":
+            return "请至少提供 1 条可转存链接"
+        return f"{field} 过短（至少 {limit}）"
+    if etype == "missing":
+        return f"缺少必填参数：{field}"
+    if etype in {"string_type", "int_type", "list_type", "dict_type"}:
+        return f"参数类型不正确：{field}"
+    if etype == "value_error":
+        # 业务层 ValueError 已带中文提示，直接透出
+        msg = str(first.get("msg") or "").replace("Value error, ", "").strip()
+        if msg:
+            return msg
+    return str(first.get("msg") or "请求参数不合法")
 
 
 app.add_middleware(
@@ -169,7 +222,7 @@ _bitmagnet_db_router = build_db_settings_router(
 )
 app.include_router(_bitmagnet_db_router, prefix="/api")
 
-# RexHub 原生能力（原 RexHub/server 迁入）：/api/*、/plugins、/stremio、/addon
+# RexHub 原生能力（原 RexHub/server 迁入）：/api/*、/plugins
 include_rexhub(app)
 
 

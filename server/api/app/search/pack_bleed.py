@@ -347,10 +347,12 @@ def links_for_resource_hash(
     *,
     filename: str | None = None,
     title: str | None = None,
+    unsplit: bool | None = None,
 ) -> list[str]:
     """Current-hash download links; drop sibling hashes from pack rows.
 
     未拆分合集（兄弟 hash 不在独立行）保留全部链接，避免库里有多条却只显示一条。
+    `unsplit` 由调用方查库确认时可直接传入，避免磁力无 dn 名时启发式判不出来。
     """
     primary = (fallback_link or "").strip()
     from_meta = normalize_ed2k_links(ed2k_links, None)
@@ -405,13 +407,15 @@ def links_for_resource_hash(
         return out
 
     if matched:
-        if is_unsplit_multi_hash_row(
-            hash_,
-            filename=filename,
-            title=title,
-            ed2k_links=ed2k_links,
-            fallback_link=fallback_link,
-        ):
+        if unsplit is None:
+            unsplit = is_unsplit_multi_hash_row(
+                hash_,
+                filename=filename,
+                title=title,
+                ed2k_links=ed2k_links,
+                fallback_link=fallback_link,
+            )
+        if unsplit:
             return out
         return matched
     return [primary] if primary else []

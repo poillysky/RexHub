@@ -17,5 +17,4 @@ export * from './p115';
 export * from './media';
 export * from './makers';
 export * from './shortdrama';
-export * from './plugin-framework';
 export * from './admin';

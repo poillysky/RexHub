@@ -328,6 +328,15 @@ enum RexMotion {
 }
 
 extension View {
+    /// 视觉尺寸不变，把可点击区域撑到 iOS HIG 最小触控尺寸（44pt）。
+    func rexTapTarget(
+        minWidth: CGFloat = 0,
+        minHeight: CGFloat = RexLayout.minTouch
+    ) -> some View {
+        frame(minWidth: minWidth, minHeight: minHeight)
+            .contentShape(Rectangle())
+    }
+
     /// 全局底部弹窗：系统卡片呈现，底层页面由 UISheetPresentationController 自动收缩后退。
     /// 内容较多的页面（如目录选择）可只给 `.large`，避免默认中档高度截断内容。
     func rexSheetStyle(

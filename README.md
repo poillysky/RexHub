@@ -11,7 +11,7 @@ RexHub/
 ├── server/                NAS 部署单元（后端 + PWA + 配套资源，构建上下文就在这里）
 │   ├── api/              后端（FastAPI，统一 8020）
 │   │   ├── app/          业务域：search / media / ai / prefix …
-│   │   └── app/rexhub/   RexHub 原生能力：/api/*、/plugins、/stremio、/addon
+│   │   └── app/rexhub/   RexHub 原生能力：/api/*、/plugins
 │   ├── web/              PWA 前端（Next.js，端口 3020，/api 反代到后端）
 │   ├── maps/             前端与后端共用的映射数据（构建时同步进 web/maps）
 │   ├── config/           后端配置：app.json（公开默认）/ app.local.json（本机密钥，不入库）
@@ -20,11 +20,10 @@ RexHub/
 │   ├── docker/           entrypoint / supervisord / healthcheck 配套文件
 │   ├── scripts/          本地一键启动（dev.sh / stop-dev.sh）
 │   └── Dockerfile / docker-compose.yml / package.json
-├── ios/                  iOS 工程：RexHub.xcodeproj + RexHub/ 源码 + Config/Info.plist
 ├── docs/
-│   ├── ios/              iOS 设计与需求文档
-│   └── backend/          后端文档（目录约定、刮削流水线等）
-└── reference/            本地参考，不入库：third-party（旧 legacy-server / legacy-scrape 已删）
+│   ├── backend/          后端文档（目录约定、刮削流水线等）
+│   └── ios/              iOS 客户端重建设计报告
+└── refs/                 本地参考，不入库：ios-legacy（旧 iOS 客户端）等
 ```
 
 ## 本地启动
@@ -59,13 +58,15 @@ npm run stop                     # 停掉
 
 ## iOS
 
+SwiftUI 客户端（iPhone + iPad）在 `ios/`，设计基线见 `docs/ios/ios-redesign.md`。最低 iOS 18，播放内核 KSPlayer（GPL-3.0）。
+
 ```bash
 cd ios
-xcodebuild -project RexHub.xcodeproj -scheme RexHub -configuration Debug \
-  -destination 'generic/platform=iOS Simulator' build CODE_SIGNING_ALLOWED=NO
+./tools/generate-project.sh     # XcodeGen 生成 RexHub.xcodeproj（真机需先设置 REXHUB_DEVELOPMENT_TEAM）
+./tools/run-tests.sh            # 单测（默认 iPhone 17 模拟器）
 ```
 
-服务端地址在 App「设置 → 服务端」里填 `主机:8020`。
+模块：`RexCore`（模型 / 设计 token）、`RexNetworking`（HTTP）、`RexData`（Keychain / 会话 / 本地存储）、`RexUI`（组件）、`RexPlayer`（播放）、`RexFeatures`（页面）。当前完成 M0（登录 + 四 Tab 骨架）与 M1（搜索：范围 / 筛选 / 分页 / 最近搜索 + 资源详情）。
 
 ## 部署
 

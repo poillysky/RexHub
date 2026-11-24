@@ -59,10 +59,6 @@ struct SubtitleSettingsView: View {
                     }
                 }
             }
-
-            RexNote(
-                text: "按顺序尝试字幕源，使用第一个能解析的结果。`{name}` 会替换成视频文件名（不含扩展名），`{lang}` 会替换成默认语言代码（如 zh、en），支持 SRT、VTT、ASS。字号即时作用于外部字幕，KSPlayer 内嵌字幕需下一次起播生效；半透明底色只作用于外部字幕。"
-            )
         }
         .alert("添加字幕源", isPresented: $isAddingSource) {
             TextField("https://example.com/sub/{name}.srt", text: $draftSource)

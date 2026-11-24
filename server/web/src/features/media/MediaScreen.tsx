@@ -1,6 +1,6 @@
 'use client';
 
-import { startTransition, useCallback, useEffect, useRef, useState } from 'react';
+import { startTransition, useEffect, useState } from 'react';
 import { Search } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -13,9 +13,15 @@ import {
 } from '@/lib/api';
 import { AppPush } from '@/components/ui/AppPush';
 import { AppMsg } from '@/components/ui/AppMsg';
-import { useTabNavigation } from '@/shell';
+import { useTabNavigation, type TabRoute } from '@/shell';
 import { useOverlay } from '@/components/overlay/OverlayContext';
 import { useStackCover } from '@/hooks/useStackCover';
+import { makeHref, type HashRoute } from '@/shell/nav/urlNav';
+import {
+  usePageHistory,
+  useTabLocation,
+  useTabUrlSync,
+} from '@/shell/nav/useTabHistory';
 import { MediaChartBody } from './MediaChartBody';
 import { MediaDetailBody } from './MediaDetailBody';
 import { MediaExploreBody } from './MediaExploreBody';
@@ -83,6 +89,179 @@ type Stack =
       detailBack: DetailBack;
     };
 
+const MEDIA_TAB: TabRoute = '/media';
+const MEDIA_ROOT_HREF = makeHref(MEDIA_TAB);
+const MEDIA_SOURCES = new Set(['tmdb', 'douban', 'bangumi', 'anilist']);
+const DETAIL_FROM = new Set(['hub', 'chart', 'search', 'person', 'explore']);
+const HUB_TABS = new Set(['movie', 'tv', 'anime', 'rank', 'explore']);
+
+function pickSource(value: string | null): MediaSourceId {
+  return MEDIA_SOURCES.has(value || '')
+    ? (value as MediaSourceId)
+    : 'tmdb';
+}
+
+function positiveInt(value: string | null, fallback = 1): number {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
+
+/** 当前页面 → 地址栏 */
+function mediaHref(state: { stack: Stack; hubTab: HubTab }): string {
+  const { stack, hubTab } = state;
+  switch (stack.kind) {
+    case 'hub':
+      return makeHref(MEDIA_TAB, [], {
+        tab: hubTab === 'movie' ? undefined : hubTab,
+      });
+    case 'search':
+      return makeHref(MEDIA_TAB, ['search'], {
+        q: stack.q,
+        page: stack.page && stack.page > 1 ? stack.page : undefined,
+      });
+    case 'chart':
+      return makeHref(MEDIA_TAB, ['chart'], {
+        tab: stack.tab,
+        chart: stack.chart,
+        page: stack.page && stack.page > 1 ? stack.page : undefined,
+      });
+    case 'detail':
+      return makeHref(MEDIA_TAB, ['detail'], {
+        src: stack.item.source,
+        id: stack.item.id,
+        mt: stack.item.mediaType,
+        cat: stack.category,
+        from: stack.from,
+        t: stack.item.title,
+        p: stack.item.posterUrl,
+        chart: stack.chart,
+        ctab: stack.chartTab,
+        cpage: stack.chartPage && stack.chartPage > 1 ? stack.chartPage : undefined,
+        q: stack.searchQ,
+        spage: stack.searchPage && stack.searchPage > 1 ? stack.searchPage : undefined,
+        psrc: stack.personSource,
+        ppid: stack.person?.id,
+        pname: stack.person?.name,
+        pav: stack.person?.avatarUrl,
+        pt: stack.ptOpen ? 1 : undefined,
+        ptm: stack.ptOpen ? stack.ptMode : undefined,
+      });
+    case 'person':
+      return makeHref(MEDIA_TAB, ['person'], {
+        src: stack.source,
+        id: stack.person.id,
+        name: stack.person.name,
+        avatar: stack.person.avatarUrl,
+      });
+  }
+}
+
+/** 地址栏 → 当前页面（深链 / 刷新 / 前进后退） */
+function parseMediaLocation(route: HashRoute): {
+  stack: Stack;
+  hubTab: HubTab;
+} | null {
+  const q = route.query;
+  const head = route.segments[0];
+  const tab = q.get('tab') || '';
+  const hubTab = (HUB_TABS.has(tab) ? tab : 'movie') as HubTab;
+
+  switch (head) {
+    case undefined:
+      return { stack: { kind: 'hub' }, hubTab };
+    case 'search':
+      return {
+        stack: {
+          kind: 'search',
+          q: q.get('q') || undefined,
+          page: positiveInt(q.get('page')),
+        },
+        hubTab: 'movie',
+      };
+    case 'chart': {
+      const chartTab = (HUB_TABS.has(tab) ? tab : 'movie') as HubTab;
+      return {
+        stack: {
+          kind: 'chart',
+          tab: chartTab === 'explore' ? 'movie' : chartTab,
+          chart: q.get('chart') || undefined,
+          page: positiveInt(q.get('page')),
+        },
+        hubTab: 'movie',
+      };
+    }
+    case 'detail': {
+      const id = q.get('id');
+      if (!id) return null;
+      const source = pickSource(q.get('src'));
+      const mediaType = q.get('mt') === 'tv' ? 'tv' : 'movie';
+      const cat = q.get('cat') || '';
+      const from = q.get('from') || '';
+      const pid = q.get('ppid') || undefined;
+      const pname = q.get('pname') || '';
+      return {
+        stack: {
+          kind: 'detail',
+          category: (cat || mediaType) as MediaCategoryId,
+          item: {
+            source,
+            id,
+            mediaType,
+            title: q.get('t') || id,
+            posterUrl: q.get('p') || null,
+            aka: [],
+          },
+          detail: null,
+          from: (DETAIL_FROM.has(from) ? from : 'hub') as DetailFrom,
+          chart: q.get('chart') || undefined,
+          chartTab: (() => {
+            const ctab = q.get('ctab') || '';
+            return HUB_TABS.has(ctab) && ctab !== 'explore'
+              ? (ctab as MediaHubTab)
+              : undefined;
+          })(),
+          chartPage: q.get('cpage') ? positiveInt(q.get('cpage')) : undefined,
+          searchQ: q.get('q') || undefined,
+          searchPage: q.get('spage') ? positiveInt(q.get('spage')) : undefined,
+          personSource: q.get('psrc') ? pickSource(q.get('psrc')) : undefined,
+          person: pid || pname ? { id: pid, name: pname || '' } : undefined,
+          ptOpen: q.get('pt') === '1',
+          ptMode: q.get('ptm') === 'imdbid' ? 'imdbid' : 'title',
+        },
+        hubTab: 'movie',
+      };
+    }
+    case 'person': {
+      const id = q.get('id');
+      if (!id) return null;
+      const source = pickSource(q.get('src'));
+      const name = q.get('name') || id;
+      return {
+        stack: {
+          kind: 'person',
+          person: { id, name, avatarUrl: q.get('avatar') || null },
+          source,
+          detailBack: {
+            category: 'movie',
+            item: {
+              source,
+              id,
+              mediaType: 'movie',
+              title: name,
+              aka: [],
+            },
+            detail: null,
+            from: 'hub',
+          },
+        },
+        hubTab: 'movie',
+      };
+    }
+    default:
+      return null;
+  }
+}
+
 export function MediaScreen() {
   const tabCtx = useTabNavigation();
   const { toast } = useOverlay();
@@ -94,12 +273,73 @@ export function MediaScreen() {
   const [hubNotice, setHubNotice] = useState('');
   const [msg, setMsg] = useState('');
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const detailReqId = useRef(0);
   const hubCover = useStackCover(
     stack.kind !== 'hub',
     'media-hub',
     'app-hub media-hub-root',
   );
+
+  const nav = usePageHistory(MEDIA_TAB, MEDIA_ROOT_HREF, () => {
+    setStack({ kind: 'hub' });
+  });
+
+  useTabLocation(MEDIA_TAB, (route) => {
+    const next = parseMediaLocation(route);
+    if (!next) return;
+    setStack(next.stack);
+    setHubTab(next.hubTab);
+  });
+  useTabUrlSync(MEDIA_TAB, mediaHref({ stack, hubTab }));
+
+  /** 进下一页：压历史后切页面 */
+  const pushPage = (next: Stack) => {
+    nav.push(mediaHref({ stack: next, hubTab }));
+    startTransition(() => setStack(next));
+  };
+
+  // 深链 / 刷新直接落在详情时，按 id 补齐详情数据
+  useEffect(() => {
+    if (stack.kind !== 'detail' || stack.detail) return;
+    const { item } = stack;
+    let cancelled = false;
+    queryClient
+      .fetchQuery({
+        queryKey: mediaKeys.detail(item.source, item.id, item.mediaType),
+        queryFn: ({ signal }) =>
+          fetchMpDetail({
+            source: item.source,
+            id: item.id,
+            mediaType: item.mediaType,
+            signal,
+          }),
+        staleTime: 5 * 60 * 1000,
+      })
+      .then((detail) => {
+        if (cancelled) return;
+        setStack((prev) =>
+          prev.kind === 'detail' && prev.item.id === item.id
+            ? { ...prev, detail }
+            : prev,
+        );
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        const text = error instanceof Error ? error.message : '详情加载失败';
+        setMsg(text);
+        toast(text, 'error');
+        setStack((prev) =>
+          prev.kind === 'detail' && prev.item.id === item.id
+            ? { ...prev, detail: item }
+            : prev,
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingDetail(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [stack, queryClient, toast]);
 
   // 切换分类后回到内容顶部，避免停在上一个分类的滚动位置
   useEffect(() => {
@@ -118,75 +358,45 @@ export function MediaScreen() {
     startTransition(() => setStack({ kind: 'hub' }));
   }, [activeTab, tabReselect]);
 
-  const openDetail = useCallback(
-    async (
-      category: MediaCategoryId,
-      item: MediaItem,
-      from: DetailFrom,
-      opts?: {
-        chart?: string;
-        chartTab?: MediaHubTab;
-        chartPage?: number;
-        searchQ?: string;
-        searchPage?: number;
-        person?: MediaCastPerson;
-        personSource?: MediaSourceId;
-        detailBack?: DetailBack;
-      },
-    ) => {
-      const reqId = ++detailReqId.current;
-      setLoadingDetail(true);
-      setMsg('');
-      const base = {
-        kind: 'detail' as const,
-        category,
-        item,
-        from,
-        chart: opts?.chart,
-        chartTab: opts?.chartTab,
-        chartPage: opts?.chartPage,
-        searchQ: opts?.searchQ,
-        searchPage: opts?.searchPage,
-        person: opts?.person,
-        personSource: opts?.personSource,
-        detailBack: opts?.detailBack,
-      };
-      startTransition(() => {
-        if (reqId !== detailReqId.current) return;
-        setStack({ ...base, detail: null });
-      });
-      const cover = proxiedCoverUrl(item.posterUrl);
-      if (cover && typeof window !== 'undefined') {
-        const warm = new window.Image();
-        warm.decoding = 'async';
-        warm.src = cover;
-      }
-      try {
-        const detail = await queryClient.fetchQuery({
-          queryKey: mediaKeys.detail(item.source, item.id, item.mediaType),
-          queryFn: ({ signal }) =>
-            fetchMpDetail({
-              source: item.source,
-              id: item.id,
-              mediaType: item.mediaType,
-              signal,
-            }),
-          staleTime: 5 * 60 * 1000,
-        });
-        if (reqId !== detailReqId.current) return;
-        setStack({ ...base, detail });
-      } catch (e) {
-        if (reqId !== detailReqId.current) return;
-        const text = e instanceof Error ? e.message : '详情加载失败';
-        setMsg(text);
-        toast(text, 'error');
-        setStack({ ...base, detail: item });
-      } finally {
-        if (reqId === detailReqId.current) setLoadingDetail(false);
-      }
+  const openDetail = (
+    category: MediaCategoryId,
+    item: MediaItem,
+    from: DetailFrom,
+    opts?: {
+      chart?: string;
+      chartTab?: MediaHubTab;
+      chartPage?: number;
+      searchQ?: string;
+      searchPage?: number;
+      person?: MediaCastPerson;
+      personSource?: MediaSourceId;
+      detailBack?: DetailBack;
     },
-    [toast, queryClient],
-  );
+  ) => {
+    const cover = proxiedCoverUrl(item.posterUrl);
+    if (cover && typeof window !== 'undefined') {
+      const warm = new window.Image();
+      warm.decoding = 'async';
+      warm.src = cover;
+    }
+    setLoadingDetail(true);
+    setMsg('');
+    pushPage({
+      kind: 'detail',
+      category,
+      item,
+      detail: null,
+      from,
+      chart: opts?.chart,
+      chartTab: opts?.chartTab,
+      chartPage: opts?.chartPage,
+      searchQ: opts?.searchQ,
+      searchPage: opts?.searchPage,
+      person: opts?.person,
+      personSource: opts?.personSource,
+      detailBack: opts?.detailBack,
+    });
+  };
 
   const shelves = hubShelvesFor(hubCategory);
 
@@ -199,7 +409,7 @@ export function MediaScreen() {
             type="button"
             className="media-hub__search-btn"
             aria-label="搜索影视"
-            onClick={() => startTransition(() => setStack({ kind: 'search' }))}
+            onClick={() => pushPage({ kind: 'search' })}
           >
             <Search size={17} strokeWidth={2.4} aria-hidden />
           </button>
@@ -261,13 +471,11 @@ export function MediaScreen() {
                 params={s.params}
                 title={s.title}
                 onOpenAll={() =>
-                  startTransition(() =>
-                    setStack({
-                      kind: 'chart',
-                      tab: hubCategory,
-                      chart: s.key,
-                    }),
-                  )
+                  pushPage({
+                    kind: 'chart',
+                    tab: hubCategory,
+                    chart: s.key,
+                  })
                 }
                 onOpenItem={(item) =>
                   void openDetail(
@@ -294,9 +502,10 @@ export function MediaScreen() {
   if (stack.kind === 'search') {
     push = (
       <AppPush
+        key={`media-search-${source}`}
         title="搜索影视"
         scrollKey={`media-search-${source}`}
-        onBack={() => setStack({ kind: 'hub' })}
+        onBack={() => nav.back()}
       >
         <MediaSearchBody
           source={source}
@@ -326,9 +535,10 @@ export function MediaScreen() {
       hubTabLabel(stack.tab);
     push = (
       <AppPush
+        key={`media-chart-${stack.tab}-${stack.chart || ''}`}
         title={chartTitle}
         scrollKey={`media-chart-${stack.tab}-${stack.chart || ''}`}
-        onBack={() => setStack({ kind: 'hub' })}
+        onBack={() => nav.back()}
       >
         <MediaChartBody
           key={`${stack.tab}-${stack.chart || ''}`}
@@ -361,14 +571,10 @@ export function MediaScreen() {
   } else if (stack.kind === 'person') {
     push = (
       <AppPush
+        key={`media-person-${stack.source}-${stack.person.id}`}
         title={stack.person.name}
         scrollKey={`media-person-${stack.source}-${stack.person.id}`}
-        onBack={() =>
-          setStack({
-            kind: 'detail',
-            ...stack.detailBack,
-          })
-        }
+        onBack={() => nav.back()}
       >
         <MediaPersonBody
           key={`${stack.source}-${stack.person.id}`}
@@ -391,48 +597,29 @@ export function MediaScreen() {
     );
   } else if (stack.kind === 'detail') {
     const show = stack.detail || stack.item;
-    const onBack = () => {
-      if (stack.from === 'person' && stack.person && stack.detailBack) {
-        setStack({
-          kind: 'person',
-          person: stack.person,
-          source: stack.personSource || 'tmdb',
-          detailBack: stack.detailBack,
-        });
-        return;
-      }
-      if (stack.from === 'search') {
-        setStack({ kind: 'search', q: stack.searchQ, page: stack.searchPage });
-      } else if (stack.from === 'chart') {
-        setStack({
-          kind: 'chart',
-          tab: stack.chartTab || 'movie',
-          chart: stack.chart,
-          page: stack.chartPage,
-        });
-      } else setStack({ kind: 'hub' });
-    };
     push = stack.ptOpen ? (
       <AppPush
+        key={`media-pt-${show.source}-${show.id}`}
         title={`PT搜索 · ${stack.ptMode === 'imdbid' ? 'IMDb' : '标题'}`}
         scrollKey={`media-pt-${show.source}-${show.id}`}
-        onBack={() => setStack({ ...stack, ptOpen: false })}
+        onBack={() => nav.back()}
       >
         <MediaPtSearchBody item={show} mode={stack.ptMode || 'title'} />
       </AppPush>
     ) : (
       <AppPush
+        key={`media-detail-${show.source}-${show.id}`}
         title={show.title}
         scrollKey={`media-detail-${show.source}-${show.id}`}
         scrollMode="top"
-        onBack={onBack}
+        onBack={() => nav.back()}
       >
         <MediaDetailBody
           key={`${show.source}-${show.id}`}
           item={show}
           enriching={loadingDetail && !stack.detail}
           onPtSearch={(mode) =>
-            setStack({ ...stack, ptOpen: true, ptMode: mode })
+            pushPage({ ...stack, ptOpen: true, ptMode: mode })
           }
           onOpenRelated={(next) =>
             void openDetail(
@@ -460,24 +647,22 @@ export function MediaScreen() {
                   ? stack.detailBack?.from || 'hub'
                   : stack.from;
               const personSource = show.source;
-              startTransition(() =>
-                setStack({
-                  kind: 'person',
-                  person,
-                  source: personSource,
-                  detailBack: {
-                    category: stack.category,
-                    item: stack.item,
-                    detail: stack.detail,
-                    from,
-                    chart: stack.chart,
-                    chartTab: stack.chartTab,
-                    chartPage: stack.chartPage,
-                    searchQ: stack.searchQ,
-                    searchPage: stack.searchPage,
-                  },
-                }),
-              );
+              pushPage({
+                kind: 'person',
+                person,
+                source: personSource,
+                detailBack: {
+                  category: stack.category,
+                  item: stack.item,
+                  detail: stack.detail,
+                  from,
+                  chart: stack.chart,
+                  chartTab: stack.chartTab,
+                  chartPage: stack.chartPage,
+                  searchQ: stack.searchQ,
+                  searchPage: stack.searchPage,
+                },
+              });
             }
           }
         />

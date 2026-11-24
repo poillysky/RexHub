@@ -6,10 +6,9 @@
  * 04-common      跨页面通用组件（分组 / 导航行 / 状态 / Toast / 主按钮）
  * 05a-media      影视：发现 / 榜单 / 搜索 / 详情
  * 05b-pt-search  影视：PT 站点聚合搜索
- * 05c-media-streams 影视：社区片源与播放器
+ * 05c-media-streams 影视：在线片源与播放器
  * 06-catalog-ai  片商目录 / AI
  * 07b-settings-switches 设置：iOS 开关与表单控件
- * 07c-plugin-center 设置：插件中心 / Stremio
  * 08-misc        全局细化与长按菜单
  * 09-drama       短剧
  * 10-auth        登录注册
@@ -26,7 +25,6 @@
 @import "./styles/05c-media-streams.css";
 @import "./styles/06-catalog-ai.css";
 @import "./styles/07b-settings-switches.css";
-@import "./styles/07c-plugin-center.css";
 @import "./styles/08-misc.css";
 @import "./styles/09-drama.css";
 @import "./styles/10-auth.css";

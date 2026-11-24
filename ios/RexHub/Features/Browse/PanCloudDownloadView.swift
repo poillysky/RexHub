@@ -165,7 +165,7 @@ struct PanCloudDownloadView: View {
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "plus")
-                                    .font(.system(size: 11, weight: .bold))
+                                    .font(.system(.caption2, weight: .bold))
 
                                 Text("添加云下载")
                                     .font(.system(.caption, weight: .semibold))
@@ -174,7 +174,7 @@ struct PanCloudDownloadView: View {
                             }
                             .foregroundStyle(RexColor.onBrand)
                             .padding(.horizontal, 12)
-                            .frame(height: 32)
+                            .frame(minHeight: 32)
                             .background(RexColor.brandGradient, in: Capsule(style: .continuous))
                             .frame(minHeight: RexLayout.minTouch)
                         }
@@ -209,10 +209,10 @@ struct PanCloudDownloadView: View {
                     .font(.system(.caption, weight: isSelected ? .semibold : .regular))
 
                 Text("\(item.count(in: allTasks))")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(.caption2, weight: .semibold))
                     .monospacedDigit()
                     .padding(.horizontal, 4)
-                    .frame(height: 16)
+                    .frame(minHeight: 16)
                     .background(
                         isSelected ? Color.white.opacity(0.24) : RexColor.field,
                         in: Capsule()
@@ -222,7 +222,7 @@ struct PanCloudDownloadView: View {
             .lineLimit(1)
             .minimumScaleFactor(0.8)
             .frame(maxWidth: .infinity)
-            .frame(height: 34)
+            .frame(minHeight: 34)
             .background {
                 Capsule().fill(
                     isSelected
@@ -287,7 +287,7 @@ struct PanCloudDownloadView: View {
 
             VStack(alignment: .trailing, spacing: 0) {
                 Text(statusText(task))
-                    .font(.system(size: 10.5, weight: .semibold))
+                    .font(.system(.caption2, weight: .semibold))
                     .foregroundStyle(statusColor(task))
                     .monospacedDigit()
                     .lineLimit(1)
@@ -299,7 +299,7 @@ struct PanCloudDownloadView: View {
                     menuItems(task)
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(.footnote, weight: .semibold))
                         .foregroundStyle(RexColor.secondaryText)
                         .frame(width: 44, height: 36)
                         .contentShape(Rectangle())
@@ -317,7 +317,7 @@ struct PanCloudDownloadView: View {
         let color = isFile ? RexColor.brandBlue : Color(hex: 0xF5B54A)
 
         return Image(systemName: isFile ? "doc.fill" : "folder.fill")
-            .font(.system(size: 14, weight: .medium))
+            .font(.system(.subheadline, weight: .medium))
             .foregroundStyle(color)
             .frame(width: 30, height: 30)
             .background(
@@ -645,7 +645,7 @@ private struct PanCloudAddSheet: View {
                         dismiss()
                     } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.system(.subheadline, weight: .semibold))
                             .foregroundStyle(RexColor.secondaryText)
                             .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
@@ -663,6 +663,8 @@ private struct PanCloudAddSheet: View {
                 try? await Task.sleep(for: .milliseconds(300))
                 isEditing = true
             }
+            // 已输入链接时防止误下滑关闭，丢掉整段待添加内容。
+            .interactiveDismissDisabled(!text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .rexAlert($alert)
         }
     }
@@ -725,7 +727,7 @@ private struct PanCloudAddSheet: View {
         } label: {
             HStack(spacing: RexSpacing.md) {
                 Image(systemName: "folder.fill")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(.subheadline, weight: .semibold))
                     .foregroundStyle(Color(hex: 0xF5B54A))
                     .frame(width: 32, height: 32)
                     .background(
@@ -745,7 +747,7 @@ private struct PanCloudAddSheet: View {
                     .lineLimit(1)
 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(.system(.caption, weight: .semibold))
                     .foregroundStyle(RexColor.tertiaryText)
             }
             .padding(.horizontal, RexSpacing.lg)

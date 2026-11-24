@@ -496,4 +496,41 @@ html.theme-dark .login-btn-secondary {
 
 html.theme-dark .login-app-icon {
     background: #1c1c1e;
-  }
+}
+
+/* 会话拉取失败（网络 / 服务端不可达）：提示重试，不伪装成未登录 */
+.auth-offline {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px 24px;
+  text-align: center;
+  background: var(--app-bg);
+  color: var(--ink);
+}
+.auth-offline__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+}
+.auth-offline__hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--mute);
+}
+.auth-offline__retry {
+  margin-top: 10px;
+  padding: 9px 22px;
+  border: 0;
+  border-radius: 99px;
+  background: #007aff;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}

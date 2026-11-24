@@ -11,31 +11,26 @@ import {
   type ReactNode,
 } from 'react';
 import { unlockPinnedPage, pinDocumentScroll } from '@/lib/iosKeyboard';
+import {
+  initNavDepth,
+  NAV_EVENT,
+  navPush,
+  rememberedTabUrl,
+  tabFromHash,
+} from './nav/urlNav';
 
 /** 主 Tab：仓库 / 影视 / 片商 / 短剧 / 更多 */
 export const TAB_ROUTES = ['/', '/media', '/makers', '/drama', '/settings'] as const;
 export type TabRoute = (typeof TAB_ROUTES)[number];
 
-// 保持 pathname=/，只用 hash，避免命中 app/*/page 的 redirect
-function tabToUrl(tab: TabRoute): string {
-  if (tab === '/') return '/';
-  return `/#${tab.slice(1)}`;
-}
-
 function readTabFromLocation(): TabRoute | null {
+  if (typeof window === 'undefined') return null;
   const path = window.location.pathname;
-  const hash = window.location.hash.replace(/^#/, '');
-  const HASH_TO_TAB: Record<string, TabRoute> = {
-    media: '/media',
-    makers: '/makers',
-    drama: '/drama',
-    settings: '/settings',
-  };
   if (TAB_ROUTES.includes(path as TabRoute) && path !== '/') {
     return path as TabRoute;
   }
-  if (hash && HASH_TO_TAB[hash]) return HASH_TO_TAB[hash];
-  return null;
+  if (window.location.hash) return tabFromHash(window.location.hash);
+  return '/';
 }
 
 interface TabContextValue {
@@ -50,9 +45,11 @@ interface TabContextValue {
 function subscribeTabLocation(onChange: () => void) {
   window.addEventListener('hashchange', onChange);
   window.addEventListener('popstate', onChange);
+  window.addEventListener(NAV_EVENT, onChange);
   return () => {
     window.removeEventListener('hashchange', onChange);
     window.removeEventListener('popstate', onChange);
+    window.removeEventListener(NAV_EVENT, onChange);
   };
 }
 
@@ -69,17 +66,19 @@ export function TabProvider({ children }: { children: ReactNode }) {
     readTabFromLocation,
     () => null,
   );
-  const [activeTabState, setActiveTab] = useState<TabRoute | null>(null);
-  const [scrollProgressState, setScrollProgress] = useState<number | null>(null);
   const [tabReselect, setTabReselect] = useState(0);
-  const activeTab = activeTabState ?? locatedTab ?? '/';
-  const scrollProgress =
-    scrollProgressState ?? (locatedTab ? TAB_ROUTES.indexOf(locatedTab) : 0);
+  /** 地址栏即 Tab 真相：返回 / 前进跨 Tab 时自动跟随 */
+  const activeTab = locatedTab ?? '/';
+  const scrollProgress = TAB_ROUTES.indexOf(activeTab);
   const activeTabRef = useRef<TabRoute>(activeTab);
 
   useEffect(() => {
     activeTabRef.current = activeTab;
   }, [activeTab]);
+
+  useEffect(() => {
+    initNavDepth();
+  }, []);
 
   const prepareTabSwitch = useCallback(() => {
     const root = document.documentElement;
@@ -119,24 +118,12 @@ export function TabProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      setActiveTab(tab);
-      setScrollProgress(index);
-
-      const url = tabToUrl(tab);
-      if (`${window.location.pathname}${window.location.hash}` !== url) {
-        window.history.replaceState(null, '', url);
-      }
+      // 压一层历史：系统返回可以回到上一个浏览页面；
+      // navPush 会触发 NAV_EVENT，activeTab 随地址栏更新。
+      navPush(rememberedTabUrl(tab));
     },
     [prepareTabSwitch],
   );
-
-  useEffect(() => {
-    if (!locatedTab) return;
-    const url = tabToUrl(locatedTab);
-    if (`${window.location.pathname}${window.location.hash}` !== url) {
-      window.history.replaceState(null, '', url);
-    }
-  }, [locatedTab]);
 
   return (
     <TabCtx.Provider

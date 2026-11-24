@@ -483,6 +483,7 @@ struct NetworkSettingsView: View {
 
     @State private var isLoading = true
     @State private var isSaving = false
+    @State private var isSavingGithub = false
     @State private var isTestingProxy = false
     @State private var isTestingFlare = false
     @State private var alert: RexAlertInfo?
@@ -491,14 +492,32 @@ struct NetworkSettingsView: View {
     @State private var proxyEnabled = false
     @State private var flareUrl = ""
     @State private var flareEnabled = false
+    @State private var ghApiUrl = ""
+    @State private var ghToken = ""
+    @State private var ghTokenSet = false
+    @State private var ghMirror = ""
+    @State private var ghPresets: [GithubMirrorPreset] = []
+
+    private var mirrorPresets: [GithubMirrorPreset] {
+        ghPresets.isEmpty
+            ? [GithubMirrorPreset(url: "", label: "不使用镜像（直连 GitHub）")]
+            : ghPresets
+    }
+
+    private var mirrorOptions: [String] {
+        mirrorPresets.map(\.url)
+    }
+
+    private func mirrorLabel(_ url: String) -> String {
+        mirrorPresets.first { $0.url == url }?.label
+            ?? (url.isEmpty ? "不使用镜像（直连 GitHub）" : url)
+    }
 
     var body: some View {
         SettingsPage(title: "网络代理") {
             if isLoading {
                 RexSkeleton(width: .infinity, height: 120, cornerRadius: RexRadius.panel)
             } else {
-                RexNote(text: "代理用于服务端访问外部站点；修改后会自动重启走代理的插件。")
-
                 SettingsCard {
                     SettingsSwitchRow(title: "启用 HTTP 代理", isOn: $proxyEnabled)
                         .disabled(!isAdmin)
@@ -545,35 +564,81 @@ struct NetworkSettingsView: View {
                             .disabled(isTestingFlare || isSaving || flareUrl.isEmpty)
                         }
 
-                        Button {
-                            Task { await save() }
-                        } label: {
-                            HStack(spacing: RexSpacing.sm) {
-                                if isSaving {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                        .tint(RexColor.onBrand)
-                                }
-                                Text("保存网络配置")
-                            }
-                            .font(.system(.subheadline, weight: .semibold))
-                            .foregroundStyle(RexColor.onBrand)
-                            .frame(maxWidth: .infinity, minHeight: 48)
-                            .background(
-                                RexColor.brandGradient,
-                                in: RoundedRectangle(cornerRadius: RexRadius.control, style: .continuous)
-                            )
+                        actionButton(title: "保存网络配置", isLoading: isSaving) {
+                            await save()
                         }
-                        .buttonStyle(PressableButtonStyle())
-                        .disabled(isSaving || isTestingProxy || isTestingFlare)
+                        .disabled(isSaving || isSavingGithub || isTestingProxy || isTestingFlare)
                     }
                 } else {
                     RexNote(text: "当前账号不是管理员，只能查看配置。")
+                }
+
+                SettingsSection(title: "GitHub API") {
+                    SettingsInputRow(
+                        icon: "chevron.left.forwardslash.chevron.right",
+                        title: "API 地址",
+                        placeholder: "https://api.github.com",
+                        text: $ghApiUrl,
+                        keyboard: .URL
+                    )
+                    .disabled(!isAdmin)
+
+                    SettingsDivider()
+
+                    SettingsInputRow(
+                        icon: "key",
+                        title: "Token",
+                        placeholder: ghTokenSet ? "已配置，留空不改" : "可选，留空匿名访问",
+                        text: $ghToken,
+                        isSecure: true,
+                        contentType: .password
+                    )
+                    .disabled(!isAdmin)
+                }
+
+                SettingsSection(title: "GitHub 加速镜像") {
+                    SettingsMenuRow(
+                        title: "镜像",
+                        options: mirrorOptions,
+                        label: { mirrorLabel($0) },
+                        selection: $ghMirror
+                    )
+                    .disabled(!isAdmin)
+                }
+
+                if isAdmin {
+                    actionButton(title: "保存 GitHub 配置", isLoading: isSavingGithub) {
+                        await saveGithub()
+                    }
+                    .disabled(isSaving || isSavingGithub || isTestingProxy || isTestingFlare)
                 }
             }
         }
         .task { await load() }
         .rexAlert($alert)
+    }
+
+    private func actionButton(title: String, isLoading: Bool, action: @escaping () async -> Void) -> some View {
+        Button {
+            Task { await action() }
+        } label: {
+            HStack(spacing: RexSpacing.sm) {
+                if isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(RexColor.onBrand)
+                }
+                Text(title)
+            }
+            .font(.system(.subheadline, weight: .semibold))
+            .foregroundStyle(RexColor.onBrand)
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .background(
+                RexColor.brandGradient,
+                in: RoundedRectangle(cornerRadius: RexRadius.control, style: .continuous)
+            )
+        }
+        .buttonStyle(PressableButtonStyle())
     }
 
     private func probeButton(title: String, isLoading: Bool, action: @escaping () async -> Void) -> some View {
@@ -619,10 +684,19 @@ struct NetworkSettingsView: View {
             proxyEnabled = settings.proxyEnabled ?? false
             flareUrl = settings.flareSolverrUrl ?? ""
             flareEnabled = settings.flareSolverrEnabled ?? false
+            applyGithub(settings)
         } catch {
             if let apiError = error as? APIError, apiError == .cancelled { return }
             alert = .failure(error.localizedDescription, title: "加载失败")
         }
+    }
+
+    private func applyGithub(_ settings: NetworkSettings) {
+        ghApiUrl = settings.githubApiUrl ?? "https://api.github.com"
+        ghToken = ""
+        ghTokenSet = settings.githubTokenSet ?? false
+        ghMirror = settings.githubMirror ?? ""
+        ghPresets = settings.githubMirrorPresets ?? []
     }
 
     private func save() async {
@@ -645,6 +719,32 @@ struct NetworkSettingsView: View {
             )
             RexHaptics.success()
             alert = .success("网络配置已保存")
+        } catch {
+            RexHaptics.error()
+            alert = .failure(error.localizedDescription)
+        }
+    }
+
+    private func saveGithub() async {
+        guard let apiClient, !isSavingGithub else { return }
+        isSavingGithub = true
+        alert = nil
+        defer { isSavingGithub = false }
+
+        do {
+            let body = NetworkSaveBody(
+                githubApiUrl: ghApiUrl.trimmingCharacters(in: .whitespacesAndNewlines),
+                githubToken: ghToken.trimmingCharacters(in: .whitespacesAndNewlines),
+                githubMirror: ghMirror
+            )
+            let saved = try await apiClient.putSettings(
+                "api/settings/network",
+                json: try JSONEncoder().encode(body),
+                as: NetworkSettings.self
+            )
+            applyGithub(saved)
+            RexHaptics.success()
+            alert = .success("GitHub 配置已保存")
         } catch {
             RexHaptics.error()
             alert = .failure(error.localizedDescription)

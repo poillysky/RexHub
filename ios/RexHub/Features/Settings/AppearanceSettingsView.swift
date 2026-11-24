@@ -102,7 +102,7 @@ struct AppearanceSettingsView: View {
                     .lineLimit(1)
 
                 Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(.caption, weight: .medium))
                     .foregroundStyle(RexColor.tertiaryText)
             }
             .padding(.horizontal, RexSpacing.lg)
@@ -158,7 +158,7 @@ struct AppearanceSettingsView: View {
 
                         if option == theme.brandColor {
                             Image(systemName: "checkmark")
-                                .font(.system(size: 13, weight: .bold))
+                                .font(.system(.footnote, weight: .bold))
                                 .foregroundStyle(RexColor.onBrand)
                                 .transition(.scale.combined(with: .opacity))
                         }
@@ -207,7 +207,7 @@ struct AppearanceSettingsView: View {
                         .overlay(alignment: .bottomTrailing) {
                             if theme.logoStyle == option {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .font(.system(size: 18))
+                                    .font(.system(.headline))
                                     .symbolRenderingMode(.palette)
                                     .foregroundStyle(RexColor.onBrand, RexColor.brandBlue)
                                     .padding(4)
@@ -258,7 +258,7 @@ private struct IconLibraryView: View {
             SettingsCard {
                 HStack(spacing: RexSpacing.md) {
                     Image(systemName: "link")
-                        .font(.system(size: 17))
+                        .font(.system(.body))
                         .foregroundStyle(RexColor.brandBlue)
                         .frame(width: 28)
 
@@ -335,7 +335,7 @@ private struct IconLibraryView: View {
             } label: {
                 HStack(spacing: RexSpacing.md) {
                     Image(systemName: "square.grid.2x2")
-                        .font(.system(size: 15, weight: .medium))
+                        .font(.system(.subheadline, weight: .medium))
                         .foregroundStyle(RexColor.brandBlue)
                         .frame(width: 34, height: 34)
                         .background(
@@ -360,7 +360,7 @@ private struct IconLibraryView: View {
 
                     if kind.hasPreview {
                         Image(systemName: "eye")
-                            .font(.system(size: 14, weight: .medium))
+                            .font(.system(.subheadline, weight: .medium))
                             .foregroundStyle(RexColor.secondaryText)
                     }
                 }
@@ -375,7 +375,7 @@ private struct IconLibraryView: View {
                 Task { await remove(url) }
             } label: {
                 Image(systemName: "trash")
-                    .font(.system(size: 15))
+                    .font(.system(.subheadline))
                     .foregroundStyle(RexColor.secondaryText)
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())

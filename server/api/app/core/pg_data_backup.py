@@ -8,6 +8,7 @@ import time
 import uuid
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import RLock
@@ -17,6 +18,11 @@ import psycopg
 from psycopg import sql
 
 from app.core.db import ROOT
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - 仅 Windows 本地开发没有 fcntl
+    fcntl = None  # type: ignore[assignment]
 
 logger = logging.getLogger("app.pg_data_backup")
 
@@ -67,10 +73,30 @@ TABLES_BY_KIND: dict[str, tuple[str, ...]] = {
 
 _SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,180}$")
 _WORKERS = 3
-# 导出/导入/上传串行执行：避免临时目录互相覆盖，也避免并发 TRUNCATE 同一批表
+# 导出/导入/上传串行执行：避免临时目录互相覆盖，也避免并发 TRUNCATE 同一批表。
+# RLock 只在本进程内生效，多 worker / 多实例共用备份目录时仍需文件锁兜底。
 _OP_LOCK = RLock()
+_ROOT_DIR = ROOT / "backups"
 
-# 进度按 kind 单槽上报：_OP_LOCK 已保证同类操作串行，无需 jobId / 任务系统
+
+@contextmanager
+def _op_lock(kind: str):
+    """同类备份操作串行：进程内 RLock + 同目录文件锁（跨进程 / 跨实例）。"""
+    with _OP_LOCK:
+        if fcntl is None:
+            yield
+            return
+        _ROOT_DIR.mkdir(parents=True, exist_ok=True)
+        safe = re.sub(r"[^A-Za-z0-9_.-]", "_", kind)
+        lock_path = _ROOT_DIR / f".{safe}.oplock"
+        with open(lock_path, "a+") as fh:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+
+# 进度按 kind 单槽上报：同类操作已串行，无需 jobId / 任务系统
 _PROGRESS_LOCK = RLock()
 _progress: dict[str, dict[str, Any]] = {}
 
@@ -185,7 +211,7 @@ def _cleanup_other_zips(kind: str, keep: Path) -> None:
 
 
 def export_resource_zip(dsn: str, *, kind: str = KIND_RESOURCE) -> dict[str, Any]:
-    with _OP_LOCK:
+    with _op_lock(kind):
         # 拿到锁再上报进度，避免排队请求把正在运行的那次进度重置
         _set_progress(kind, action="export", percent=0, message="准备导出")
         try:
@@ -401,7 +427,7 @@ def import_uploaded_zip(
     root = backups_root(kind)
     dest = root / canonical_zip_name(kind)
     tmp = root / f".upload_{uuid.uuid4().hex}.partial.zip"
-    with _OP_LOCK:
+    with _op_lock(kind):
         _set_progress(kind, action="import", percent=0, message="接收上传文件")
         try:
             written = 0
@@ -459,7 +485,7 @@ def import_resource_zip(dsn: str, filename: str, *, kind: str = KIND_RESOURCE) -
     if not dsn:
         raise ValueError("DSN 未配置")
     zip_path = _safe_backup_path(kind, filename)
-    with _OP_LOCK:
+    with _op_lock(kind):
         _set_progress(kind, action="import", percent=0, message="准备导入")
         try:
             return _import_zip_path(dsn, zip_path, kind=kind, filename=zip_path.name)

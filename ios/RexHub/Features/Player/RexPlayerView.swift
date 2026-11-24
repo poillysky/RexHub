@@ -1,11 +1,10 @@
-import AVFoundation
 import KSPlayer
 import SwiftUI
 import UIKit
 
 /// 网盘播放器：先向服务端换取临时直链，再让播放内核直连 115 CDN。
 /// 服务端只返回 URL 与请求头，不代理视频字节流。
-/// 画面与交互统一交给 `RexPlayerChrome`，AVPlayer 与 KSPlayer 只负责解码与渲染。
+/// 画面与交互统一交给 `RexPlayerChrome`，KSPlayer 只负责解码与渲染。
 /// 传入 `playlist` 后，开启「自动连播下一集」时会在播完后切到目录里的下一个视频。
 struct RexPlayerView: View {
     let item: PanItem
@@ -19,12 +18,16 @@ struct RexPlayerView: View {
 
     @State private var activeItem: PanItem
     @State private var engine: (any RexPlaybackEngine)?
-    /// 换内核或换下一集时变化，强制重建画面层，画中画也能重新绑定新的 `AVPlayerLayer`。
+    /// 换下一集时变化，强制重建画面层，画中画也能重新绑定新的图层。
     @State private var engineToken = UUID()
     @State private var phase: Phase = .loading
     @State private var didReachOutro = false
-    @State private var subtitleCues: [SubtitleCue] = []
-    @State private var subtitleText = ""
+    /// 本次播放的直链信息，运行期解码失败时据此换软解重开一次。
+    @State private var playInfo: PanPlayInfo?
+    /// 当前内核是否已经在走软件解码，避免重复回退。
+    @State private var isSoftwareDecoding = false
+    /// 每次进入播放页只自动回退一次软解，仍失败就交给用户决定。
+    @State private var didFallbackToSoftwareDecode = false
     /// 本次进入播放页是否由「自动横屏」转了过去，退出时据此恢复竖屏。
     @State private var didAutoRotate = false
     /// 自动横屏的判定任务，退出播放页时取消，避免转场后误转方向。
@@ -55,7 +58,7 @@ struct RexPlayerView: View {
                             .tint(RexColor.onMedia)
 
                         Text("正在解析播放地址…")
-                            .font(.system(size: 14))
+                            .font(.system(.subheadline))
                             .foregroundStyle(RexColor.onMedia.opacity(0.75))
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -65,7 +68,7 @@ struct RexPlayerView: View {
                         dismiss()
                     } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.system(.callout, weight: .semibold))
                             .foregroundStyle(RexColor.onMedia.opacity(0.9))
                             .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
@@ -84,7 +87,7 @@ struct RexPlayerView: View {
 
                         RexPlayerChrome(
                             title: activeItem.name,
-                            subtitleText: subtitleText,
+                            subtitleText: engine.state.subtitleText,
                             playlist: playlist,
                             currentItemID: activeItem.id,
                             onClose: { dismiss() },
@@ -102,6 +105,10 @@ struct RexPlayerView: View {
             await resolve()
         }
         .onAppear(perform: enableAutoLandscape)
+        .onChange(of: engine?.state.failureMessage) { _, message in
+            guard message != nil else { return }
+            fallbackToSoftwareDecodeIfNeeded()
+        }
         .onChange(of: scenePhase) { _, newPhase in
             // 切后台先把进度落盘，进程被系统回收后再回来仍能续播。
             if newPhase != .active {
@@ -122,15 +129,10 @@ struct RexPlayerView: View {
         .preferredColorScheme(.dark)
     }
 
-    /// 两个内核共用同一套控制层，这里只按引擎类型挑对应的画面层。
+    /// 画面层由 KSPlayer 输出，交互统一交给控制层。
     @ViewBuilder
     private func surface(_ engine: any RexPlaybackEngine) -> some View {
-        if let av = engine as? AVPlayerEngine {
-            RexAVPlayerSurface(player: av.player) { layer in
-                av.attach(playerLayer: layer)
-            }
-            .ignoresSafeArea()
-        } else if let ks = engine as? KSPlayerEngine {
+        if let ks = engine as? KSPlayerEngine {
             KSVideoPlayer(coordinator: ks.coordinator, url: ks.url, options: ks.options)
                 .ignoresSafeArea()
         }
@@ -139,11 +141,11 @@ struct RexPlayerView: View {
     private func failureView(_ message: String) -> some View {
         VStack(spacing: RexSpacing.lg) {
             Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 28, weight: .medium))
+                .font(.system(.title, weight: .medium))
                 .foregroundStyle(RexColor.warning)
 
             Text(message)
-                .font(.system(size: 14))
+                .font(.system(.subheadline))
                 .foregroundStyle(RexColor.onMedia.opacity(0.8))
                 .multilineTextAlignment(.center)
                 .lineSpacing(2)
@@ -152,7 +154,7 @@ struct RexPlayerView: View {
                 Task { await resolve() }
             } label: {
                 Text("重试")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(.subheadline, weight: .semibold))
                     .foregroundStyle(RexColor.onBrand)
                     .frame(width: 160, height: 44)
                     .background(
@@ -166,7 +168,7 @@ struct RexPlayerView: View {
                 dismiss()
             } label: {
                 Text("返回")
-                    .font(.system(size: 14))
+                    .font(.system(.subheadline))
                     .foregroundStyle(RexColor.onMedia.opacity(0.7))
                     .frame(minWidth: 88, minHeight: 44)
             }
@@ -210,12 +212,14 @@ struct RexPlayerView: View {
 
     // MARK: - 解析与播放
 
-    private func resolve() async {
+    private func resolve(forceSoftwareDecode: Bool = false) async {
         phase = .loading
         teardownEngine()
         didReachOutro = false
-        subtitleCues = []
-        subtitleText = ""
+        // 用户手动重试时重新给一次自动回退机会。
+        if !forceSoftwareDecode {
+            didFallbackToSoftwareDecode = false
+        }
 
         do {
             let info: PanPlayInfo
@@ -240,48 +244,33 @@ struct RexPlayerView: View {
             let start = startPosition(for: settings)
             // 上次记录的时长一起塞给内核，进入播放页时进度条直接落在续播位置，不用等元数据再跳。
             let savedDuration = settings.savedDuration(for: activeItem.pickcode)
-            let route = await PlayerFacade.resolveRoute(for: info)
-            let newEngine: any RexPlaybackEngine
-
-            if route.kernel == .ksPlayer {
-                let videoName = (activeItem.name as NSString).deletingPathExtension
-                let subtitleURLs = settings.subtitlesEnabled
-                    ? SubtitleLoader.urls(
-                        sources: settings.subtitleSources,
-                        videoName: videoName,
-                        language: settings.subtitleLanguage
-                    )
-                    : []
-                let ks = KSPlayerEngine(
-                    url: info.url,
-                    options: PlayerFacade.makeKSOptions(
-                        for: info,
-                        startTime: start,
-                        forceSoftwareDecode: route.forceSoftwareDecode
-                    ),
-                    subtitleURLs: subtitleURLs,
-                    rate: settings.playbackRate,
-                    isMuted: settings.startMuted
+            let route = await PlayerFacade.resolveRoute(
+                for: info,
+                forceSoftwareDecode: forceSoftwareDecode
+            )
+            playInfo = info
+            isSoftwareDecoding = route.forceSoftwareDecode
+            let videoName = (activeItem.name as NSString).deletingPathExtension
+            let subtitleURLs = settings.subtitlesEnabled
+                ? SubtitleLoader.urls(
+                    sources: settings.subtitleSources,
+                    videoName: videoName,
+                    language: settings.subtitleLanguage
                 )
-                ks.state.currentTime = start
-                ks.state.duration = savedDuration
-                newEngine = ks
-            } else {
-                let av = AVPlayerEngine(
-                    player: PlayerFacade.makePlayer(for: info),
-                    rate: settings.playbackRate
-                )
-                av.state.currentTime = start
-                av.state.duration = savedDuration
-                if start >= 5 {
-                    await av.player.seek(to: CMTime(seconds: start, preferredTimescale: 600))
-                    av.state.currentTime = start
-                }
-                if settings.autoPlay {
-                    av.play()
-                }
-                newEngine = av
-            }
+                : []
+            let newEngine = KSPlayerEngine(
+                url: info.url,
+                options: PlayerFacade.makeKSOptions(
+                    for: info,
+                    startTime: start,
+                    route: route
+                ),
+                subtitleURLs: subtitleURLs,
+                rate: settings.playbackRate,
+                isMuted: false
+            )
+            newEngine.state.currentTime = start
+            newEngine.state.duration = savedDuration
 
             installCallbacks(for: newEngine)
             newEngine.refreshTracks()
@@ -289,16 +278,20 @@ struct RexPlayerView: View {
             engine = newEngine
             engineToken = UUID()
             phase = .ready
-
-            if newEngine is AVPlayerEngine {
-                await loadSubtitles()
-            }
         } catch let error as APIError {
             guard error != .cancelled else { return }
             phase = .failed(error.errorDescription ?? "获取播放地址失败，请重试")
         } catch {
             phase = .failed("获取播放地址失败，请重试")
         }
+    }
+
+    /// 硬解兼容性问题通常在真正开播后才暴露：KSAVPlayer 报错时自动换 FFmpeg 软解重开一次，
+    /// 不提供手动开关，避免用户面对「解码方式」这种不该操心的选项。
+    private func fallbackToSoftwareDecodeIfNeeded() {
+        guard !isSoftwareDecoding, !didFallbackToSoftwareDecode, playInfo != nil else { return }
+        didFallbackToSoftwareDecode = true
+        Task { await resolve(forceSoftwareDecode: true) }
     }
 
     /// 起播位置：优先续播进度，没有进度时按「跳过片头」直接跳到设定秒数。
@@ -308,14 +301,9 @@ struct RexPlayerView: View {
         return settings.skipIntro ? Double(settings.introSeconds) : 0
     }
 
-    /// 两个内核统一回调：进度用于 AV 外部字幕与片尾判定，结束统一走 `handlePlaybackEnded`。
+    /// 进度用于片尾判定，结束统一走 `handlePlaybackEnded`。
     private func installCallbacks(for engine: any RexPlaybackEngine) {
-        let updatesExternalSubtitles = engine is AVPlayerEngine
-
         engine.onTick = { current, total in
-            if updatesExternalSubtitles {
-                updateSubtitle(at: current)
-            }
             finishIfOutroReached(current: current, total: total)
         }
 
@@ -324,10 +312,10 @@ struct RexPlayerView: View {
         }
     }
 
-    /// 跳过片尾：剩余时间进入设定区间时直接收尾，循环播放优先。
+    /// 跳过片尾：剩余时间进入设定区间时直接收尾。
     private func finishIfOutroReached(current: Double, total: Double) {
         let settings = PlayerSettingsStore.shared
-        guard settings.skipOutro, !settings.loopPlayback, !didReachOutro else { return }
+        guard settings.skipOutro, !didReachOutro else { return }
         guard total.isFinite, total > 0, current.isFinite else { return }
         guard total - current <= Double(settings.outroSeconds) else { return }
 
@@ -336,16 +324,9 @@ struct RexPlayerView: View {
         handlePlaybackEnded()
     }
 
-    /// 一集真正结束：循环优先，其次连播下一集，最后按设置关闭播放页。
+    /// 一集真正结束：优先连播下一集，没有下一集就关闭播放页。
     private func handlePlaybackEnded() {
         let settings = PlayerSettingsStore.shared
-
-        if settings.loopPlayback {
-            didReachOutro = false
-            engine?.seek(to: 0)
-            engine?.play()
-            return
-        }
 
         savePlaybackPosition()
 
@@ -353,9 +334,7 @@ struct RexPlayerView: View {
             switchTo(next)
             return
         }
-        if settings.autoCloseOnFinish {
-            dismiss()
-        }
+        dismiss()
     }
 
     /// 当前目录里的下一个视频；没有播放列表或已是最后一个时返回 `nil`。
@@ -370,8 +349,6 @@ struct RexPlayerView: View {
     private func switchTo(_ next: PanItem) {
         savePlaybackPosition()
         teardownEngine()
-        subtitleCues = []
-        subtitleText = ""
         didReachOutro = false
         activeItem = next
         Task { await resolve() }
@@ -380,41 +357,6 @@ struct RexPlayerView: View {
     private func teardownEngine() {
         engine?.teardown()
         engine = nil
-    }
-
-    // MARK: - 字幕
-
-    private func updateSubtitle(at time: TimeInterval) {
-        let settings = PlayerSettingsStore.shared
-        guard settings.subtitlesEnabled, time.isFinite else {
-            if !subtitleText.isEmpty { subtitleText = "" }
-            return
-        }
-
-        let adjusted = time - settings.subtitleDelay
-        let text = subtitleCues.last(where: { $0.contains(adjusted) })?.text ?? ""
-        if text != subtitleText {
-            subtitleText = text
-        }
-    }
-
-    /// 依次尝试已配置的 HTTP 字幕源，取第一个可解析的结果。
-    private func loadSubtitles() async {
-        let settings = PlayerSettingsStore.shared
-        guard settings.subtitlesEnabled, !settings.subtitleSources.isEmpty else { return }
-
-        let videoName = (activeItem.name as NSString).deletingPathExtension
-        let cues = await SubtitleLoader.load(
-            sources: settings.subtitleSources,
-            videoName: videoName,
-            language: settings.subtitleLanguage
-        )
-        guard settings.subtitlesEnabled else { return }
-
-        subtitleCues = cues
-        if let current = engine?.state.currentTime {
-            updateSubtitle(at: current)
-        }
     }
 
     /// 关闭页面或切集时记录进度；已播到结尾或已跳过片尾则清除，下次从头开始。

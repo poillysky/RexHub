@@ -5,6 +5,7 @@
 """
 
 import hashlib
+import re
 import time
 from typing import Any
 
@@ -54,6 +55,21 @@ router = APIRouter(tags=["moviepilot"], dependencies=[Depends(require_session)])
 
 def _wrap(data: Any, message: str = "ok", status: int = 200) -> dict[str, Any]:
     return {"data": data, "message": message, "status": status}
+
+
+_MERGE_NOISE_RE = re.compile(r"[^0-9a-z\u4e00-\u9fff]+")
+
+
+def _merge_key(item: dict[str, Any]) -> str:
+    """跨站点合并键：规范化标题（小写、去标点与空格）。
+
+    同一资源在不同站点的标题可能只差标点/空格，体积也可能因统计口径有几百字节
+    差异，所以体积不参与合并键；标题为空时退化为标题+体积，避免误合并。
+    """
+    title = _MERGE_NOISE_RE.sub("", str(item.get("title") or "").lower())
+    if title:
+        return title
+    return f"|{item.get('size') or 0}"
 
 
 @router.post("/moviepilot/test")
@@ -503,22 +519,41 @@ def moviepilot_search(
         rows.extend(chunk)
 
     items: list[dict[str, Any]] = []
-    # 跨站点合并：同名同体积视为同一资源，站点并列，做种/下载取最大，促销取最优
+    # 跨站点合并：规范化标题相同即视为同一资源，站点并列，做种/下载取最大，促销取最优
     merged: dict[str, dict[str, Any]] = {}
     order: list[str] = []
     raw_candidates: dict[str, list[tuple[dict[str, Any], dict[str, Any]]]] = {}
+    # 每个站点来源的明细，供前端「更多来源」弹窗展示与单站下载
+    variant_rows: dict[str, list[tuple[dict[str, Any], tuple[dict[str, Any], dict[str, Any]]]]] = {}
     for raw in rows if isinstance(rows, list) else []:
         item = _normalize_torrent(raw)
         if not item:
             continue
-        uniq = f"{item['title'].lower()}|{item['size'] or 0}"
+        uniq = _merge_key(item)
         raw_torrent = raw.get("torrent_info")
+        candidate: tuple[dict[str, Any], dict[str, Any]] | None = None
         if isinstance(raw_torrent, dict):
             raw_media = raw.get("media_info")
-            raw_candidates.setdefault(uniq, []).append(
-                (raw_torrent, raw_media if isinstance(raw_media, dict) else {})
-            )
+            candidate = (raw_torrent, raw_media if isinstance(raw_media, dict) else {})
+            raw_candidates.setdefault(uniq, []).append(candidate)
         site = item.get("site") or ""
+        source_rows = variant_rows.setdefault(uniq, [])
+        if candidate and site and all(v["site"] != site for v, _ in source_rows):
+            source_rows.append(
+                (
+                    {
+                        "site": site,
+                        "size": item.get("size"),
+                        "seeders": item.get("seeders") or 0,
+                        "peers": item.get("peers") or 0,
+                        "volumeFactor": item.get("volumeFactor"),
+                        "downloadVolumeFactor": item.get("downloadVolumeFactor"),
+                        "hitAndRun": bool(item.get("hitAndRun")),
+                        "pageUrl": item.get("pageUrl"),
+                    },
+                    candidate,
+                )
+            )
         cur = merged.get(uniq)
         if cur is None:
             item["sites"] = [site] if site else []
@@ -557,11 +592,24 @@ def moviepilot_search(
         token = hashlib.sha1(key.encode("utf-8")).hexdigest()[:24]
         merged[key]["downloadKey"] = token
         _download_cache[token] = (now, raw_candidates.get(key, []))
-    if len(_download_cache) > 1024:
+
+        # 每个站点来源单独一个令牌，前端可从指定站点直接下载
+        sources: list[dict[str, Any]] = []
+        for index, (variant, candidate) in enumerate(variant_rows.get(key, [])):
+            variant_token = hashlib.sha1(
+                f"{key}|{variant['site']}|{index}".encode("utf-8")
+            ).hexdigest()[:24]
+            variant["downloadKey"] = variant_token
+            _download_cache[variant_token] = (now, [candidate])
+            sources.append(variant)
+        merged[key]["variants"] = sources
+
+    # 来源明细会让缓存条目成倍增加，放宽清理阈值，避免刚搜完就被清空
+    if len(_download_cache) > 8192:
         for token, (saved_at, _) in list(_download_cache.items()):
             if now - saved_at > _DOWNLOAD_CACHE_TTL_S:
                 _download_cache.pop(token, None)
-        if len(_download_cache) > 1024:
+        if len(_download_cache) > 8192:
             _download_cache.clear()
 
     data = {

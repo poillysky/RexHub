@@ -153,6 +153,8 @@ struct RexNavBar: View {
     var groupsActions: Bool = false
     /// 页面是否已滚动；由 `rexScrollTracking` 驱动。
     var isScrolled: Bool = false
+    /// 右侧自定义控件（如年份下拉胶囊）；有值时替代 `actions` 渲染。
+    var trailing: AnyView? = nil
 
     private let theme = RexThemeStore.shared
 
@@ -190,7 +192,11 @@ struct RexNavBar: View {
 
                 Spacer(minLength: 0)
 
-                actionsView
+                if let trailing {
+                    trailing
+                } else {
+                    actionsView
+                }
             }
             .padding(.horizontal, RexSpacing.md)
         }
@@ -256,7 +262,7 @@ struct RexNavBar: View {
         case .back(let action):
             Button(action: action) {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.system(.body, weight: .semibold))
                     .foregroundStyle(RexColor.brandBlue)
                     .frame(width: 36, height: 36)
                     .contentShape(Circle())
@@ -267,7 +273,7 @@ struct RexNavBar: View {
         case .text(let text, let action):
             Button(action: action) {
                 Text(text)
-                    .font(.system(size: 15))
+                    .font(.system(.subheadline))
                     .foregroundStyle(RexColor.brandBlue)
                     .frame(minWidth: 44, minHeight: 44)
                     .contentShape(Rectangle())
@@ -277,11 +283,11 @@ struct RexNavBar: View {
         case .pill(let text, let action):
             Button(action: action) {
                 Text(text)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(.footnote, weight: .medium))
                     .foregroundStyle(RexColor.primaryText)
                     .lineLimit(1)
                     .padding(.horizontal, RexSpacing.md)
-                    .frame(height: 36)
+                    .frame(minHeight: 36)
                     .background(RexColor.surface, in: Capsule(style: .continuous))
                     .overlay(
                         Capsule(style: .continuous)
@@ -343,7 +349,7 @@ private struct RexNavBarButton: View {
         let isSmall = action.showsOutline || action.showsCircleOutline
 
         return Image(systemName: action.systemImage)
-            .font(.system(size: isSmall ? 14 : 17, weight: .semibold))
+            .font(.system(isSmall ? .footnote : .body, weight: .semibold))
             .foregroundStyle(tint)
             .frame(width: isSmall ? 26 : 36, height: isSmall ? 26 : 36)
             .background {
@@ -440,7 +446,7 @@ private struct RexSearchFieldPlaceholder: View {
     var body: some View {
         HStack(spacing: RexSpacing.sm) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 15, weight: .medium))
+                .font(.system(.subheadline, weight: .medium))
                 .foregroundStyle(RexColor.secondaryText)
 
             Text(placeholder)
@@ -478,7 +484,7 @@ struct RexSearchField: View {
     var body: some View {
         HStack(spacing: RexSpacing.sm) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 15, weight: .medium))
+                .font(.system(.subheadline, weight: .medium))
                 .foregroundStyle(RexColor.secondaryText)
 
             TextField(placeholder, text: $text)
@@ -496,7 +502,7 @@ struct RexSearchField: View {
                     text = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 15))
+                        .font(.system(.subheadline))
                         .foregroundStyle(RexColor.secondaryText)
                         .frame(width: 32, height: 44)
                         .contentShape(Rectangle())

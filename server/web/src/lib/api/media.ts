@@ -1,7 +1,7 @@
 /**
- * 影视搜索 / 详情 / 片源 / 字幕（MoviePilot + Stremio addon + MorePlay）
+ * 影视搜索 / 详情 / 片源（MoviePilot + MorePlay）
  *
- * 榜单与详情统一走 MoviePilot 原生接口；片源与字幕聚合已启用的 Stremio 插件。
+ * 榜单与详情统一走 MoviePilot 原生接口；在线片源由插件中心的 MorePlay 能力提供。
  */
 import { API_BASE, apiFetch, parseError } from './client';
 
@@ -160,7 +160,7 @@ export async function fetchMpMediaSearch(opts: {
   };
 }
 
-/* —— Stremio 片源（网页播放）—— */
+/* —— 在线片源（网页播放）—— */
 
 export type MediaStream = {
   addon: string;
@@ -183,36 +183,6 @@ export type MediaStreamsResult = {
   addons: number;
   reason: string;
 };
-
-/** 聚合影视类插件与已启用 Stremio 插件的片源；剧集默认取第 1 季第 1 集。 */
-export async function fetchMediaStreams(opts: {
-  id: string;
-  imdbId?: string | null;
-  mediaType?: 'movie' | 'tv';
-  season?: number;
-  episode?: number;
-  title?: string;
-  signal?: AbortSignal;
-}): Promise<MediaStreamsResult> {
-  const params = new URLSearchParams();
-  params.set('id', opts.id);
-  if (opts.imdbId) params.set('imdb', opts.imdbId);
-  if (opts.title) params.set('title', opts.title);
-  if (opts.mediaType) {
-    params.set('mediaType', opts.mediaType === 'tv' ? 'series' : 'movie');
-  }
-  if (opts.season && opts.season > 0) params.set('season', String(opts.season));
-  if (opts.episode && opts.episode > 0) params.set('episode', String(opts.episode));
-  const res = await apiFetch(`/media/streams?${params}`, { signal: opts.signal });
-  if (!res.ok) throw new Error(await parseError(res));
-  const data = (await res.json()) as Partial<MediaStreamsResult>;
-  return {
-    streams: Array.isArray(data.streams) ? data.streams : [],
-    total: Number(data.total || 0),
-    addons: Number(data.addons || 0),
-    reason: String(data.reason || ''),
-  };
-}
 
 /** 视频直链走同源代理，透传 Range 以便拖动进度条。 */
 export function mediaStreamProxyUrl(url: string): string {
@@ -313,53 +283,6 @@ export async function streamMoreplayStreams(
   } finally {
     void reader.cancel().catch(() => {});
   }
-}
-
-export type MediaSubtitle = {
-  addon: string;
-  addonSlug: string;
-  id: string;
-  url: string;
-  lang: string;
-  label: string;
-};
-
-export type MediaSubtitlesResult = {
-  subtitles: MediaSubtitle[];
-  total: number;
-  reason: string;
-};
-
-/** 聚合已启用字幕插件的字幕；返回的是上游字幕地址，播放时走字幕代理。 */
-export async function fetchMediaSubtitles(opts: {
-  id: string;
-  imdbId?: string | null;
-  mediaType?: 'movie' | 'tv' | 'series';
-  season?: number;
-  episode?: number;
-  signal?: AbortSignal;
-}): Promise<MediaSubtitlesResult> {
-  const params = new URLSearchParams();
-  params.set('id', opts.id);
-  if (opts.imdbId) params.set('imdb', opts.imdbId);
-  if (opts.mediaType) {
-    params.set('mediaType', opts.mediaType === 'tv' ? 'series' : opts.mediaType);
-  }
-  if (opts.season && opts.season > 0) params.set('season', String(opts.season));
-  if (opts.episode && opts.episode > 0) params.set('episode', String(opts.episode));
-  const res = await apiFetch(`/media/subtitles?${params}`, { signal: opts.signal });
-  if (!res.ok) throw new Error(await parseError(res));
-  const data = (await res.json()) as Partial<MediaSubtitlesResult>;
-  return {
-    subtitles: Array.isArray(data.subtitles) ? data.subtitles : [],
-    total: Number(data.total || 0),
-    reason: String(data.reason || ''),
-  };
-}
-
-/** 字幕代理：SRT → WebVTT，浏览器 <track> 才能加载。 */
-export function mediaSubtitleProxyUrl(url: string): string {
-  return `${API_BASE}/media/subtitle-proxy?url=${encodeURIComponent(url)}`;
 }
 
 /* —— MoviePilot 影人（详情 + 作品，取代插件桥 /media/person/works）—— */

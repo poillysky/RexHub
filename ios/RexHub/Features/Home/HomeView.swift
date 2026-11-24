@@ -7,11 +7,17 @@ struct HomeView: View {
     var onLogout: () -> Void
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var selectedTab = 0
     @State private var reselectToken = 0
-    /// 递增后搜索页会自动聚焦输入框。
-    @State private var searchFocusToken = 0
+    /// iPad 侧栏下已访问过的标签：只创建访问过的页面，之后常驻保留导航栈。
+    @State private var visitedTabs: Set<Int> = [HomeTab.home.rawValue]
+
+    /// 头像抽屉的开合进度：常驻挂载，只推进度做转场。
+    @State private var drawerMotion = DrawerMotion()
+    /// 抽屉里选中的设置页，挂在外层导航栈上压入。
+    @State private var drawerPage: HomeDrawerPage?
 
     private let theme = RexThemeStore.shared
 
@@ -21,12 +27,73 @@ struct HomeView: View {
     }
 
     var body: some View {
+        // iPhone 上标签栏必须在导航栈之外：TabView 套进 NavigationStack 后，
+        // 标签页内的二级页压栈会把整个标签栏一起盖掉。
+        // iPad 没有标签栏，保留外层导航栈，设置页整页压入。
         Group {
             if usesSidebar {
-                splitLayout
+                NavigationStack {
+                    splitLayout
+                        .toolbar(.hidden, for: .navigationBar)
+                        .navigationDestination(item: $drawerPage) { page in
+                            drawerDestination(page)
+                        }
+                }
             } else {
                 tabLayout
+                    .fullScreenCover(item: $drawerPage) { page in
+                        NavigationStack {
+                            drawerDestination(page)
+                                .toolbar(.hidden, for: .navigationBar)
+                        }
+                    }
             }
+        }
+        .overlay {
+            HomeDrawerOverlay(
+                motion: drawerMotion,
+                name: session.user.name,
+                isAdmin: session.user.isAdmin,
+                onSelect: { drawerPage = $0 },
+                onLogout: onLogout
+            )
+        }
+    }
+
+    // MARK: - 抽屉
+
+    private func openDrawer() {
+        withAnimation(reduceMotion ? nil : RexMotion.spring) {
+            drawerMotion.drag = 0
+            drawerMotion.progress = 1
+        }
+    }
+
+    @ViewBuilder
+    private func drawerDestination(_ page: HomeDrawerPage) -> some View {
+        switch page {
+        case .account:
+            AccountSettingsView(session: session, onLogout: onLogout)
+        case .services:
+            ServiceSettingsHubView(isAdmin: session.user.isAdmin)
+        case .aiModels:
+            AISettingsView(isAdmin: session.user.isAdmin)
+        case .appearance:
+            AppearanceSettingsView()
+        case .fileList:
+            FileListSettingsView()
+        case .network:
+            NetworkSettingsView(isAdmin: session.user.isAdmin)
+        case .cache:
+            CacheManagementView()
+        case .videoPlayer:
+            VideoPlayerSettingsView()
+        case .gestures:
+            GestureSettingsView()
+        case .subtitles:
+            SubtitleSettingsView()
+        case .music:
+            MusicPlayerSettingsView()
         }
     }
 
@@ -38,6 +105,13 @@ struct HomeView: View {
         tabs
             .tint(RexColor.brandBlue)
             .modifier(TabBarMinimize(isEnabled: theme.collapseNavOnScroll))
+            .background(
+                TabBarReselectObserver { index in
+                    guard index == selectedTab else { return }
+                    reselectToken += 1
+                }
+                .frame(width: 0, height: 0)
+            )
             .onAppear { syncTabBarTitles() }
             .onChange(of: theme.showNavTitle) { _, _ in syncTabBarTitles() }
             .onChange(of: selectedTab) { _, _ in syncTabBarTitles() }
@@ -48,56 +122,46 @@ struct HomeView: View {
         if #available(iOS 18.0, *) {
             TabView(selection: $selectedTab) {
                 Tab(value: 0) {
-                    searchStack
+                    homeStack
                 } label: {
-                    tabLabel(.search)
+                    tabLabel(.home)
                 }
 
                 Tab(value: 1) {
-                    libraryStack
+                    postersStack
                 } label: {
-                    tabLabel(.library)
+                    tabLabel(.posters)
                 }
 
                 Tab(value: 2) {
-                    makersStack
+                    resourcesStack
                 } label: {
-                    tabLabel(.makers)
+                    tabLabel(.resources)
                 }
 
                 Tab(value: 3) {
-                    dramaStack
+                    driveStack
                 } label: {
-                    tabLabel(.drama)
-                }
-
-                Tab(value: 4) {
-                    moreStack
-                } label: {
-                    tabLabel(.more)
+                    tabLabel(.drive)
                 }
             }
         } else {
             TabView(selection: $selectedTab) {
-                searchStack
-                    .tabItem { tabLabel(.search) }
+                homeStack
+                    .tabItem { tabLabel(.home) }
                     .tag(0)
 
-                libraryStack
-                    .tabItem { tabLabel(.library) }
+                postersStack
+                    .tabItem { tabLabel(.posters) }
                     .tag(1)
 
-                makersStack
-                    .tabItem { tabLabel(.makers) }
+                resourcesStack
+                    .tabItem { tabLabel(.resources) }
                     .tag(2)
 
-                dramaStack
-                    .tabItem { tabLabel(.drama) }
+                driveStack
+                    .tabItem { tabLabel(.drive) }
                     .tag(3)
-
-                moreStack
-                    .tabItem { tabLabel(.more) }
-                    .tag(4)
             }
         }
     }
@@ -138,45 +202,41 @@ struct HomeView: View {
         Label(tab.title, systemImage: tab.symbol)
     }
 
-    private var searchStack: some View {
+    private var homeStack: some View {
         NavigationStack {
-            SearchHomeView(
-                focusToken: searchFocusToken,
+            HomeDashboardView(
                 name: session.user.name,
-                onOpenMore: { selectedTab = HomeTab.more.rawValue },
-                isAdmin: session.user.isAdmin
+                isAdmin: session.user.isAdmin,
+                isOffline: isOffline,
+                reselectToken: reselectToken,
+                onOpenDrawer: openDrawer,
+                onAction: handleHomeAction
             )
-            .toolbar(.hidden, for: .navigationBar)
         }
     }
 
-    private var libraryStack: some View {
-        MoviePilotHomeView()
+    /// 首页只往外抛「切标签」，二级页与弹窗都由首页自己处理。
+    private func handleHomeAction(_ action: HomeAction) {
+        guard case let .tab(tab) = action else { return }
+
+        if selectedTab == tab.rawValue {
+            reselectToken += 1
+        } else {
+            selectedTab = tab.rawValue
+        }
     }
 
-    private var makersStack: some View {
-        MakerHomeView()
+    private var postersStack: some View {
+        PosterWallHomeView(reselectToken: reselectToken)
     }
 
-    /// 影视页顶栏搜索框：切到搜索页并聚焦输入框。
-    private func openSearch() {
-        searchFocusToken += 1
-        selectedTab = HomeTab.search.rawValue
+    private var resourcesStack: some View {
+        LibraryView(reselectToken: reselectToken)
     }
 
-    private var dramaStack: some View {
-        DramaHomeView()
-    }
-
-    private var moreStack: some View {
+    private var driveStack: some View {
         NavigationStack {
-            MoreView(
-                session: session,
-                onLogout: onLogout,
-                reselectToken: reselectToken,
-                isOffline: isOffline
-            )
-            .toolbar(.hidden, for: .navigationBar)
+            DriveView(reselectToken: reselectToken, isAdmin: session.user.isAdmin)
         }
     }
 
@@ -230,6 +290,7 @@ struct HomeView: View {
             ForEach(HomeTab.allCases) { tab in
                 Button {
                     RexHaptics.selection()
+                    visitedTabs.insert(tab.rawValue)
                     if selectedTab == tab.rawValue {
                         reselectToken += 1
                     } else {
@@ -240,7 +301,7 @@ struct HomeView: View {
                 } label: {
                     HStack(spacing: RexSpacing.md) {
                         Image(systemName: selectedTab == tab.rawValue ? tab.selectedSymbol : tab.symbol)
-                            .font(.system(size: 18, weight: .medium))
+                            .font(.system(.headline, weight: .medium))
                             .foregroundStyle(selectedTab == tab.rawValue ? RexColor.brandBlue : RexColor.secondaryText)
                             .frame(width: 26)
                             .contentTransition(.symbolEffect(.replace))
@@ -277,80 +338,70 @@ struct HomeView: View {
         .animation(RexMotion.spring, value: selectedTab)
     }
 
-    @ViewBuilder
+    /// 四个页面的导航栈常驻，仅切换可见性：
+    /// 这样在 iPad 上切标签不会重建 NavigationStack，二级页与滚动位置都保留。
     private var detail: some View {
-        switch HomeTab(rawValue: selectedTab) ?? .search {
-        case .search:
-            NavigationStack {
-                SearchHomeView(
-                    focusToken: searchFocusToken,
-                    name: session.user.name,
-                    onOpenMore: { selectedTab = HomeTab.more.rawValue },
-                    isAdmin: session.user.isAdmin
-                )
-                .toolbar(.hidden, for: .navigationBar)
-            }
-
-        case .library:
-            MoviePilotHomeView()
-
-        case .makers:
-            MakerHomeView()
-
-        case .drama:
-            DramaHomeView()
-
-        case .more:
-            NavigationStack {
-                MoreView(
-                    session: session,
-                    onLogout: onLogout,
-                    reselectToken: reselectToken,
-                    isOffline: isOffline
-                )
-                .toolbar(.hidden, for: .navigationBar)
+        ZStack {
+            ForEach(HomeTab.allCases) { tab in
+                if visitedTabs.contains(tab.rawValue) {
+                    page(tab, stack: stack(for: tab))
+                }
             }
         }
     }
+
+    @ViewBuilder
+    private func stack(for tab: HomeTab) -> some View {
+        switch tab {
+        case .home: homeStack
+        case .posters: postersStack
+        case .resources: resourcesStack
+        case .drive: driveStack
+        }
+    }
+
+    private func page<Content: View>(_ tab: HomeTab, stack: Content) -> some View {
+        let isActive = selectedTab == tab.rawValue
+        return stack
+            .opacity(isActive ? 1 : 0)
+            .allowsHitTesting(isActive)
+            .accessibilityHidden(!isActive)
+    }
 }
 
-/// 侧栏与底部 Tab 共用的五项定义。
-private enum HomeTab: Int, CaseIterable, Identifiable {
-    case search
-    case library
-    case makers
-    case drama
-    case more
+/// 侧栏与底部 Tab 共用的四项定义。
+enum HomeTab: Int, CaseIterable, Identifiable {
+    case home
+    case posters
+    case resources
+    case drive
 
     var id: Int { rawValue }
 
     var title: String {
         switch self {
-        case .search: "搜索"
-        case .library: "影视"
-        case .makers: "片商"
-        case .drama: "短剧"
-        case .more: "更多"
+        case .home: "首页"
+        case .posters: "海报墙"
+        case .resources: "资源库"
+        case .drive: "115网盘"
         }
     }
 
     var symbol: String {
         switch self {
-        case .search: "magnifyingglass"
-        case .library: "play.rectangle"
-        case .makers: "rectangle.stack"
-        case .drama: "popcorn"
-        case .more: "ellipsis.circle"
+        case .home: "house"
+        case .posters: "square.grid.2x2"
+        case .resources: "rectangle.stack"
+        case .drive: "externaldrive"
         }
     }
 
     var selectedSymbol: String {
         switch self {
-        case .search: "magnifyingglass"
-        case .library: "play.rectangle.fill"
-        case .makers: "rectangle.stack.fill"
-        case .drama: "popcorn.fill"
-        case .more: "ellipsis.circle.fill"
+        case .home: "house.fill"
+        case .posters: "square.grid.2x2.fill"
+        case .resources: "rectangle.stack.fill"
+        case .drive: "externaldrive.fill"
         }
     }
 }
@@ -368,7 +419,7 @@ private struct TabBarMinimize: ViewModifier {
     }
 }
 
-private extension UIView {
+extension UIView {
     /// 在子视图树中查找第一个指定类型的视图，用于定位系统底部标签栏。
     func rexFirstDescendant<T: UIView>(of type: T.Type) -> T? {
         if let match = self as? T { return match }

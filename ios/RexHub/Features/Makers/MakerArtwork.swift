@@ -21,7 +21,7 @@ final class MakerImageStore {
         cache.object(forKey: url as NSURL)
     }
 
-    func image(for url: URL) async -> UIImage? {
+    func image(for url: URL, bearerToken: String? = nil) async -> UIImage? {
         if let hit = cached(url) { return hit }
         if let running = tasks[url] { return await running.value }
 
@@ -29,7 +29,10 @@ final class MakerImageStore {
             var request = URLRequest(url: url)
             request.cachePolicy = .returnCacheDataElseLoad
             request.timeoutInterval = 20
-            guard let (data, response) = try? await URLSession.shared.data(for: request),
+            if let bearerToken, !bearerToken.isEmpty {
+                request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
+            }
+            guard let (data, response) = try? await HTTPTransport.transfer.data(for: request),
                   let http = response as? HTTPURLResponse,
                   (200..<300).contains(http.statusCode),
                   let image = UIImage(data: data) else { return nil }
@@ -81,7 +84,7 @@ struct MakerArtwork: View {
                     .transition(.opacity)
             } else if failed {
                 Image(systemName: "film")
-                    .font(.system(size: 22, weight: .light))
+                    .font(.system(.title2, weight: .light))
                     .foregroundStyle(RexColor.tertiaryText)
             } else {
                 MakerArtworkPlaceholder()
@@ -95,7 +98,7 @@ struct MakerArtwork: View {
 
     private func load() async {
         guard let raw, !raw.isEmpty,
-              let url = apiClient?.makerImageURL(raw: raw, width: width) else {
+              let url = apiClient?.artworkURL(raw: raw, width: width) else {
             failed = true
             return
         }
@@ -108,6 +111,112 @@ struct MakerArtwork: View {
         guard !Task.isCancelled else { return }
         image = loaded
         failed = loaded == nil
+    }
+}
+
+/// 预览图：固定高度、宽度按原图比例（竖图缩放到与横图同高，完整显示不裁切）。
+/// 详情页「图片」区为一行横滑，竖图保持自身比例缩到统一高度。
+struct MakerPreviewArtwork: View {
+    let raw: String?
+    var width: Int = 480
+    var height: CGFloat = 90
+
+    @Environment(\.apiClient) private var apiClient
+    @State private var image: UIImage?
+
+    init(_ raw: String?, width: Int = 480, height: CGFloat = 90) {
+        self.raw = raw
+        self.width = width
+        self.height = height
+    }
+
+    var body: some View {
+        Color.clear
+            .frame(width: height * aspect, height: height)
+            .overlay {
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .transition(.opacity)
+                } else {
+                    Rectangle()
+                        .fill(RexColor.field)
+                }
+            }
+            .clipped()
+            .clipShape(RoundedRectangle(cornerRadius: RexRadius.small, style: .continuous))
+            .animation(RexMotion.standard, value: image != nil)
+            .task(id: raw) { await load() }
+            .accessibilityHidden(true)
+    }
+
+    /// 图片加载前按 16:10 占位，加载后切到真实比例。
+    private var aspect: CGFloat {
+        guard let image, image.size.width > 0, image.size.height > 0 else { return 16 / 10 }
+        return image.size.width / image.size.height
+    }
+
+    private func load() async {
+        guard let raw, !raw.isEmpty,
+              let url = apiClient?.artworkURL(raw: raw, width: width) else { return }
+        if let hit = MakerImageStore.shared.cached(url) {
+            image = hit
+            return
+        }
+        let loaded = await MakerImageStore.shared.image(for: url)
+        guard !Task.isCancelled else { return }
+        image = loaded
+    }
+}
+
+/// 全宽封面：宽度撑满父级，高度按原图比例计算，完整显示不裁切（竖图自然更高）。
+/// 加载前按 16:10 占位，图片到达后切到真实比例。
+struct MakerFullWidthArtwork: View {
+    let raw: String?
+    var width: Int = 1080
+
+    @Environment(\.apiClient) private var apiClient
+    @State private var image: UIImage?
+
+    init(_ raw: String?, width: Int = 1080) {
+        self.raw = raw
+        self.width = width
+    }
+
+    var body: some View {
+        Color.clear
+            .aspectRatio(aspect, contentMode: .fit)
+            .overlay {
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Rectangle()
+                        .fill(RexColor.field)
+                }
+            }
+            .clipped()
+            .task(id: raw) { await load() }
+            .accessibilityHidden(true)
+    }
+
+    private var aspect: CGFloat {
+        guard let image, image.size.width > 0, image.size.height > 0 else { return 16 / 10 }
+        return image.size.width / image.size.height
+    }
+
+    private func load() async {
+        guard let raw, !raw.isEmpty,
+              let url = apiClient?.artworkURL(raw: raw, width: width) else { return }
+        if let hit = MakerImageStore.shared.cached(url) {
+            image = hit
+            return
+        }
+        let loaded = await MakerImageStore.shared.image(for: url)
+        guard !Task.isCancelled else { return }
+        image = loaded
     }
 }
 

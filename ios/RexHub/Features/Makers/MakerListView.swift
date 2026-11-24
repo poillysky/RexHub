@@ -13,19 +13,36 @@ struct MakerListView: View {
     @State private var isLoading = false
     @State private var errorText: String?
     @State private var isScrolled = false
+    /// 请求代号：切换年份等重置操作会自增，用于丢弃旧请求的返回。
+    @State private var loadGeneration = 0
+    /// TOP250 年份筛选；空串表示「年份不限」。
+    @State private var year = ""
+    @State private var years: [String] = []
+
+    /// 是否为 TOP250 榜单页（只有它带年份下拉）。
+    private var isTopList: Bool {
+        if case .top = query { return true }
+        return false
+    }
+
+    private var navTitle: String {
+        guard case .top = query, !year.isEmpty else { return query.title }
+        return "TOP250·\(year)"
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             RexNavBar(
-                title: query.title,
+                title: navTitle,
                 leading: .back(action: { dismiss() }),
-                isScrolled: isScrolled
+                isScrolled: isScrolled,
+                trailing: isTopList ? AnyView(yearPill) : nil
             )
 
             ScrollView {
                 VStack(spacing: RexSpacing.xl) {
                     if movies.isEmpty, isLoading {
-                        MakerCardSkeletons(posterWidth: 108, count: 3)
+                        MakerCardSkeletons(posterWidth: 170, count: 2, aspect: 16 / 10)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     } else if let errorText, movies.isEmpty {
                         RexStateCard(
@@ -45,7 +62,7 @@ struct MakerListView: View {
                             tone: .neutral
                         )
                     } else {
-                        MakerMovieGrid(movies: movies)
+                        MakerMovieGrid(movies: movies, columnCount: 2)
 
                         if hasMore {
                             loadMoreFooter
@@ -62,10 +79,58 @@ struct MakerListView: View {
             .rexScrollTracking("makerListScroll", isScrolled: $isScrolled)
             .scrollBounceBehavior(.basedOnSize)
             .refreshable { await load(reset: true) }
-            .task { await load(reset: movies.isEmpty) }
+            // 从影片详情返回时保留已加载内容与滚动位置，不重新翻页。
+            .task { if movies.isEmpty { await load(reset: true) } }
+            .task { await loadYears() }
         }
         .background(RexPageBackground())
-        .toolbar(.hidden, for: .navigationBar)
+        .rexPushedScreen()
+    }
+
+    /// 顶栏右侧的年份下拉胶囊（对齐 PWA `.maker-year-pill`）。
+    private var yearPill: some View {
+        Menu {
+            Button("年份不限") { selectYear("") }
+            ForEach(years, id: \.self) { value in
+                Button(value) { selectYear(value) }
+            }
+        } label: {
+            HStack(spacing: 2) {
+                Text(year.isEmpty ? "年份不限" : year)
+                    .font(.system(size: 12, weight: .medium))
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .foregroundStyle(RexColor.secondaryText)
+            .padding(.leading, 9)
+            .padding(.trailing, 7)
+            .frame(height: 28)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(RexColor.field)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .frame(height: 44)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .accessibilityLabel("年份")
+    }
+
+    private func selectYear(_ value: String) {
+        guard value != year else { return }
+        year = value
+        movies = []
+        page = 1
+        hasMore = true
+        errorText = nil
+        Task { await load(reset: true) }
+    }
+
+    private func loadYears() async {
+        guard isTopList, years.isEmpty, let apiClient else { return }
+        years = (try? await apiClient.makerYears()) ?? []
     }
 
     private var loadMoreFooter: some View {
@@ -98,19 +163,24 @@ struct MakerListView: View {
     // MARK: - 数据
 
     private func load(reset: Bool) async {
-        guard !isLoading, let apiClient else { return }
+        guard let apiClient else { return }
         if reset {
             page = 1
             hasMore = true
             errorText = nil
+            // 重置请求直接覆盖进行中的旧请求（如切换年份），由代号丢弃旧结果。
+            loadGeneration += 1
+        } else {
+            guard !isLoading, hasMore else { return }
         }
-        guard hasMore || reset else { return }
 
+        let generation = loadGeneration
         isLoading = true
-        defer { isLoading = false }
+        defer { if generation == loadGeneration { isLoading = false } }
 
         do {
             let response = try await fetch(using: apiClient, page: page)
+            guard generation == loadGeneration else { return }
             var seen = Set(movies.map(\.id))
             let fresh = response.items.filter { seen.insert($0.id).inserted }
 
@@ -125,6 +195,7 @@ struct MakerListView: View {
             errorText = nil
         } catch {
             if let apiError = error as? APIError, apiError == .cancelled { return }
+            guard generation == loadGeneration else { return }
             errorText = error.localizedDescription
         }
     }
@@ -138,13 +209,15 @@ struct MakerListView: View {
         case .latest(let category):
             return try await client.makerLatest(category: category, page: page)
         case .top(let category):
-            return try await client.makerTop(category: category, page: page)
+            return try await client.makerTop(category: category, page: page, year: year.isEmpty ? nil : year)
         case .playback(let period):
             return try await client.makerPlayback(period: period)
         case .tag(let category, let group, let tagId, _):
             return try await client.makerBrowse(category: category, group: group, tagId: tagId, page: page)
         case .actor(let category, let actorID, _):
             return try await client.makerBrowse(category: category, actorID: actorID, page: page)
+        case .collection(let id, _):
+            return try await client.makerBrowse(category: .censored, listID: id, page: page)
         }
     }
 }

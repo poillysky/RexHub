@@ -3,7 +3,8 @@ import SwiftUI
 struct LoginView: View {
     @Environment(AppState.self) private var appState
 
-    @State private var serverAddress = ServerConfig.savedText
+    /// 地址不做任何预设，由用户输入或从历史记录一键回填。
+    @State private var serverAddress = ""
     @State private var useHTTPS = ServerConfig.httpsEnabled
     @State private var account = ""
     @State private var password = ""
@@ -15,6 +16,7 @@ struct LoginView: View {
     @State private var serverError: String?
     @State private var accountError: String?
     @State private var passwordError: String?
+    @State private var showsHistory = false
     @FocusState private var focusedField: Field?
 
     @Environment(\.colorScheme) private var colorScheme
@@ -88,6 +90,12 @@ struct LoginView: View {
         }
         .animation(RexMotion.quick, value: isSubmitting)
         .rexAlert($alert)
+        .sheet(isPresented: $showsHistory) {
+            LoginHistorySheet { record, savedPassword in
+                apply(record, password: savedPassword)
+            }
+            .rexSheetStyle()
+        }
         .onChange(of: useHTTPS) { _, value in
             ServerConfig.httpsEnabled = value
         }
@@ -108,10 +116,6 @@ struct LoginView: View {
         }
         .onAppear {
             restoreCredentials()
-            // 启动时连不上服务端会回到这里，把原因展示一次。
-            if alert == nil, let startupNotice = appState.loginNotice {
-                alert = RexAlertInfo(title: "无法连接服务器", message: startupNotice)
-            }
             guard !appeared else { return }
             if reduceMotion {
                 appeared = true
@@ -176,29 +180,19 @@ struct LoginView: View {
     }
 
     private var brandHeader: some View {
-        VStack(spacing: RexSpacing.md) {
-            RexLogoMark(size: verticalSizeClass == .compact ? 76 : 92)
-
-            Text("RexHub")
-                .font(RexFont.title1)
-                .foregroundStyle(RexColor.primaryText)
-
-            Text("连接你的私有媒体中心")
-                .font(RexFont.footnote)
-                .foregroundStyle(RexColor.secondaryText)
-        }
+        RexLogoMark(size: verticalSizeClass == .compact ? 76 : 92)
     }
 
     private var serverField: some View {
         VStack(alignment: .leading, spacing: RexSpacing.sm) {
             HStack(spacing: RexSpacing.md) {
                 Image(systemName: "server.rack")
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.system(.callout, weight: .medium))
                     .foregroundStyle(focusedField == .server ? RexColor.brandBlue : RexColor.secondaryText)
                     .frame(width: 22)
                     .animation(RexMotion.quick, value: focusedField)
 
-                TextField("服务器地址，如 192.168.1.10:8080", text: $serverAddress)
+                TextField("请输入地址和端口", text: $serverAddress)
                     .font(RexFont.body)
                     .foregroundStyle(RexColor.primaryText)
                     .textContentType(.URL)
@@ -208,6 +202,20 @@ struct LoginView: View {
                     .focused($focusedField, equals: .server)
                     .submitLabel(.next)
                     .onSubmit { focusedField = .account }
+
+                Button {
+                    RexHaptics.tap()
+                    focusedField = nil
+                    showsHistory = true
+                } label: {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(.callout))
+                        .foregroundStyle(RexColor.secondaryText)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("历史登录账号")
             }
             .fieldStyle()
             .overlay {
@@ -252,7 +260,7 @@ struct LoginView: View {
         VStack(alignment: .leading, spacing: RexSpacing.sm) {
             HStack(spacing: RexSpacing.md) {
                 Image(systemName: "person")
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.system(.callout, weight: .medium))
                     .foregroundStyle(focusedField == .account ? RexColor.brandBlue : RexColor.secondaryText)
                     .frame(width: 22)
                     .animation(RexMotion.quick, value: focusedField)
@@ -288,7 +296,7 @@ struct LoginView: View {
         VStack(alignment: .leading, spacing: RexSpacing.sm) {
             HStack(spacing: RexSpacing.md) {
                 Image(systemName: "lock")
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.system(.callout, weight: .medium))
                     .foregroundStyle(focusedField == .password ? RexColor.brandBlue : RexColor.secondaryText)
                     .frame(width: 22)
                     .animation(RexMotion.quick, value: focusedField)
@@ -314,7 +322,7 @@ struct LoginView: View {
                     isPasswordVisible.toggle()
                 } label: {
                     Image(systemName: isPasswordVisible ? "eye.slash" : "eye")
-                        .font(.system(size: 16))
+                        .font(.system(.callout))
                         .foregroundStyle(RexColor.secondaryText)
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
@@ -356,7 +364,7 @@ struct LoginView: View {
             } label: {
                 HStack(spacing: RexSpacing.sm) {
                     Image(systemName: rememberPassword ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 18))
+                        .font(.system(.headline))
                         .foregroundStyle(rememberPassword ? RexColor.brandBlue : RexColor.tertiaryText)
                         .contentTransition(.symbolEffect(.replace))
 
@@ -411,12 +419,34 @@ struct LoginView: View {
     }
 
     private func restoreCredentials() {
-        guard let saved = CredentialStore.password, !saved.isEmpty else { return }
+        // 只恢复用户自己上次填过的地址，不写入任何预设值。
+        if serverAddress.isEmpty {
+            serverAddress = ServerConfig.savedText
+        }
         if let savedAccount = CredentialStore.account {
             account = savedAccount
         }
-        password = saved
+        // 账号与密码分开恢复：旧版本可能只存下了账号。
+        if let saved = CredentialStore.password, !saved.isEmpty {
+            password = saved
+            rememberPassword = true
+        }
+    }
+
+    /// 历史记录一键回填：地址、协议、账号、密码一起带出。
+    private func apply(_ record: CredentialStore.Record, password savedPassword: String?) {
+        RexHaptics.selection()
+        serverAddress = record.server
+        useHTTPS = record.useHTTPS
+        account = record.account
+        if let savedPassword, !savedPassword.isEmpty {
+            password = savedPassword
+        }
         rememberPassword = true
+        serverError = nil
+        accountError = nil
+        passwordError = nil
+        showsHistory = false
     }
 
     private func submit() {
@@ -475,7 +505,12 @@ struct LoginView: View {
                     password: password
                 )
                 if rememberPassword {
-                    CredentialStore.remember(account: trimmedAccount, password: password)
+                    CredentialStore.remember(
+                        server: trimmedServer,
+                        useHTTPS: useHTTPS,
+                        account: trimmedAccount,
+                        password: password
+                    )
                 } else {
                     CredentialStore.forget()
                 }
@@ -540,6 +575,101 @@ struct LoginView: View {
     private func announce(_ text: String) {
         guard !text.isEmpty else { return }
         AccessibilityNotification.Announcement(text).post()
+    }
+}
+
+/// 历史登录记录：一条一行，点一下把地址、协议、账号、密码全部回填。
+private struct LoginHistorySheet: View {
+    var onPick: (CredentialStore.Record, String?) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var records: [CredentialStore.Record] = []
+    @State private var pendingDeletion: CredentialStore.Record?
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if records.isEmpty {
+                    ContentUnavailableView(
+                        "暂无历史账号",
+                        systemImage: "clock.arrow.circlepath",
+                        description: Text("勾选「记住密码」登录一次后，这里会保存记录。")
+                    )
+                } else {
+                    List {
+                        ForEach(records) { record in
+                            Button {
+                                onPick(record, CredentialStore.password(for: record))
+                            } label: {
+                                row(record)
+                            }
+                            .buttonStyle(.plain)
+                            .swipeActions {
+                                Button("删除", role: .destructive) {
+                                    pendingDeletion = record
+                                }
+                            }
+                        }
+                    }
+                    .listStyle(.insetGrouped)
+                }
+            }
+            .navigationTitle("历史登录账号")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { dismiss() }
+                }
+            }
+        }
+        .onAppear { records = CredentialStore.history }
+        .confirmationDialog(
+            "删除这条记录？",
+            isPresented: Binding(
+                get: { pendingDeletion != nil },
+                set: { if !$0 { pendingDeletion = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("删除", role: .destructive) {
+                if let record = pendingDeletion {
+                    CredentialStore.remove(record)
+                    records = CredentialStore.history
+                }
+                pendingDeletion = nil
+            }
+            Button("取消", role: .cancel) { pendingDeletion = nil }
+        }
+    }
+
+    private func row(_ record: CredentialStore.Record) -> some View {
+        HStack(spacing: RexSpacing.md) {
+            Image(systemName: "person.crop.circle")
+                .font(.system(.title2))
+                .foregroundStyle(RexColor.brandBlue)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(record.account)
+                    .font(RexFont.row)
+                    .foregroundStyle(RexColor.primaryText)
+                    .lineLimit(1)
+
+                Text(record.serverLabel)
+                    .font(RexFont.caption)
+                    .foregroundStyle(RexColor.secondaryText)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: RexSpacing.sm)
+
+            Text(record.lastUsedAt.formatted(.relative(presentation: .named)))
+                .font(RexFont.caption2)
+                .foregroundStyle(RexColor.tertiaryText)
+        }
+        .frame(minHeight: RexLayout.minTouch)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("填入这条登录信息")
     }
 }
 

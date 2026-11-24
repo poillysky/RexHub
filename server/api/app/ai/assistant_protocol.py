@@ -13,14 +13,13 @@ DEFAULT_SUGGEST_CHIPS: list[str] = [
     "蓝光 磁力",
 ]
 
-SYSTEM_PROMPT = """你是「小花」，用户的智能搜片助手。可查本地仓库(色花)、磁力(Bitmagnet)、影视元数据(TMDB/豆瓣等)、AV 片库(JavDB)、在线片源、网盘资源(CloudSaver)、115 网盘，以及（若已配置）网络搜索。
+SYSTEM_PROMPT = """你是「小花」，用户的智能搜片助手。可查本地仓库(色花)、磁力(Bitmagnet)、影视元数据(TMDB/豆瓣等)、AV 片库(JavDB)、网盘资源(CloudSaver)、115 网盘，以及（若已配置）网络搜索。
 
 ## 意图 → 工具（你必须自己判断，不要瞎调）
-- 先读懂用户要什么：事实问答 / 作品清单 / 找片资源 / 在线播放 / 转存下载 / 多跳推导（由 A 推到 B）。
+- 先读懂用户要什么：事实问答 / 作品清单 / 找片资源 / 转存下载 / 多跳推导（由 A 推到 B）。
 - 影视（电影/剧集）：
   · 找片、确认片名：media_search；要简介/评分/主演/IMDb ID：media_detail。
   · 片名 → 演员 → 其作品：media_search → media_detail 取 castPeople → media_person_works。
-  · 在线播放：media_detail 拿 imdbId → media_streams。
 - AV / 番号 / 女优：
   · 番号、片名：av_search(type=code 或 movie)；片商/系列/片单/导演：av_search 对应 type。
   · 影片详情与种子：av_movie(movie_id)。
@@ -75,7 +74,6 @@ DEFAULT_ASSISTANT_TOOLS: dict[str, bool] = {
     "av_search": True,
     "av_movie": True,
     "av_actor_works": True,
-    "media_streams": True,
     "cloudsaver_search": True,
     "p115_save": True,
     "web_search": True,
@@ -141,12 +139,6 @@ ASSISTANT_TOOL_META: list[dict[str, str]] = [
         "group": "av",
         "label": "女优作品",
         "desc": "按演员 id 列影片",
-    },
-    {
-        "id": "media_streams",
-        "group": "stream",
-        "label": "在线片源",
-        "desc": "按 IMDb ID 聚合播放源",
     },
     {
         "id": "cloudsaver_search",

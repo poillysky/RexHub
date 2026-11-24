@@ -2,11 +2,11 @@ import AVFoundation
 @preconcurrency import KSPlayer
 
 /// 播放内核隔离层：业务层只通过这里创建与配置播放器，不直接依赖 AVFoundation 细节。
-/// AVPlayer 与 KSPlayer 两套配置都在本文件生成，播放页只负责选择内核。
+/// 音乐播放器的 AVPlayer 与视频播放器的 KSPlayer 配置都在本文件生成。
 @MainActor
 enum PlayerFacade {
     /// 115 直链会校验 UA，必须把服务端给出的请求头一并交给播放内核。
-    /// 缓冲策略与静音起播来自播放器设置，只影响本次新建的播放项。
+    /// 缓冲策略来自播放器设置，只影响本次新建的播放项。
     static func makePlayer(for info: PanPlayInfo) -> AVPlayer {
         let asset = AVURLAsset(
             url: info.url,
@@ -20,15 +20,9 @@ enum PlayerFacade {
             item.preferredForwardBufferDuration = buffer
         }
 
-        if let maxSize = settings.preferredResolution.maxSize {
-            item.preferredMaximumResolution = maxSize
-        }
-
         item.audioTimePitchAlgorithm = settings.keepPitch ? .spectral : .varispeed
 
         let player = AVPlayer(playerItem: item)
-        player.isMuted = settings.startMuted
-        player.automaticallyWaitsToMinimizeStalling = settings.waitMinimizeStalling
         return player
     }
 
@@ -37,7 +31,7 @@ enum PlayerFacade {
     static func makeKSOptions(
         for info: PanPlayInfo,
         startTime: Double,
-        forceSoftwareDecode: Bool = false
+        route: PlaybackRoute
     ) -> KSOptions {
         let settings = PlayerSettingsStore.shared
         let options = KSOptions()
@@ -48,62 +42,66 @@ enum PlayerFacade {
         options.startPlayTime = max(0, startTime)
         options.startPlayRate = Float(settings.playbackRate)
         options.preferredForwardBufferDuration = settings.bufferPolicy.forwardBufferDuration
+        // 拖动进度条后必须自动续播，否则 seek 完成会停在暂停态（HLS 尤其明显）。
+        options.isSeekedAutoPlay = true
         // 内嵌字幕是否自动选中；外挂字幕由播放页按开关决定要不要加载。
         options.autoSelectEmbedSubtitle = settings.subtitlesEnabled
         // 旧版内核只有静态开关，字幕字号也走全局模型。
         KSOptions.isAutoPlay = settings.autoPlay
         SubtitleModel.textFontSize = settings.subtitleSize.fontSize
 
-        switch settings.decodeMode {
-        case .automatic:
-            break
-        case .hardware:
-            options.hardwareDecode = true
-        case .software:
-            options.hardwareDecode = false
-        }
-
-        // 兜底走 FFmpeg 时强制软解：这类片源本来就是硬解不出来才切过来的，
-        // 再交给 VideoToolbox 只会重复失败。
-        if forceSoftwareDecode {
-            options.hardwareDecode = false
-        }
-
-        // AVPlayer 解不了的容器直接交给 FFmpeg，省掉一次失败重试。
-        let ext = info.url.pathExtension.lowercased()
-        if !systemPlayableExtensions.contains(ext) || forceSoftwareDecode {
-            KSOptions.firstPlayerType = KSMEPlayer.self
-        } else {
-            KSOptions.firstPlayerType = KSAVPlayer.self
-        }
+        // FFmpeg 解封装后默认仍交给 VideoToolbox 硬解；
+        // 关掉异步解压就等于退回 FFmpeg 纯软解，所以两个开关必须一起设。
+        // 硬解建会话失败或解码出错时，KSPlayer 会自动切回 FFmpeg 软解。
+        options.hardwareDecode = !route.forceSoftwareDecode
+        options.asynchronousDecompression = !route.forceSoftwareDecode
+        KSOptions.firstPlayerType = route.usesFFmpegPlayback ? KSMEPlayer.self : KSAVPlayer.self
         return options
     }
 
-    /// 本次播放的路由：用哪个内核、要不要强制 FFmpeg 软解。
+    /// 本次播放的路由：要不要走 FFmpeg 解封装、要不要强制纯软解。
     struct PlaybackRoute {
-        let kernel: PlayerKernel
+        /// 非系统容器或 AVFoundation 不认的编码，交给 FFmpeg 解封装。
+        let usesFFmpegPlayback: Bool
+        /// 连 VideoToolbox 都不用，走 FFmpeg 纯软解。
         let forceSoftwareDecode: Bool
     }
 
-    /// 实际生效的内核：自动模式按容器决定，手动选择则照办。
-    /// 系统原生容器用 AVPlayer，硬解功耗低、支持画中画与 AirPlay；
-    /// 其余容器交给 KSPlayer，由 FFmpeg 软解并渲染内嵌字幕。
-    /// HEVC 还要再看一层：AVFoundation 只认 `hvc1` 标记的 H.265，`hev1` 标记的连封装都解不了；
-    /// 而模拟器本身没有 HEVC 解码能力，`hvc1` 在模拟器上同样是「进度照走、画面永久黑」。
-    /// 这些情况一律改走 FFmpeg 软解。
-    static func resolveRoute(for info: PanPlayInfo) async -> PlaybackRoute {
-        let selected = PlayerSettingsStore.shared.kernel
-        guard selected == .auto else {
-            return PlaybackRoute(kernel: selected, forceSoftwareDecode: false)
+    /// 固定使用 KSPlayer 内核，这里只决定解封装与解码器：
+    /// - 系统容器（mp4/m4v/mov/m3u8/ts）：`KSAVPlayer` + AVFoundation 硬解。
+    /// - mkv/avi 等非系统容器：`KSMEPlayer`（FFmpeg 解封装）+ VideoToolbox 硬解。
+    /// - AVFoundation 不认的编码（`hev1` 标记的 HEVC）：同样走 FFmpeg 解封装 + 硬解。
+    /// - 只有模拟器没有 HEVC 硬解能力时，才直接锁定 FFmpeg 软解。
+    /// 解析阶段判断不了的兼容问题，由播放页在运行期报错后自动换软解重开一次。
+    static func resolveRoute(
+        for info: PanPlayInfo,
+        forceSoftwareDecode: Bool = false
+    ) async -> PlaybackRoute {
+        if forceSoftwareDecode {
+            return PlaybackRoute(usesFFmpegPlayback: true, forceSoftwareDecode: true)
         }
 
-        guard systemPlayableExtensions.contains(info.url.pathExtension.lowercased()) else {
-            return PlaybackRoute(kernel: .ksPlayer, forceSoftwareDecode: false)
+        // 服务端已标明是 HLS：AVPlayer 原生支持 m3u8 + AES-128，不必过 FFmpeg。
+        if info.kind.lowercased() == "hls" {
+            return PlaybackRoute(usesFFmpegPlayback: false, forceSoftwareDecode: false)
         }
+
+        // 服务端标明 mp4 时以声明为准（插件端口地址没有扩展名，不能靠 URL 后缀判断）。
+        let declaredMP4 = info.kind.lowercased() == "mp4"
+        let systemPlayable = declaredMP4
+            || systemPlayableExtensions.contains(info.url.pathExtension.lowercased())
+        guard systemPlayable else {
+            return PlaybackRoute(usesFFmpegPlayback: true, forceSoftwareDecode: false)
+        }
+
         guard await avPlayerCanDecode(info) else {
-            return PlaybackRoute(kernel: .ksPlayer, forceSoftwareDecode: true)
+            return PlaybackRoute(
+                usesFFmpegPlayback: !isSimulator,
+                forceSoftwareDecode: isSimulator
+            )
         }
-        return PlaybackRoute(kernel: .avPlayer, forceSoftwareDecode: false)
+
+        return PlaybackRoute(usesFFmpegPlayback: false, forceSoftwareDecode: false)
     }
 
     /// 系统 AVPlayer 能直接播放的容器；其余交给 FFmpeg。

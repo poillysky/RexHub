@@ -93,22 +93,21 @@ export function scopeUrls(item: ScopeSearchItem): string[] {
 
 export function ScopeResultList({
   items,
-  page,
   hasMore,
   loadingMore,
+  loadError,
   saveSource,
-  onPrev,
-  onNext,
+  onLoadMore,
   onOpenDetail,
 }: {
   items: ScopeSearchItem[];
-  page: number;
   hasMore: boolean;
   loadingMore: boolean;
+  /** 后续批次加载失败时的提示；已加载的结果保持展示 */
+  loadError?: string;
   /** 当前搜索范围对应的转存目录：影视 → media，片商 → maker */
   saveSource: P115SaveSource;
-  onPrev: () => void;
-  onNext: () => void;
+  onLoadMore: () => void;
   onOpenDetail?: (item: ScopeSearchItem) => void;
 }) {
   const [msg, setMsg] = useState('');
@@ -230,26 +229,25 @@ export function ScopeResultList({
           );
         })}
       </div>
-      <div className="media-chart__pager">
-        <button
-          type="button"
-          className="media-chart__page-btn"
-          disabled={page <= 1 || loadingMore}
-          onClick={onPrev}
-        >
-          上一页
-        </button>
-        <span className="media-chart__page-meta">
-          {loadingMore ? '加载中…' : `第 ${page} 页`}
-        </span>
-        <button
-          type="button"
-          className="media-chart__page-btn"
-          disabled={!hasMore || loadingMore}
-          onClick={onNext}
-        >
-          下一页
-        </button>
+      <div className="home-infinite">
+        {loadingMore ? <p className="app-loading">加载更多…</p> : null}
+        {loadError ? (
+          <>
+            <p className="app-footnote">{loadError}</p>
+            <div className="app-actions" style={{ justifyContent: 'center' }}>
+              <button
+                type="button"
+                className="app-btn-secondary"
+                onClick={onLoadMore}
+              >
+                继续加载
+              </button>
+            </div>
+          </>
+        ) : null}
+        {!hasMore && !loadError && !loadingMore ? (
+          <p className="home-infinite__end">已全部加载</p>
+        ) : null}
       </div>
     </>
   );

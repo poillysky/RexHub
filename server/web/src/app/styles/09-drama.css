@@ -91,7 +91,7 @@
   align-items: center;
   gap: 14px;
   width: 100%;
-  padding: 13px 16px 13px 18px;
+  padding: 13px 16px;
   border: 0.5px solid color-mix(in srgb, var(--site-accent, #8e8e93) 18%, var(--hairline));
   border-radius: 18px;
   background:
@@ -113,22 +113,7 @@
     border-color 0.18s var(--media-ease, ease);
 }
 
-/* 左侧品牌色细条：四个片源在列表里各有识别色 */
-.drama-site-card::before {
-  content: '';
-  position: absolute;
-  top: 22%;
-  bottom: 22%;
-  left: 0;
-  width: 3px;
-  border-radius: 0 3px 3px 0;
-  background: linear-gradient(
-    180deg,
-    var(--site-accent, #8e8e93),
-    color-mix(in srgb, var(--site-accent, #8e8e93) 45%, #fff)
-  );
-  opacity: 0.9;
-}
+/* 左侧品牌色细条已移除：识别色保留在描边、径向光晕与箭头底色上 */
 
 .drama-site-card:active {
   transform: scale(0.985);
@@ -239,7 +224,10 @@
 
 .drama-site-card__arrow {
   flex-shrink: 0;
-  padding: 4px;
+  /* 尺寸放大：18 → 32（内边距 5，图标可视约 22） */
+  width: 32px;
+  height: 32px;
+  padding: 5px;
   border-radius: 999px;
   color: var(--muted-foreground);
   background: color-mix(in srgb, var(--site-accent, #8e8e93) 8%, transparent);

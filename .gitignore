@@ -9,6 +9,7 @@ xcuserdata/
 *.xcworkspace/xcuserdata/
 .swiftpm/
 .build/
+.xcode-build/
 
 # 本地 AI 工具配置
 .trae/
@@ -76,4 +77,9 @@ server/config/_export/
 !.env.example
 
 # 参考资料（本地参考，不入库）
-reference/
+refs/reference/
+refs/ios-modular/
+
+# Figma 拉取产物与本地 token
+design/figma/out/
+design/figma/figma_token

@@ -1,18 +1,46 @@
 // Service worker for offline shell only — never cache API / media
-const CACHE_NAME = 'app-v4';
+const CACHE_NAME = 'app-v5';
+// 安装时预缓存离线外壳与图标；页面 JS/CSS 带 hash，首次访问时再按需缓存
+const PRECACHE_URLS = [
+  '/',
+  '/manifest.json',
+  '/icon-192.png',
+  '/icon-512.png',
+  '/apple-touch-icon.png',
+];
+// 缓存条目上限：超出后按插入顺序淘汰最旧的，避免长期使用无限膨胀
+const MAX_ENTRIES = 120;
 
 // 只缓存成功的同源响应；重定向后的 404/500 不能写进缓存
-function cachePut(request, response) {
+async function cachePut(request, response) {
   if (!response || !response.ok) return;
-  const clone = response.clone();
-  caches
-    .open(CACHE_NAME)
-    .then((cache) => cache.put(request, clone))
-    .catch(() => {}); // 206/不可缓存响应会 reject，忽略即可
+  try {
+    const cache = await caches.open(CACHE_NAME);
+    await cache.put(request, response.clone());
+    await trimCache(cache);
+  } catch {
+    // 206/不可缓存响应会 reject，忽略即可
+  }
 }
 
-self.addEventListener('install', () => {
-  self.skipWaiting();
+async function trimCache(cache) {
+  const keys = await cache.keys();
+  if (keys.length <= MAX_ENTRIES) return;
+  const overflow = keys.slice(0, keys.length - MAX_ENTRIES);
+  await Promise.all(overflow.map((key) => cache.delete(key)));
+}
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches
+      .open(CACHE_NAME)
+      .then((cache) =>
+        Promise.all(
+          PRECACHE_URLS.map((url) => cache.add(url).catch(() => {}))
+        )
+      )
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', (event) => {
@@ -49,7 +77,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
-          cachePut(event.request, response);
+          void cachePut(event.request, response);
           return response;
         })
         .catch(() => caches.match(event.request).then((c) => c || caches.match('/')))
@@ -61,7 +89,7 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     caches.match(event.request).then((cached) => {
       const fetchPromise = fetch(event.request).then((response) => {
-        cachePut(event.request, response);
+        void cachePut(event.request, response);
         return response;
       });
       return cached || fetchPromise;

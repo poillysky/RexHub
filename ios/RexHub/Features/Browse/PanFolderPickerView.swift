@@ -205,7 +205,7 @@ struct PanFolderPickerView: View {
                 Spacer(minLength: 0)
 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(.system(.caption, weight: .semibold))
                     .foregroundStyle(RexColor.tertiaryText)
             }
             .padding(.horizontal, RexSpacing.lg)

@@ -245,26 +245,6 @@ def tool_definitions(*, include_web: bool = True) -> list[dict[str, Any]]:
         {
             "type": "function",
             "function": {
-                "name": "media_streams",
-                "description": (
-                    "按 IMDb ID 聚合在线播放源（电影/剧集）。imdbId 来自 media_detail。"
-                    "剧集可给 season/episode。"
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "imdb_id": {"type": "string", "description": "形如 tt1234567"},
-                        "media_type": {"type": "string", "enum": ["movie", "tv"], "description": "默认 movie"},
-                        "season": {"type": "integer"},
-                        "episode": {"type": "integer"},
-                    },
-                    "required": ["imdb_id"],
-                },
-            },
-        },
-        {
-            "type": "function",
-            "function": {
                 "name": "cloudsaver_search",
                 "description": "网盘资源搜索（CloudSaver）：夸克/阿里/115 等分享链接与提取码。",
                 "parameters": {
@@ -336,7 +316,6 @@ def filter_tools_by_prefer(
         "magnet": {"magnet_search", "magnet_detail"},
         "media": {"media_search", "media_detail", "media_person_works"},
         "av": {"av_search", "av_movie", "av_actor_works"},
-        "stream": {"media_streams"},
         "cloud": {"cloudsaver_search", "p115_save"},
         "web": {"web_search"},
         "warehouse": {"sehua_keyword", "sehua_detail"},
@@ -355,7 +334,6 @@ def filter_tools_by_prefer(
             "av_search",
             "av_movie",
             "av_actor_works",
-            "media_streams",
             "cloudsaver_search",
             "p115_save",
             "web_search",
@@ -1113,8 +1091,25 @@ async def run_av_actor_works(args: dict[str, Any]) -> dict[str, Any]:
 
         data = await asyncio.to_thread(
             fetch_browse,
-            "0", "", "", "", aid, "", "", "", "", "", "", "",
-            "release", "desc", 1, limit,
+            category="0",
+            group="",
+            tag_id="",
+            tag_ids="",
+            actor_id=aid,
+            year="",
+            main_filter="",
+            month="",
+            duration="",
+            maker_id="",
+            director_id="",
+            list_id="",
+            publisher_id="",
+            series_id="",
+            series_type="",
+            sort_by="release",
+            order_by="desc",
+            page=1,
+            limit=limit,
         )
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "error": str(e), "cards": [], "total": 0, "summary": f"女优作品失败：{e}"}
@@ -1139,78 +1134,6 @@ async def run_av_actor_works(args: dict[str, Any]) -> dict[str, Any]:
         "cards": [],
         "facts": [{"actor": label, "actorId": aid, "results": rows}],
         "summary": f"「{label}」作品 {len(rows)} 部",
-    }
-
-
-async def run_media_streams(args: dict[str, Any]) -> dict[str, Any]:
-    imdb_id = str(args.get("imdb_id") or "").strip()
-    if not imdb_id.startswith("tt"):
-        return {"ok": False, "error": "imdb_id 需形如 tt1234567", "cards": [], "total": 0}
-    media_type = "series" if str(args.get("media_type") or "movie").lower() in {"tv", "series"} else "movie"
-    try:
-        season = max(0, int(args.get("season") or 0))
-        episode = max(0, int(args.get("episode") or 0))
-    except (TypeError, ValueError):
-        season = episode = 0
-    try:
-        from app.rexhub.addons_store import streams as addon_streams
-
-        data = await addon_streams.collect(media_type, imdb_id, season, episode)
-    except Exception as e:  # noqa: BLE001
-        return {"ok": False, "error": str(e), "cards": [], "total": 0, "summary": f"片源查询失败：{e}"}
-    streams = [s for s in (data.get("streams") or []) if isinstance(s, dict)]
-    cards: list[dict[str, Any]] = []
-    rows: list[dict[str, Any]] = []
-    for s in streams[:12]:
-        kind = str(s.get("kind") or "")
-        url = str(s.get("url") or s.get("externalUrl") or "")
-        info_hash = str(s.get("infoHash") or "").lower()
-        name = str(s.get("name") or s.get("addon") or "片源")
-        addon = str(s.get("addon") or "")
-        desc = str(s.get("title") or "")[:100]
-        rows.append({"addon": addon, "name": name, "kind": kind, "title": desc, "url": url})
-        if kind == "torrent" and info_hash:
-            cards.append(
-                make_card(
-                    source="magnet",
-                    title=name,
-                    subtitle=addon,
-                    meta=desc,
-                    key=info_hash,
-                    open_payload={"kind": "magnet", "hash": info_hash},
-                )
-            )
-        elif url.startswith("http"):
-            cards.append(
-                make_card(
-                    source="stream",
-                    title=name,
-                    subtitle=addon,
-                    meta=desc,
-                    key=url,
-                    open_payload={"kind": "url", "url": url, "title": name},
-                )
-            )
-    if not rows:
-        return {
-            "ok": True,
-            "source": "stream",
-            "mode": media_type,
-            "query": imdb_id,
-            "total": 0,
-            "cards": [],
-            "facts": [{"imdbId": imdb_id, "streams": [], "reason": str(data.get("reason") or "")}],
-            "summary": "没有可用片源（可能未配置片源插件）",
-        }
-    return {
-        "ok": True,
-        "source": "stream",
-        "mode": media_type,
-        "query": imdb_id,
-        "total": len(rows),
-        "cards": cards[:12],
-        "facts": [{"imdbId": imdb_id, "streams": rows}],
-        "summary": f"{imdb_id} 可用片源 {len(rows)} 条",
     }
 
 
@@ -1415,7 +1338,6 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "av_search": run_av_search,
     "av_movie": run_av_movie,
     "av_actor_works": run_av_actor_works,
-    "media_streams": run_media_streams,
     "cloudsaver_search": run_cloudsaver_search,
     "p115_save": run_p115_save,
     "web_search": run_web_search,
@@ -1432,7 +1354,6 @@ TOOL_STATUS_LABEL: dict[str, str] = {
     "av_search": "正在搜 AV 片库…",
     "av_movie": "正在看 AV 详情…",
     "av_actor_works": "正在查女优作品…",
-    "media_streams": "正在找在线片源…",
     "cloudsaver_search": "正在搜网盘…",
     "p115_save": "正在转存到 115…",
     "web_search": "正在搜网络…",

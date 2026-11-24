@@ -173,7 +173,7 @@ function BottomNav({ navItems, isTabbed, tabCtx }: BottomNavProps) {
       style={{
         paddingLeft: 'env(safe-area-inset-left)',
         paddingRight: 'env(safe-area-inset-right)',
-        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        paddingBottom: 'var(--sab, env(safe-area-inset-bottom, 0px))',
       }}
     >
       <div className="app-tabbar__inner">

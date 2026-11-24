@@ -1,14 +1,18 @@
 import Foundation
 
 /// 服务端地址的解析与持久化。
-/// 支持 `192.168.1.10:8080`、`rex.local`、`https://hub.example.com` 等写法。
+/// 支持 `192.168.1.10:8020`、`rex.local`、`https://hub.example.com` 等写法。
+/// 未写端口时按协议补默认端口：HTTP 补 8020，HTTPS 补 443。
 enum ServerConfig {
     private static let storageKey = "rexhub.server.address"
     private static let httpsKey = "rexhub.server.https"
 
     static var savedText: String {
-        get { UserDefaults.standard.string(forKey: storageKey) ?? "" }
-        set { UserDefaults.standard.set(newValue, forKey: storageKey) }
+        get { Keychain.string(forKey: storageKey) ?? UserDefaults.standard.string(forKey: storageKey) ?? "" }
+        set {
+            Keychain.saveString(newValue, forKey: storageKey)
+            UserDefaults.standard.set(newValue, forKey: storageKey)
+        }
     }
 
     /// 是否强制使用 HTTPS 访问服务端。
@@ -31,6 +35,10 @@ enum ServerConfig {
         guard var components = URLComponents(string: text),
               let host = components.host,
               isValidHost(host) else { return nil }
+
+        if components.port == nil {
+            components.port = https ? 443 : 8020
+        }
 
         components.query = nil
         components.fragment = nil

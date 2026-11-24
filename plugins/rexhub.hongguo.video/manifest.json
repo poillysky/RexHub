@@ -1,0 +1,97 @@
+{
+  "id": "rexhub.hongguo.video",
+  "name": "红果短剧",
+  "version": "1.0.2",
+  "description": "榜单、筛选、目录、搜索、播放",
+  "author": "RexHub",
+  "category": "shortdrama",
+  "protocol": "native",
+  "api_version": "1.0",
+  "capabilities": [
+    "playback.extract",
+    "playback.stream",
+    "resource.search",
+    "metadata.tv",
+    "danmaku.search",
+    "danmaku.detail",
+    "danmaku.fetch",
+    "shortdrama.ranks",
+    "shortdrama.catalog",
+    "shortdrama.search",
+    "shortdrama.detail",
+    "shortdrama.stream"
+  ],
+  "endpoints": {
+    "playback.extract": {
+      "path": "/v1/rankings",
+      "method": "GET"
+    },
+    "playback.stream": {
+      "path": "/v1/episodes/{id}/stream",
+      "method": "GET"
+    },
+    "resource.search": {
+      "path": "/v1/search",
+      "method": "GET"
+    },
+    "metadata.tv": {
+      "path": "/v1/series/{id}",
+      "method": "GET"
+    },
+    "danmaku.search": {
+      "path": "/v1/dandanplay/api/v2/search/anime",
+      "method": "GET"
+    },
+    "danmaku.detail": {
+      "path": "/v1/dandanplay/api/v2/bangumi/{animeId}",
+      "method": "GET"
+    },
+    "danmaku.fetch": {
+      "path": "/v1/dandanplay/api/v2/comment/{commentId}",
+      "method": "GET"
+    },
+    "shortdrama.ranks": {
+      "path": "/v1/rankings",
+      "method": "GET"
+    },
+    "shortdrama.catalog": {
+      "path": "/v1/catalog",
+      "method": "GET"
+    },
+    "shortdrama.search": {
+      "path": "/v1/search",
+      "method": "GET"
+    },
+    "shortdrama.detail": {
+      "path": "/v1/series/{id}",
+      "method": "GET"
+    },
+    "shortdrama.stream": {
+      "path": "/v1/episodes/{id}/stream",
+      "method": "GET"
+    }
+  },
+  "runtime": {
+    "type": "isolated",
+    "engine": "node",
+    "entrypoint": "module.mjs"
+  },
+  "entrypoint": "module.mjs",
+  "permissions": [
+    "network",
+    "storage",
+    "shared-cache"
+  ],
+  "config": [],
+  "ui": {
+    "shortdrama": {
+      "subtitle": "漫剧 · 榜单 · 直接播放",
+      "accent": "#ff3b30",
+      "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.9\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 8c3.9 0 7 2.7 7 6.5S15.9 21 12 21 5 18.2 5 14.5 8.1 8 12 8z\"/><path d=\"M12 8c0-2.2 1.3-4 3.5-4.5\"/><path d=\"M12 8c-1.2-.4-2.3-1.4-2.7-2.8 1.6-.4 3 .4 3.6 1.9\"/></svg>",
+      "logo": "/v1/logo"
+    }
+  },
+  "healthcheck": "",
+  "homepage": "",
+  "license": ""
+}

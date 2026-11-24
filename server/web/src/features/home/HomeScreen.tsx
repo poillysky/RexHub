@@ -33,6 +33,7 @@ export function HomeScreen() {
 
       {h.detailHash ? (
         <AppPush
+          key={`home-detail-${h.detailSource}-${h.detailHash}`}
           title="详情"
           scrollKey={`home-detail-${h.detailSource}-${h.detailHash}`}
           scrollMode="top"
@@ -48,6 +49,7 @@ export function HomeScreen() {
 
       {h.scopeItem ? (
         <AppPush
+          key={`home-scope-detail-${h.scopeItem.id}`}
           title="详情"
           scrollKey={`home-scope-detail-${h.scopeItem.id}`}
           scrollMode="top"

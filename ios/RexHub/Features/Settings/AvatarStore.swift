@@ -1,17 +1,18 @@
 import Observation
 import SwiftUI
 
-/// 内置彩色头像：渐变底 + emoji，作为固定素材，不依赖网络或图标库。
+/// 内置彩色头像：渐变底 + SF Symbol，作为固定素材，不依赖网络、图标库与 emoji 字体。
 struct RexAvatarStyle: Identifiable, Hashable, Sendable {
     let id: String
-    let emoji: String
+    let symbol: String
     let title: String
     let startHex: UInt32
+    let midHex: UInt32
     let endHex: UInt32
 
     var gradient: LinearGradient {
         LinearGradient(
-            colors: [Color(hex: startHex), Color(hex: endHex)],
+            colors: [Color(hex: startHex), Color(hex: midHex), Color(hex: endHex)],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
@@ -26,26 +27,17 @@ final class AvatarStore {
     static let shared = AvatarStore()
 
     static let styles: [RexAvatarStyle] = [
-        RexAvatarStyle(id: "cinema", emoji: "🎬", title: "影院", startHex: 0x5B8CFF, endHex: 0x7C4DFF),
-        RexAvatarStyle(id: "popcorn", emoji: "🍿", title: "爆米花", startHex: 0xFFB65C, endHex: 0xFF6B9A),
-        RexAvatarStyle(id: "player", emoji: "🎮", title: "玩家", startHex: 0x9D7BFF, endHex: 0xD05CE8),
-        RexAvatarStyle(id: "music", emoji: "🎧", title: "音乐", startHex: 0x33D6E8, endHex: 0x3B82F6),
-        RexAvatarStyle(id: "rocket", emoji: "🚀", title: "启程", startHex: 0x4FD1FF, endHex: 0x6366F1),
-        RexAvatarStyle(id: "cat", emoji: "🐱", title: "猫咪", startHex: 0xFFC078, endHex: 0xFF85A8),
-        RexAvatarStyle(id: "fox", emoji: "🦊", title: "狐狸", startHex: 0xFFA94D, endHex: 0xFF5E3A),
-        RexAvatarStyle(id: "panda", emoji: "🐼", title: "熊猫", startHex: 0xA7B4C6, endHex: 0x64748B),
-        RexAvatarStyle(id: "rainbow", emoji: "🌈", title: "彩虹", startHex: 0xF78BEA, endHex: 0x8B5CF6),
-        RexAvatarStyle(id: "bolt", emoji: "⚡", title: "闪电", startHex: 0xFFE066, endHex: 0xFFA000),
-        RexAvatarStyle(id: "night", emoji: "🌙", title: "夜晚", startHex: 0x7A8CFF, endHex: 0x3B2F8F),
-        RexAvatarStyle(id: "clover", emoji: "🍀", title: "幸运", startHex: 0x5BE49B, endHex: 0x18A058),
-        RexAvatarStyle(id: "blossom", emoji: "🌸", title: "樱花", startHex: 0xFFB3D1, endHex: 0xFF5C8A),
-        RexAvatarStyle(id: "whale", emoji: "🐳", title: "鲸鱼", startHex: 0x69C9FF, endHex: 0x2F6BFF),
-        RexAvatarStyle(id: "flame", emoji: "🔥", title: "火焰", startHex: 0xFF9A3C, endHex: 0xFF3B4E),
-        RexAvatarStyle(id: "ice", emoji: "❄️", title: "冰雪", startHex: 0x9BE7FF, endHex: 0x3AA6E8),
-        RexAvatarStyle(id: "palette", emoji: "🎨", title: "调色盘", startHex: 0xFF8FCF, endHex: 0x9B5DE5),
-        RexAvatarStyle(id: "orange", emoji: "🍊", title: "橙子", startHex: 0xFFC44D, endHex: 0xFF7A1A),
-        RexAvatarStyle(id: "planet", emoji: "🪐", title: "星球", startHex: 0xA78BFA, endHex: 0x3B82F6),
-        RexAvatarStyle(id: "avocado", emoji: "🥑", title: "牛油果", startHex: 0xB8E986, endHex: 0x4CAF50)
+        RexAvatarStyle(id: "cinema", symbol: "film.fill", title: "影院", startHex: 0x8B7CFF, midHex: 0x6A5BFF, endHex: 0x4A35E0),
+        RexAvatarStyle(id: "player", symbol: "gamecontroller.fill", title: "玩家", startHex: 0xC06BFF, midHex: 0x9B4DFF, endHex: 0x6D28D9),
+        RexAvatarStyle(id: "music", symbol: "headphones", title: "音乐", startHex: 0x4FD8E8, midHex: 0x3BA9F0, endHex: 0x2563EB),
+        RexAvatarStyle(id: "cat", symbol: "pawprint.fill", title: "猫咪", startHex: 0xFFCF8A, midHex: 0xFFA08B, endHex: 0xFF7A6B),
+        RexAvatarStyle(id: "rainbow", symbol: "rainbow", title: "彩虹", startHex: 0xFF9AD5, midHex: 0xD07BFF, endHex: 0x8B5CF6),
+        RexAvatarStyle(id: "bolt", symbol: "bolt.fill", title: "闪电", startHex: 0xFFE066, midHex: 0xFFC233, endHex: 0xFF8A00),
+        RexAvatarStyle(id: "night", symbol: "moon.stars.fill", title: "夜空", startHex: 0x8FA6FF, midHex: 0x6B7BF5, endHex: 0x3B3DA8),
+        RexAvatarStyle(id: "clover", symbol: "leaf.fill", title: "四叶", startHex: 0x7DEBA8, midHex: 0x3ECF7E, endHex: 0x159A55),
+        RexAvatarStyle(id: "blossom", symbol: "sparkles", title: "闪耀", startHex: 0xFFB3D1, midHex: 0xFF7FB0, endHex: 0xF43F7E),
+        RexAvatarStyle(id: "flame", symbol: "flame.fill", title: "火焰", startHex: 0xFFB057, midHex: 0xFF7A3C, endHex: 0xF03B3B),
+        RexAvatarStyle(id: "ice", symbol: "snowflake", title: "冰雪", startHex: 0xA8ECFF, midHex: 0x63CFF5, endHex: 0x2F86E8)
     ]
 
     static func style(id: String) -> RexAvatarStyle? {
@@ -123,9 +115,11 @@ struct RexAvatar: View {
                     .frame(width: size * 0.66, height: size * 0.66)
                     .blendMode(.softLight)
 
-                Text(style.emoji)
-                    .font(.system(size: size * 0.47))
-                    .shadow(color: .black.opacity(0.22), radius: size * 0.035, y: size * 0.02)
+                Image(systemName: style.symbol)
+                    .symbolRenderingMode(.hierarchical)
+                    .font(.system(size: size * 0.42, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .shadow(color: .black.opacity(0.26), radius: size * 0.045, y: size * 0.022)
             } else {
                 LinearGradient(
                     colors: [RexColor.brandBlue.opacity(0.16), RexColor.brandBlue.opacity(0.08)],

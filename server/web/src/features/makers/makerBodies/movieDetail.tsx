@@ -448,7 +448,7 @@ export function MakerMovieBody({
 
 /* ── 在线播放 ──────────────────────────────────── */
 
-/** 在线播放：聚合片商类插件、Stremio 插件与 AVDB 播放源 */
+/** 在线播放：聚合片商类插件与 AVDB 播放源 */
 function MakerOnlinePlay({
   movieId,
   number,

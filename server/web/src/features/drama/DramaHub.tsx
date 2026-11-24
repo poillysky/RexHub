@@ -12,12 +12,12 @@ export function DramaHub({ onOpen }: { onOpen: (site: DramaSite) => void }) {
   return (
     <section className="drama-hub__section">
       <div className="drama-sites">
-        {loading
+        {loading && sites.length === 0
           ? Array.from({ length: 4 }).map((_, i) => (
               <span key={i} className="drama-site-skel" />
             ))
           : null}
-        {!loading && error ? (
+        {!loading && error && sites.length === 0 ? (
           <p className="drama-empty allow-select">{error}</p>
         ) : null}
         {!loading && !error && sites.length === 0 ? (

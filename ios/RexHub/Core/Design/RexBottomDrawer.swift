@@ -209,7 +209,7 @@ private final class RexDrawerTransitioningDelegate: NSObject, UIViewControllerTr
 
     func animationController(
         forPresented presented: UIViewController,
-        presenting: UIViewController?,
+        presenting: UIViewController,
         source: UIViewController
     ) -> UIViewControllerAnimatedTransitioning? {
         RexDrawerAnimator(isPresenting: true)

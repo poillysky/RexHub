@@ -604,7 +604,9 @@ def search(
     if not kw:
         raise BitmagnetError("请输入关键词")
     page = max(1, int(page or 1))
-    size = PAGE_SIZE if not limit else max(1, min(int(limit), 500))
+    # limit 用于聚合搜索：一次取够 N 条（不分页、无 OFFSET）。不再封顶，
+    # 深层翻页需要的前缀长度由调用方按需决定。
+    size = PAGE_SIZE if not limit else max(1, int(limit))
     offset = 0 if limit else (page - 1) * PAGE_SIZE
     t0 = time.perf_counter()
 
@@ -687,9 +689,9 @@ def search(
         else:
             # 各别名单独限量查再合并，避免多 ILIKE OR 拖垮超时。
             # 中文词单查就要十几秒（无三元组索引），所以各词并行跑，取最慢的那个。
-            # 单别名最多取 200 条（聚合搜索 _MAX_FETCH 上限），否则深翻页时
-            # 每个别名只回 80 条、合并后凑不满当前页。
-            per = min(max(offset + fetch_n, 30), 200)
+            # 每个别名都要给到「从头到 fetch_n」的连续前缀，深翻页才不会只回
+            # 固定条数、合并后凑不满当前页（不再按 200 条封顶）。
+            per = max(offset + fetch_n, 30)
 
             def _query_term(index: int) -> list[dict[str, Any]]:
                 t = terms[index]

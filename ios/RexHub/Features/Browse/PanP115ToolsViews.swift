@@ -86,7 +86,7 @@ struct PanTransferConfigView: View {
                     .controlSize(.small)
             } else if isAdmin {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(.system(.caption, weight: .semibold))
                     .foregroundStyle(RexColor.tertiaryText)
             }
         }
@@ -286,7 +286,7 @@ struct PanExtractView: View {
                 .truncationMode(.middle)
 
             Image(systemName: "chevron.right")
-                .font(.system(size: 12.5, weight: .semibold))
+                .font(.system(.caption, weight: .semibold))
                 .foregroundStyle(RexColor.tertiaryText)
         }
         .padding(.horizontal, RexSpacing.lg)
@@ -471,7 +471,7 @@ struct PanExtractView: View {
     private var emptyState: some View {
         VStack(spacing: RexSpacing.sm) {
             Image(systemName: hasScanned ? "tray" : "clock")
-                .font(.system(size: 22, weight: .regular))
+                .font(.system(.title2, weight: .regular))
                 .foregroundStyle(RexColor.tertiaryText)
 
             Text(hasScanned ? "目录下没有可解压的压缩包" : "暂无解压任务")
@@ -493,7 +493,7 @@ struct PanExtractView: View {
     private func itemRow(_ item: P115ExtractItem) -> some View {
         HStack(alignment: .top, spacing: RexSpacing.md) {
             Image(systemName: itemSymbol(item))
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(.subheadline, weight: .semibold))
                 .foregroundStyle(itemTint(item))
                 .frame(width: 20)
                 .padding(.top, 2)
@@ -914,11 +914,11 @@ struct PanExtractFlowView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(.system(.caption, weight: .semibold))
                     .foregroundStyle(RexColor.primaryText)
 
                 Text(sub)
-                    .font(.system(size: 11))
+                    .font(.system(.caption2))
                     .foregroundStyle(RexColor.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -944,7 +944,7 @@ struct PanExtractFlowView: View {
                     .frame(width: 7, height: 7)
 
                 Text(title)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(.caption, weight: .semibold))
                     .foregroundStyle(RexColor.primaryText)
             }
 
@@ -956,7 +956,7 @@ struct PanExtractFlowView: View {
                         .padding(.top, 5)
 
                     Text(step)
-                        .font(.system(size: 11))
+                        .font(.system(.caption2))
                         .foregroundStyle(RexColor.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -979,12 +979,12 @@ struct PanExtractFlowView: View {
         VStack(spacing: 3) {
             if let label {
                 Text(label)
-                    .font(.system(size: 10))
+                    .font(.system(.caption2))
                     .foregroundStyle(RexColor.tertiaryText)
             }
 
             Image(systemName: "arrow.down")
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(.caption2, weight: .semibold))
                 .foregroundStyle(RexColor.tertiaryText)
         }
         .frame(maxWidth: .infinity)

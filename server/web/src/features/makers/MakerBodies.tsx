@@ -17,6 +17,7 @@ export {
 export type { MakerListKind } from './makerBodies/movies';
 
 export { MakerSearchBody } from './makerBodies/search';
+export type { MakerSearchState } from './makerBodies/search';
 export { MakerTagsBody } from './makerBodies/tags';
 
 export {

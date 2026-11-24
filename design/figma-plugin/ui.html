@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 16px;
+        font: 12px/1.5 -apple-system, "SF Pro Text", "PingFang SC", sans-serif;
+        background: #0b0d12;
+        color: #f5f5f7;
+      }
+      h1 { font-size: 14px; margin: 0 0 2px; letter-spacing: .2px; }
+      p.sub { margin: 0 0 14px; color: #98989d; font-size: 11px; }
+      .seg { display: flex; background: #1c1c1e; border-radius: 10px; padding: 3px; margin-bottom: 14px; }
+      .seg button {
+        flex: 1; border: 0; background: transparent; color: #98989d;
+        padding: 7px 0; border-radius: 8px; font-size: 12px; cursor: pointer;
+      }
+      .seg button.on { background: #2c2c2e; color: #fff; }
+      .btn {
+        width: 100%; border: 0; border-radius: 10px; padding: 11px 12px;
+        font-size: 12.5px; font-weight: 600; cursor: pointer; margin-bottom: 8px;
+        background: #2c2c2e; color: #f5f5f7; text-align: left;
+      }
+      .btn.primary { background: #0066ff; color: #fff; }
+      .btn:hover { filter: brightness(1.08); }
+      .row { display: flex; align-items: center; gap: 8px; margin: 10px 0 12px; color: #98989d; }
+      input[type="checkbox"] { accent-color: #0066ff; }
+      .log {
+        margin-top: 4px; padding: 10px; border-radius: 10px; background: #14171d;
+        color: #98989d; font-size: 11px; min-height: 44px; white-space: pre-wrap;
+      }
+      .hint { color: #6c6c70; font-size: 10.5px; margin-top: 10px; line-height: 1.6; }
+    </style>
+  </head>
+  <body>
+    <h1>RexHub 设计稿生成器</h1>
+    <p class="sub">以代码为准 · 登录 / 首页 / 影视 / 资源库 / 设置 / 详情 / 登录历史</p>
+
+    <div class="seg">
+      <button data-theme="dark" class="on">深色</button>
+      <button data-theme="light">浅色</button>
+    </div>
+
+    <button id="all" class="btn primary">生成全部画板</button>
+    <button id="stylesBtn" class="btn">只生成样式</button>
+
+    <label class="row"><input type="checkbox" id="withStyles" checked /> 同时写入颜色与文字样式</label>
+
+    <div id="log" class="log">选主题后点生成。重复生成会排在已有画板下方，不会覆盖。</div>
+    <div class="hint">数值来自 DesignTokens.swift：品牌蓝 #0066FF、圆角 8/12/14/16/20、间距 4/8/12/16/20/24/32、画板 393×852。</div>
+
+    <script>
+      let theme = "dark";
+      const log = document.getElementById("log");
+      const post = (msg) => parent.postMessage({ pluginMessage: msg }, "*");
+
+      document.querySelectorAll(".seg button").forEach((btn) => {
+        btn.onclick = () => {
+          document.querySelectorAll(".seg button").forEach((b) => b.classList.remove("on"));
+          btn.classList.add("on");
+          theme = btn.dataset.theme;
+        };
+      });
+
+      const withStyles = () => document.getElementById("withStyles").checked;
+
+      document.getElementById("all").onclick = () => {
+        log.style.color = "#98989d";
+        log.textContent = "正在生成，七个画板需要几秒…";
+        post({ type: "build", theme, styles: withStyles() });
+      };
+
+      document.getElementById("stylesBtn").onclick = () => {
+        log.style.color = "#98989d";
+        log.textContent = "正在写入颜色 / 文字 / 阴影样式…";
+        post({ type: "styles-only", theme });
+      };
+
+      window.onmessage = (event) => {
+        const msg = event.data.pluginMessage;
+        if (!msg || msg.type !== "log") return;
+        log.textContent = msg.text;
+        log.style.color = msg.error ? "#ff453a" : "#98989d";
+      };
+    </script>
+  </body>
+</html>

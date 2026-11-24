@@ -52,22 +52,44 @@ export function useStackCover(
     }
     if (!covered && wasCovered) {
       restoreScrollPosition(scroller, scrollKey);
-      requestAnimationFrame(() => {
+      let alive = true;
+      // 返回后数据可能异步补高：观察 1.2s，用户主动滚动则停止纠正
+      const deadline = Date.now() + 1200;
+      const reapply = () => {
+        if (!alive || Date.now() > deadline) return;
         restoreScrollPosition(scroller, scrollKey);
-      });
-      const t1 = window.setTimeout(() => {
-        restoreScrollPosition(scroller, scrollKey);
-      }, 50);
-      const t2 = window.setTimeout(() => {
-        restoreScrollPosition(scroller, scrollKey);
-      }, 120);
-      const t3 = window.setTimeout(() => {
-        restoreScrollPosition(scroller, scrollKey);
-      }, 280);
+      };
+      const cancel = () => {
+        alive = false;
+      };
+      scroller.addEventListener('touchstart', cancel, { passive: true });
+      scroller.addEventListener('wheel', cancel, { passive: true });
+      scroller.addEventListener('keydown', cancel);
+
+      requestAnimationFrame(reapply);
+      const raf2 = requestAnimationFrame(() => requestAnimationFrame(reapply));
+      const t1 = window.setTimeout(reapply, 50);
+      const t2 = window.setTimeout(reapply, 120);
+      const t3 = window.setTimeout(reapply, 280);
+      const t4 = window.setTimeout(reapply, 700);
+
+      let ro: ResizeObserver | null = null;
+      if (typeof ResizeObserver !== 'undefined') {
+        ro = new ResizeObserver(reapply);
+        ro.observe(scroller);
+      }
+
       return () => {
+        alive = false;
+        scroller.removeEventListener('touchstart', cancel);
+        scroller.removeEventListener('wheel', cancel);
+        scroller.removeEventListener('keydown', cancel);
+        cancelAnimationFrame(raf2);
         window.clearTimeout(t1);
         window.clearTimeout(t2);
         window.clearTimeout(t3);
+        window.clearTimeout(t4);
+        ro?.disconnect();
       };
     }
   }, [covered, restoreScrollOnBack, scrollKey]);

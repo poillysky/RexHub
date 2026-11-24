@@ -29,12 +29,21 @@ import { MakerMovieCard, Pager, WallSkeleton, makerImageUrl } from './shared';
 
 export function MakerMoviesBody({
   name,
+  initialPage = 1,
+  onPageChange,
   onOpenMovie,
 }: {
   name: string;
+  /** 从影片详情返回时恢复页码 */
+  initialPage?: number;
+  onPageChange?: (page: number) => void;
   onOpenMovie: (movie: MakerMovie) => void;
 }) {
-  const [page, setPage] = useState(1);
+  const [page, setPageState] = useState(() => Math.max(1, initialPage));
+  const setPage = (next: number) => {
+    setPageState(next);
+    onPageChange?.(next);
+  };
   const { data, isLoading, isFetching, error } = useMakerMovies(name, page);
   const items = data?.items || [];
   const hasMore = !!data?.hasMore;
@@ -85,6 +94,8 @@ export function MakerListBody({
   latestFilter: latestFilterProp,
   playbackFilter = 'all',
   year = '',
+  initialPage = 1,
+  onPageChange,
   onOpenMovie,
 }: {
   kind: MakerListKind;
@@ -99,14 +110,23 @@ export function MakerListBody({
   playbackFilter?: MakerPlaybackFilter;
   /** kind=top 年份筛选（留空为按类别榜） */
   year?: string;
+  /** 从影片详情返回时恢复页码 */
+  initialPage?: number;
+  onPageChange?: (page: number) => void;
   onOpenMovie: (movie: MakerMovie) => void;
 }) {
   const latestFilter = latestFilterProp ?? 'all';
   // 筛选条件变化时自动回到第 1 页：状态带上条件指纹，旧分页自然失效
   const filterKey = `${latestFilter}|${sortBy ?? ''}|${playbackFilter}|${year}`;
-  const [pager, setPager] = useState({ key: filterKey, page: 1 });
+  const [pager, setPager] = useState({
+    key: filterKey,
+    page: Math.max(1, initialPage),
+  });
   const page = pager.key === filterKey ? pager.page : 1;
-  const setPage = (next: number) => setPager({ key: filterKey, page: next });
+  const setPage = (next: number) => {
+    setPager({ key: filterKey, page: next });
+    onPageChange?.(next);
+  };
   // 只请求当前 tab 对应的数据源，避免同时打满 5 个上游接口
   const rank = useMakerRank(category, period || 'daily', kind === 'rank');
   const latest = useMakerLatest(category, page, sortBy, latestFilter, kind === 'latest');
@@ -350,6 +370,8 @@ export function MakerBrowseBody({
   actorId,
   tagName,
   dims,
+  initialPage = 1,
+  onPageChange,
   onOpenMovie,
 }: {
   category: MakerCategoryId;
@@ -369,6 +391,9 @@ export function MakerBrowseBody({
     sortBy?: 'release';
     orderBy?: 'asc' | 'desc';
   };
+  /** 从影片详情返回时恢复页码 */
+  initialPage?: number;
+  onPageChange?: (page: number) => void;
   onOpenMovie: (movie: MakerMovie) => void;
 }) {
   // 筛选条件（标签 / 演员 / 维度）变化时回到第 1 页，避免停在上一个入口的页码
@@ -380,9 +405,15 @@ export function MakerBrowseBody({
     (tagIds || []).join(','),
     JSON.stringify(dims || {}),
   ].join('|');
-  const [pager, setPager] = useState({ key: filterKey, page: 1 });
+  const [pager, setPager] = useState({
+    key: filterKey,
+    page: Math.max(1, initialPage),
+  });
   const page = pager.key === filterKey ? pager.page : 1;
-  const setPage = (next: number) => setPager({ key: filterKey, page: next });
+  const setPage = (next: number) => {
+    setPager({ key: filterKey, page: next });
+    onPageChange?.(next);
+  };
   const { data, isPending, isPlaceholderData, isFetching, error } = useMakerBrowse(
     category,
     group,

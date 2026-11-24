@@ -12,6 +12,7 @@ from app.search.resource_format import (
     SOURCE_META_JOIN,
     format_resource,
     format_resources,
+    pack_row_unsplit,
 )
 
 from .filters import _ILIKE_ESC, _list_enrich_sql
@@ -268,6 +269,11 @@ WHERE {where_sql}
     }
 
 
+def _pack_row_unsplit(row: dict[str, Any]) -> bool:
+    """兼容旧调用名；实现在 resource_format，列表/详情同口径。"""
+    return pack_row_unsplit(row)
+
+
 def resource_by_hash(hash_: str) -> dict[str, Any] | None:
     h = (hash_ or "").strip().upper()
     if not h:
@@ -283,5 +289,8 @@ LIMIT 1
     rows = pg.query(sql, [h])
     if not rows:
         return None
+    row = rows[0]
     # 色花详情不拉外网 .torrent 补文件树（会卡住首屏）；文件列表前端也不再展示
-    return format_resource(rows[0], enrich_magnets=False)
+    return format_resource(
+        row, enrich_magnets=False, keep_all_links=_pack_row_unsplit(row)
+    )

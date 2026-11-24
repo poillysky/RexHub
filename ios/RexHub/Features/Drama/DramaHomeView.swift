@@ -2,6 +2,9 @@ import SwiftUI
 
 /// 短剧 Hub：站点列表（对齐 PWA `/drama`），点站点进入目录。
 struct DramaHomeView: View {
+    /// 外部每次递增表示重复点了「短剧」标签，回到页面顶部。
+    var reselectToken: Int = 0
+
     @Environment(\.apiClient) private var apiClient
 
     @State private var sites: [DramaSite] = []
@@ -16,45 +19,56 @@ struct DramaHomeView: View {
                     EmptyView()
                 }
 
-                ScrollView {
-                    VStack(spacing: RexSpacing.md) {
-                        if isLoading {
-                            ForEach(0..<4, id: \.self) { _ in
-                                RexSkeleton(width: .infinity, height: 68, cornerRadius: RexRadius.card)
-                            }
-                        } else if let errorText {
-                            RexStateCard(
-                                symbol: "wifi.exclamationmark",
-                                title: "站点加载失败",
-                                message: errorText,
-                                tone: .warning,
-                                actionTitle: "重试"
-                            ) {
-                                Task { await loadSites() }
-                            }
-                        } else if sites.isEmpty {
-                            RexStateCard(
-                                symbol: "popcorn",
-                                title: "暂无可用的短剧片源",
-                                message: "请先在插件中心启用短剧插件。",
-                                tone: .neutral
-                            )
-                        } else {
-                            ForEach(Array(sites.enumerated()), id: \.element.id) { index, site in
-                                DramaSiteCard(site: site, isHot: index == 0) {
-                                    path.append(.site(site))
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(spacing: RexSpacing.md) {
+                            if isLoading {
+                                ForEach(0..<4, id: \.self) { _ in
+                                    RexSkeleton(width: .infinity, height: 68, cornerRadius: RexRadius.card)
+                                }
+                            } else if let errorText {
+                                RexStateCard(
+                                    symbol: "wifi.exclamationmark",
+                                    title: "站点加载失败",
+                                    message: errorText,
+                                    tone: .warning,
+                                    actionTitle: "重试"
+                                ) {
+                                    Task { await loadSites() }
+                                }
+                            } else if sites.isEmpty {
+                                RexStateCard(
+                                    symbol: "popcorn",
+                                    title: "暂无可用的短剧片源",
+                                    message: "短剧服务尚未接入。",
+                                    tone: .neutral
+                                )
+                            } else {
+                                ForEach(Array(sites.enumerated()), id: \.element.id) { index, site in
+                                    DramaSiteCard(site: site, isHot: index == 0) {
+                                        path.append(.site(site))
+                                    }
                                 }
                             }
                         }
+                        .id("dramaHomeTop")
+                        .padding(.horizontal, RexSpacing.xl)
+                        .padding(.top, RexSpacing.md)
+                        .padding(.bottom, RexSpacing.huge)
+                        .frame(maxWidth: RexLayout.contentMaxWidth)
+                        .frame(maxWidth: .infinity)
                     }
-                    .padding(.horizontal, RexSpacing.xl)
-                    .padding(.top, RexSpacing.md)
-                    .padding(.bottom, RexSpacing.huge)
-                    .frame(maxWidth: RexLayout.contentMaxWidth)
-                    .frame(maxWidth: .infinity)
+                    .scrollBounceBehavior(.basedOnSize)
+                    .refreshable { await loadSites() }
+                    .onChange(of: reselectToken) { _, _ in
+                        if !path.isEmpty {
+                            path.removeAll()
+                        }
+                        withAnimation(RexMotion.standard) {
+                            proxy.scrollTo("dramaHomeTop", anchor: .top)
+                        }
+                    }
                 }
-                .scrollBounceBehavior(.basedOnSize)
-                .refreshable { await loadSites() }
             }
             .background(RexPageBackground())
             .toolbar(.hidden, for: .navigationBar)
@@ -62,16 +76,16 @@ struct DramaHomeView: View {
                 switch route {
                 case .site(let site):
                     DramaSiteView(site: site)
-                        .toolbar(.hidden, for: .navigationBar)
+                        .rexPushedScreen()
                 case .detail(let card):
                     DramaDetailView(card: card)
-                        .toolbar(.hidden, for: .navigationBar)
+                        .rexPushedScreen()
                 case .ranks(let site):
                     DramaRankView(site: site)
-                        .toolbar(.hidden, for: .navigationBar)
+                        .rexPushedScreen()
                 case .searchResults(let keyword, let site):
                     DramaSearchResultsView(keyword: keyword, site: site)
-                        .toolbar(.hidden, for: .navigationBar)
+                        .rexPushedScreen()
                 }
             }
         }
@@ -175,13 +189,13 @@ struct DramaSiteCard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
                         Text(title)
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.system(.callout, weight: .semibold))
                             .foregroundStyle(RexColor.primaryText)
                             .lineLimit(1)
 
                         if let badge = ui?.badge, !badge.isEmpty {
                             Text(badge)
-                                .font(.system(size: 10.5, weight: .semibold))
+                                .font(.system(.caption2, weight: .semibold))
                                 .foregroundStyle(accent)
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 1)
@@ -190,7 +204,7 @@ struct DramaSiteCard: View {
                     }
 
                     Text(subtitle)
-                        .font(.system(size: 12.5))
+                        .font(.system(.caption))
                         .foregroundStyle(RexColor.secondaryText)
                         .lineLimit(1)
                 }
@@ -198,7 +212,7 @@ struct DramaSiteCard: View {
                 Spacer(minLength: 0)
 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(.subheadline, weight: .semibold))
                     .foregroundStyle(RexColor.tertiaryText)
                     .padding(4)
                     .background(accent.opacity(0.08), in: Circle())
@@ -279,27 +293,24 @@ struct DramaSiteCard: View {
 
     private var fallbackGlyph: some View {
         Image(systemName: "clapperboard")
-            .font(.system(size: 21, weight: .regular))
+            .font(.system(.title3, weight: .regular))
             .foregroundStyle(.white)
     }
 
     private func logoURL(_ path: String) -> URL? {
-        if path.hasPrefix("http://") || path.hasPrefix("https://") {
-            return URL(string: path)
-        }
-        guard let base = apiClient?.baseURL.absoluteString else { return nil }
-        return URL(string: base.hasSuffix("/") ? base + path : base + "/" + path)
+        apiClient?.remoteAssetURL(path)
     }
 }
 
 struct DramaPosterCard: View {
     let card: DramaCard
     var width: CGFloat?
+    var aspect: CGFloat = 3 / 4
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Color.clear
-                .aspectRatio(3 / 4, contentMode: .fit)
+                .aspectRatio(aspect, contentMode: .fit)
                 .overlay {
                     MakerArtwork(card.cover, width: 360)
                 }
@@ -317,7 +328,7 @@ struct DramaPosterCard: View {
                 .shadow(color: Color.black.opacity(0.16), radius: 8, y: 4)
 
             Text(card.title)
-                .font(.system(size: 12.5, weight: .medium))
+                .font(.system(.caption, weight: .medium))
                 .foregroundStyle(RexColor.primaryText)
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)

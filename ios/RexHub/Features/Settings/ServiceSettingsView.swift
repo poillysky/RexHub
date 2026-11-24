@@ -3,9 +3,9 @@ import UIKit
 
 // MARK: - 通用输入行
 
-/// 设置页里的文本 / 密码输入行：图标 + 标题，输入框右对齐，整行最小高度与其它设置行一致。
+/// 设置页里的文本 / 密码输入行：标题 + 输入框右对齐，整行最小高度与其它设置行一致。
 struct SettingsInputRow: View {
-    let icon: String
+    var icon: String? = nil
     let title: String
     var placeholder: String = ""
     @Binding var text: String
@@ -15,10 +15,12 @@ struct SettingsInputRow: View {
 
     var body: some View {
         HStack(spacing: RexSpacing.md) {
-            Image(systemName: icon)
-                .font(.system(size: 17, weight: .medium))
-                .foregroundStyle(RexColor.brandBlue)
-                .frame(width: 28)
+            if let icon {
+                Image(systemName: icon)
+                    .font(.system(.body, weight: .medium))
+                    .foregroundStyle(RexColor.brandBlue)
+                    .frame(width: 28)
+            }
 
             Text(title)
                 .font(RexFont.row)
@@ -67,18 +69,6 @@ enum ServiceKind: String, Identifiable, CaseIterable {
         case .avdb: "AVDB"
         case .moviePilot: "MoviePilot"
         case .morePlay: "MorePlay"
-        }
-    }
-
-    /// 列表行副标题，与 PWA 设置首页保持一致。
-    var subtitle: String {
-        switch self {
-        case .bitmagnet: "磁力索引资源库"
-        case .cloudSaver: "账号登录与资源搜索"
-        case .sehuatang: "链接信息 · 论坛板块"
-        case .avdb: "API 令牌 · 资源接口"
-        case .moviePilot: "API 令牌 · 媒体订阅"
-        case .morePlay: "猫源聚合 · 在线播放"
         }
     }
 
@@ -147,17 +137,6 @@ enum ServiceKind: String, Identifiable, CaseIterable {
         self == .sehuatang ? "ed2k" : "bitmagnet"
     }
 
-    var summary: String {
-        switch self {
-        case .bitmagnet: "磁力索引库，影视与片商搜索都依赖它。"
-        case .cloudSaver: "影视资源搜索与 115 转存。"
-        case .sehuatang: "色花资源库，负责片商搜索与论坛板块信息。"
-        case .avdb: "片商数据源，影视 Tab 的榜单与影片搜索都依赖它。"
-        case .moviePilot: "影视推荐、订阅与下载。"
-        case .morePlay: "猫源聚合在线播放。"
-        }
-    }
-
     var needsApiKey: Bool {
         self == .avdb || self == .moviePilot
     }
@@ -194,17 +173,15 @@ struct ServiceSettingsView: View {
     @State private var apiKey = ""
     @State private var username = ""
     @State private var password = ""
-    @State private var searchSitesText = ""
+    @State private var searchSites: [String] = []
+    @State private var morePlaySites: [MorePlaySite] = []
     @State private var hasStoredSecret = false
-    @State private var tokenPageUrl: String?
 
     var body: some View {
         SettingsPage(title: kind.title) {
             if isLoading {
                 RexSkeleton(width: .infinity, height: 120, cornerRadius: RexRadius.panel)
             } else {
-                RexNote(text: kind.summary)
-
                 SettingsCard {
                     SettingsSwitchRow(
                         title: "启用 \(kind.title)",
@@ -222,7 +199,6 @@ struct ServiceSettingsView: View {
                     SettingsDivider()
 
                     SettingsInputRow(
-                        icon: "link",
                         title: "服务地址",
                         placeholder: "http://192.168.1.10:端口",
                         text: $baseUrl,
@@ -234,7 +210,6 @@ struct ServiceSettingsView: View {
                     if kind.needsApiKey {
                         SettingsDivider()
                         SettingsInputRow(
-                            icon: "key",
                             title: "API 令牌",
                             placeholder: hasStoredSecret ? "留空保持现有令牌" : "请输入令牌",
                             text: $apiKey,
@@ -246,7 +221,6 @@ struct ServiceSettingsView: View {
                     if kind.needsAccount {
                         SettingsDivider()
                         SettingsInputRow(
-                            icon: "person",
                             title: "账号",
                             placeholder: "用户名",
                             text: $username,
@@ -256,7 +230,6 @@ struct ServiceSettingsView: View {
 
                         SettingsDivider()
                         SettingsInputRow(
-                            icon: "lock",
                             title: "密码",
                             placeholder: hasStoredSecret ? "留空保持现有密码" : "请输入密码",
                             text: $password,
@@ -268,13 +241,11 @@ struct ServiceSettingsView: View {
 
                     if kind.usesSearchSites {
                         SettingsDivider()
-                        SettingsInputRow(
-                            icon: "list.bullet",
-                            title: "优先站点",
-                            placeholder: "逗号分隔，如 nyaa, acgrip",
-                            text: $searchSitesText
-                        )
-                        .disabled(!isAdmin)
+                        siteRow(title: "搜索站源", index: 0)
+                        SettingsDivider()
+                        siteRow(title: "备选 1", index: 1)
+                        SettingsDivider()
+                        siteRow(title: "备选 2", index: 2)
                     }
 
                     SettingsDivider()
@@ -293,16 +264,11 @@ struct ServiceSettingsView: View {
                     SettingsDivider()
 
                     SettingsInputRow(
-                        icon: "text.alignleft",
                         title: "备注",
                         placeholder: "可选",
                         text: $note
                     )
                     .disabled(!isAdmin)
-                }
-
-                if let tokenPageUrl, let url = URL(string: tokenPageUrl) {
-                    RexNote(text: "令牌获取页：\(tokenPageUrl)")
                 }
 
                 if isAdmin {
@@ -356,13 +322,81 @@ struct ServiceSettingsView: View {
                         .buttonStyle(PressableButtonStyle())
                         .disabled(isSaving || isTesting || baseUrl.isEmpty)
                     }
-                } else {
-                    RexNote(text: "当前账号不是管理员，只能查看配置。")
                 }
             }
         }
         .task { await load() }
         .rexAlert($alert)
+    }
+
+    // MARK: - 站源选择
+
+    private func siteRow(title: String, index: Int) -> some View {
+        let selected = siteID(at: index)
+        let options = siteOptions
+
+        return Menu {
+            Button(index == 0 ? "未指定" : "不指定") {
+                selectSite("", at: index)
+            }
+
+            ForEach(options.filter { $0.id != selected }) { site in
+                Button(site.name) {
+                    selectSite(site.id, at: index)
+                }
+            }
+        } label: {
+            HStack(spacing: RexSpacing.sm) {
+                Text(title)
+                    .font(RexFont.row)
+                    .foregroundStyle(RexColor.primaryText)
+
+                Spacer(minLength: RexSpacing.sm)
+
+                Text(selected.isEmpty ? (index == 0 ? "未指定" : "不指定") : siteName(for: selected))
+                    .font(RexFont.rowValue)
+                    .foregroundStyle(RexColor.secondaryText)
+                    .lineLimit(1)
+
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(.caption, weight: .medium))
+                    .foregroundStyle(RexColor.tertiaryText)
+            }
+            .padding(.horizontal, RexSpacing.lg)
+            .frame(minHeight: RexLayout.rowHeight)
+            .contentShape(Rectangle())
+        }
+        .disabled(!isAdmin || options.isEmpty)
+        .accessibilityLabel(title)
+    }
+
+    /// 站点列表读取失败时，用已保存的 ID 垫上，避免菜单变空。
+    private var siteOptions: [MorePlaySite] {
+        morePlaySites.isEmpty
+            ? searchSites.filter { !$0.isEmpty }.map { MorePlaySite(id: $0, name: $0) }
+            : morePlaySites
+    }
+
+    private func siteID(at index: Int) -> String {
+        index < searchSites.count ? searchSites[index] : ""
+    }
+
+    private func siteName(for id: String) -> String {
+        morePlaySites.first { $0.id == id }?.name ?? id
+    }
+
+    /// 同一站源不允许占两个槽位；选中后清掉其它槽里的同 ID。
+    private func selectSite(_ id: String, at index: Int) {
+        var next = searchSites
+        while next.count < 3 { next.append("") }
+        if !id.isEmpty {
+            for i in next.indices where i != index && next[i] == id {
+                next[i] = ""
+            }
+        }
+        next[index] = id
+        searchSites = next
+        RexHaptics.selection()
     }
 
     // MARK: - 数据
@@ -384,11 +418,31 @@ struct ServiceSettingsView: View {
             note = settings.note ?? ""
             username = settings.username ?? ""
             hasStoredSecret = settings.hasApiKey == true || settings.hasPassword == true
-            tokenPageUrl = settings.tokenPageUrl
-            searchSitesText = (settings.searchSites ?? []).joined(separator: ", ")
+            let savedSites = settings.searchSites ?? settings.searchSite.map { [$0] } ?? []
+            searchSites = Array(savedSites.filter { !$0.isEmpty }.prefix(3))
+            if kind.usesSearchSites {
+                await loadSites()
+            }
         } catch {
             if let apiError = error as? APIError, apiError == .cancelled { return }
             alert = .failure(error.localizedDescription)
+        }
+    }
+
+    /// 站源列表按服务地址动态拉取；地址未配置时静默失败，菜单回退到已保存 ID。
+    private func loadSites() async {
+        guard let apiClient else { return }
+        do {
+            let response = try await apiClient.fetchSettings(
+                "api/moreplay/sites",
+                as: MorePlaySitesResponse.self
+            )
+            morePlaySites = response.sites
+            if searchSites.isEmpty, let first = response.sites.first {
+                searchSites = [first.id]
+            }
+        } catch {
+            morePlaySites = []
         }
     }
 
@@ -398,11 +452,14 @@ struct ServiceSettingsView: View {
         defer { isSaving = false }
 
         do {
-            _ = try await apiClient.putSettings(
+            let next = try await apiClient.putSettings(
                 kind.settingsPath,
                 json: try JSONEncoder().encode(saveBody()),
                 as: ServiceSettings.self
             )
+            if kind.usesSearchSites {
+                searchSites = next.searchSites ?? []
+            }
             hasStoredSecret = hasStoredSecret || !apiKey.isEmpty || !password.isEmpty
             apiKey = ""
             password = ""
@@ -448,10 +505,7 @@ struct ServiceSettingsView: View {
             if !password.isEmpty { body.password = password }
         }
         if kind.usesSearchSites {
-            let sites = searchSitesText
-                .split(whereSeparator: { $0 == "," || $0 == "，" })
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
+            let sites = searchSites.filter { !$0.isEmpty }
             body.searchSites = sites
             body.searchSite = sites.first
         }
@@ -491,14 +545,13 @@ struct PostgresDbSettingsView: View {
     /// nil = 尚未探测或正在探测。
     @State private var connected: Bool?
     @State private var configured = false
+    @State private var isShowingForum = false
 
     var body: some View {
         SettingsPage(title: kind.title) {
             if isLoading {
                 RexSkeleton(width: .infinity, height: 148, cornerRadius: RexRadius.panel)
             } else {
-                RexNote(text: kind.summary)
-
                 SettingsCard {
                     SettingsRow(
                         icon: statusIcon,
@@ -514,42 +567,33 @@ struct PostgresDbSettingsView: View {
                     if showsForumManagement && isAdmin {
                         SettingsDivider()
 
-                        NavigationLink {
-                            SehuatangForumManageView(isAdmin: isAdmin)
-                        } label: {
-                            HStack(spacing: RexSpacing.md) {
-                                Image(systemName: "bubble.left.and.bubble.right.fill")
-                                    .font(.system(size: 17, weight: .medium))
-                                    .foregroundStyle(Color(hex: 0x0A84FF))
-                                    .frame(width: 28)
+                        HStack(spacing: RexSpacing.md) {
+                            Image(systemName: "bubble.left.and.bubble.right.fill")
+                                .font(.system(size: 20, weight: .medium))
+                                .foregroundStyle(Color(hex: 0x0A84FF))
+                                .frame(width: 28, height: 28)
 
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("论坛管理")
-                                        .font(RexFont.row)
-                                        .foregroundStyle(RexColor.primaryText)
+                            Text("论坛管理")
+                                .font(RexFont.row)
+                                .foregroundStyle(RexColor.primaryText)
 
-                                    Text("板块地区 · \(ShtForumCatalog.categories.count) 大区")
-                                        .font(RexFont.caption)
-                                        .foregroundStyle(RexColor.secondaryText)
-                                }
+                            Spacer(minLength: RexSpacing.sm)
 
-                                Spacer(minLength: RexSpacing.sm)
-
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 12.5, weight: .semibold))
-                                    .foregroundStyle(RexColor.tertiaryText)
-                            }
-                            .padding(.horizontal, RexSpacing.lg)
-                            .frame(minHeight: 58)
-                            .contentShape(Rectangle())
+                            Image(systemName: "chevron.right")
+                                .font(.system(.caption, weight: .semibold))
+                                .foregroundStyle(RexColor.tertiaryText)
                         }
-                        .buttonStyle(RexRowButtonStyle())
+                        .padding(.horizontal, RexSpacing.lg)
+                        .frame(minHeight: 58)
+                        .rexRowAction { isShowingForum = true }
+                        .navigationDestination(isPresented: $isShowingForum) {
+                            SehuatangForumManageView(isAdmin: isAdmin)
+                        }
                     }
                 }
 
                 SettingsSection(title: "连接信息") {
                     SettingsInputRow(
-                        icon: "network",
                         title: "主机",
                         placeholder: "192.168.1.10",
                         text: $host
@@ -559,7 +603,6 @@ struct PostgresDbSettingsView: View {
                     SettingsDivider()
 
                     SettingsInputRow(
-                        icon: "number",
                         title: "端口",
                         placeholder: kind.defaultPort,
                         text: $port,
@@ -570,7 +613,6 @@ struct PostgresDbSettingsView: View {
                     SettingsDivider()
 
                     SettingsInputRow(
-                        icon: "cylinder.split.1x2",
                         title: "库名",
                         placeholder: kind.defaultDatabase,
                         text: $database
@@ -580,7 +622,6 @@ struct PostgresDbSettingsView: View {
 
                 SettingsSection(title: "登录凭据") {
                     SettingsInputRow(
-                        icon: "person",
                         title: "用户",
                         placeholder: "postgres",
                         text: $user,
@@ -591,7 +632,6 @@ struct PostgresDbSettingsView: View {
                     SettingsDivider()
 
                     SettingsInputRow(
-                        icon: "lock",
                         title: "密码",
                         placeholder: hasPassword ? "已保存，输入可覆盖" : "可留空",
                         text: passwordBinding,
@@ -641,8 +681,6 @@ struct PostgresDbSettingsView: View {
                         .buttonStyle(PressableButtonStyle())
                         .disabled(isSaving || isTesting)
                     }
-                } else {
-                    RexNote(text: "当前账号不是管理员，只能查看配置。")
                 }
             }
         }
@@ -657,17 +695,11 @@ struct PostgresDbSettingsView: View {
             Image(kind.imageName)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 40, height: 40)
+                .frame(width: 28, height: 28)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text("启用查询")
-                    .font(RexFont.row)
-                    .foregroundStyle(RexColor.primaryText)
-
-                Text("\(kind.title) · 资源检索")
-                    .font(RexFont.caption)
-                    .foregroundStyle(RexColor.secondaryText)
-            }
+            Text("启用查询")
+                .font(RexFont.row)
+                .foregroundStyle(RexColor.primaryText)
 
             Spacer(minLength: RexSpacing.sm)
 
@@ -676,7 +708,7 @@ struct PostgresDbSettingsView: View {
                 .tint(RexColor.brandBlue)
         }
         .padding(.horizontal, RexSpacing.lg)
-        .frame(minHeight: 64)
+        .frame(minHeight: RexLayout.rowHeight)
         .disabled(!isAdmin)
     }
 
@@ -1016,8 +1048,6 @@ struct SehuatangForumManageView: View {
                         }
                     }
                 }
-
-                RexNote(text: "地区用于片商搜索的结果归类；未设置的板块保持默认，不参与筛选。")
             }
         }
         .task { await load() }
@@ -1076,33 +1106,29 @@ struct ForumBoardRegionView: View {
                         SettingsDivider()
                     }
 
-                    Button {
-                        Task { await save(option.id) }
-                    } label: {
-                        HStack(spacing: RexSpacing.md) {
-                            Image(systemName: "globe.asia.australia.fill")
-                                .font(.system(size: 17, weight: .medium))
+                    HStack(spacing: RexSpacing.md) {
+                        Image(systemName: "globe.asia.australia.fill")
+                            .font(.system(.body, weight: .medium))
+                            .foregroundStyle(RexColor.brandBlue)
+                            .frame(width: 28)
+
+                        Text(option.label)
+                            .font(RexFont.row)
+                            .foregroundStyle(RexColor.primaryText)
+
+                        Spacer(minLength: RexSpacing.sm)
+
+                        if selectedRegion == option.id {
+                            Image(systemName: "checkmark")
+                                .font(.system(.subheadline, weight: .bold))
                                 .foregroundStyle(RexColor.brandBlue)
-                                .frame(width: 28)
-
-                            Text(option.label)
-                                .font(RexFont.row)
-                                .foregroundStyle(RexColor.primaryText)
-
-                            Spacer(minLength: RexSpacing.sm)
-
-                            if selectedRegion == option.id {
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 14, weight: .bold))
-                                    .foregroundStyle(RexColor.brandBlue)
-                            }
                         }
-                        .padding(.horizontal, RexSpacing.lg)
-                        .frame(minHeight: RexLayout.rowHeight)
-                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(RexRowButtonStyle())
-                    .disabled(!isAdmin || isSaving)
+                    .padding(.horizontal, RexSpacing.lg)
+                    .frame(minHeight: RexLayout.rowHeight)
+                    .rexRowAction(isEnabled: isAdmin && !isSaving) {
+                        Task { await save(option.id) }
+                    }
                 }
             }
 
@@ -1114,12 +1140,6 @@ struct ForumBoardRegionView: View {
                         .foregroundStyle(RexColor.secondaryText)
                 }
                 .frame(maxWidth: .infinity)
-            }
-
-            if !isAdmin {
-                RexNote(text: "当前账号不是管理员，只能查看板块地区。")
-            } else {
-                RexNote(text: "fid \(board.fid) · 选择后立即生效。")
             }
         }
         .rexAlert($alert)

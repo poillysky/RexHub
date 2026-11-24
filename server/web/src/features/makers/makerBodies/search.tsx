@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronRight, Search } from 'lucide-react';
 import type {
   MakerEntityKind,
@@ -27,6 +27,16 @@ import { TorrentRow } from './resources';
 /* ── 搜索（影片 / 番号 / 片商 / 演员 / 片单 / 系列 / 导演 / 资源） ── */
 
 type SearchMode = MakerSearchType | 'movie' | 'resource';
+
+/** 搜索页的完整状态，供返回时原样恢复 */
+export type MakerSearchState = {
+  mode: SearchMode;
+  q: string;
+  movieFilter: MakerMovieSearchFilter;
+  moviePage: number;
+  resourcePage: number;
+  exact: boolean;
+};
 
 const SEARCH_TABS: Array<{ id: SearchMode; label: string }> = [
   { id: 'movie', label: '影片' },
@@ -90,25 +100,39 @@ const MOVIE_FILTER_CHIPS: Array<{
 ];
 
 export function MakerSearchBody({
+  initialState,
+  onStateChange,
   onOpenMaker,
   onOpenMovie,
   onOpenActor,
   onOpenEntity,
   onOpenList,
 }: {
+  /** 从详情返回时恢复上次搜索状态 */
+  initialState?: MakerSearchState;
+  onStateChange?: (state: MakerSearchState) => void;
   onOpenMaker: (hit: MakerHit) => void;
   onOpenMovie: (movie: MakerMovie) => void;
   onOpenActor: OpenActorHandler;
   onOpenEntity: (kind: MakerEntityKind, id: string, name: string) => void;
   onOpenList: (list: { id: string; name: string }) => void;
 }) {
-  const [mode, setMode] = useState<SearchMode>('movie');
-  const [draft, setDraft] = useState('');
-  const [q, setQ] = useState('');
-  const [movieFilter, setMovieFilter] = useState<MakerMovieSearchFilter>('all');
-  const [moviePage, setMoviePage] = useState(1);
-  const [resourcePage, setResourcePage] = useState(1);
-  const [exact, setExact] = useState(false);
+  const [mode, setMode] = useState<SearchMode>(initialState?.mode ?? 'movie');
+  const [draft, setDraft] = useState(initialState?.q ?? '');
+  const [q, setQ] = useState(initialState?.q ?? '');
+  const [movieFilter, setMovieFilter] = useState<MakerMovieSearchFilter>(
+    initialState?.movieFilter ?? 'all',
+  );
+  const [moviePage, setMoviePage] = useState(initialState?.moviePage ?? 1);
+  const [resourcePage, setResourcePage] = useState(
+    initialState?.resourcePage ?? 1,
+  );
+  const [exact, setExact] = useState(initialState?.exact ?? false);
+
+  // 条件变化即回传给页面栈，返回搜索页时按原样恢复
+  useEffect(() => {
+    onStateChange?.({ mode, q, movieFilter, moviePage, resourcePage, exact });
+  }, [mode, q, movieFilter, moviePage, resourcePage, exact, onStateChange]);
 
   const entityMode: MakerSearchType | null =
     mode === 'movie' || mode === 'resource' ? null : mode;

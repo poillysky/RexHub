@@ -34,7 +34,8 @@ export const metadata: Metadata = {
   },
   appleWebApp: {
     capable: true,
-    statusBarStyle: 'black-translucent',
+    // 浅色底用 default：由系统绘制状态栏底色（黑字白底），避免白字压在 #f2f2f7 上看不清
+    statusBarStyle: 'default',
     title: 'RexHub',
   },
 };

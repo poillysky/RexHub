@@ -13,13 +13,22 @@ import { MakerMovieCard, Pager, WallSkeleton } from './shared';
 
 export function MakerListDetailBody({
   id,
+  initialPage = 1,
+  onPageChange,
   onOpenMovie,
 }: {
   id: string;
+  /** 从影片详情返回时恢复页码 */
+  initialPage?: number;
+  onPageChange?: (page: number) => void;
   onOpenMovie: (movie: MakerMovie) => void;
 }) {
   const list = useMakerListDetail(id);
-  const [page, setPage] = useState(1);
+  const [page, setPageState] = useState(() => Math.max(1, initialPage));
+  const setPage = (next: number) => {
+    setPageState(next);
+    onPageChange?.(next);
+  };
   const browse = useMakerBrowse('0', '', '', '', page, undefined, { listId: id });
   const items = browse.data?.items || [];
   const hasMore = !!browse.data?.hasMore;

@@ -205,7 +205,7 @@ struct RexInlineNotice: View {
     var body: some View {
         HStack(alignment: .top, spacing: RexSpacing.md) {
             Image(systemName: tone.symbol)
-                .font(.system(size: 16, weight: .semibold))
+                .font(.system(.callout, weight: .semibold))
                 .foregroundStyle(tone.tint)
                 .frame(width: 22)
 
@@ -289,7 +289,7 @@ struct RexStateCard: View {
                         .tint(tone.tint)
                 } else {
                     Image(systemName: symbol)
-                        .font(.system(size: 26, weight: .medium))
+                        .font(.system(.title, weight: .medium))
                         .foregroundStyle(tone.tint)
                         .symbolRenderingMode(.hierarchical)
                 }
@@ -416,14 +416,17 @@ struct RexAlertInfo: Identifiable {
     let id = UUID()
     var title: String
     var message: String?
+    /// 成功类提示不需要用户确认，改用顶部轻提示自动消失。
+    var isTransient: Bool = false
 
-    init(title: String = "提示", message: String? = nil) {
+    init(title: String = "提示", message: String? = nil, isTransient: Bool = false) {
         self.title = title
         self.message = message
+        self.isTransient = isTransient
     }
 
     static func success(_ message: String, title: String = "已完成") -> RexAlertInfo {
-        RexAlertInfo(title: title, message: message)
+        RexAlertInfo(title: title, message: message, isTransient: true)
     }
 
     static func failure(_ message: String, title: String = "操作失败") -> RexAlertInfo {
@@ -437,22 +440,134 @@ struct RexAlertInfo: Identifiable {
 
 extension View {
     /// 原生弹窗：调用方维护 `RexAlertInfo?`，关闭时自动置空。
+    /// 成功类信息（`isTransient`）不弹模态，改为顶部轻提示，避免打断连续操作。
     func rexAlert(_ info: Binding<RexAlertInfo?>) -> some View {
-        alert(
-            info.wrappedValue?.title ?? "提示",
-            isPresented: Binding(
-                get: { info.wrappedValue != nil },
-                set: { presented in
-                    if !presented { info.wrappedValue = nil }
+        self
+            .alert(
+                info.wrappedValue?.title ?? "提示",
+                isPresented: Binding(
+                    get: { info.wrappedValue?.isTransient == false },
+                    set: { presented in
+                        if !presented { info.wrappedValue = nil }
+                    }
+                ),
+                presenting: info.wrappedValue
+            ) { _ in
+                Button("好", role: .cancel) {}
+            } message: { value in
+                if let message = value.message, !message.isEmpty {
+                    Text(message)
                 }
-            ),
-            presenting: info.wrappedValue
-        ) { _ in
-            Button("好", role: .cancel) {}
-        } message: { value in
-            if let message = value.message, !message.isEmpty {
-                Text(message)
             }
+            .overlay(alignment: .top) {
+                if let value = info.wrappedValue, value.isTransient {
+                    RexToastBanner(
+                        info: RexToastInfo(
+                            text: value.message?.isEmpty == false ? value.message! : value.title,
+                            tone: .success
+                        )
+                    )
+                    .padding(.horizontal, RexSpacing.xl)
+                    .padding(.top, RexSpacing.sm)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .task(id: value.id) {
+                        try? await Task.sleep(for: .seconds(2))
+                        guard !Task.isCancelled else { return }
+                        withAnimation(RexMotion.quick) { info.wrappedValue = nil }
+                    }
+                }
+            }
+            .animation(RexMotion.quick, value: info.wrappedValue?.id)
+    }
+}
+
+// MARK: - 轻提示
+
+/// 轻量提示：用于「已复制」「已保存」这类无需用户确认的反馈。
+/// 顶部浮层自动消失，不打断操作，也不阻塞页面点击。
+struct RexToastInfo: Identifiable, Equatable {
+    let id = UUID()
+    var text: String
+    var tone: Tone = .neutral
+
+    enum Tone {
+        case neutral
+        case success
+        case warning
+    }
+
+    static func success(_ text: String) -> RexToastInfo {
+        RexToastInfo(text: text, tone: .success)
+    }
+
+    static func notice(_ text: String) -> RexToastInfo {
+        RexToastInfo(text: text, tone: .neutral)
+    }
+
+    static func warning(_ text: String) -> RexToastInfo {
+        RexToastInfo(text: text, tone: .warning)
+    }
+}
+
+extension View {
+    /// 顶部轻提示，2 秒后自动消失。
+    func rexToast(_ info: Binding<RexToastInfo?>) -> some View {
+        overlay(alignment: .top) {
+            if let value = info.wrappedValue {
+                RexToastBanner(info: value)
+                    .padding(.horizontal, RexSpacing.xl)
+                    .padding(.top, RexSpacing.sm)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .task(id: value.id) {
+                        try? await Task.sleep(for: .seconds(2))
+                        guard !Task.isCancelled else { return }
+                        withAnimation(RexMotion.quick) { info.wrappedValue = nil }
+                    }
+            }
+        }
+        .animation(RexMotion.quick, value: info.wrappedValue)
+    }
+}
+
+private struct RexToastBanner: View {
+    let info: RexToastInfo
+
+    var body: some View {
+        HStack(spacing: RexSpacing.sm) {
+            Image(systemName: symbol)
+                .font(.system(.subheadline, weight: .semibold))
+                .foregroundStyle(tint)
+
+            Text(info.text)
+                .font(RexFont.subheadline)
+                .foregroundStyle(RexColor.primaryText)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+        }
+        .padding(.horizontal, RexSpacing.md)
+        .padding(.vertical, RexSpacing.sm + 2)
+        .background(RexColor.elevatedSurface, in: Capsule(style: .continuous))
+        .overlay {
+            Capsule(style: .continuous)
+                .strokeBorder(RexColor.cardBorder, lineWidth: 0.5)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isStaticText)
+    }
+
+    private var symbol: String {
+        switch info.tone {
+        case .neutral: "info.circle.fill"
+        case .success: "checkmark.circle.fill"
+        case .warning: "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var tint: Color {
+        switch info.tone {
+        case .neutral: RexColor.brandBlue
+        case .success: RexColor.success
+        case .warning: RexColor.warning
         }
     }
 }
@@ -469,7 +584,7 @@ struct RexBadge: View {
         HStack(spacing: 4) {
             if let symbol {
                 Image(systemName: symbol)
-                    .font(.system(size: 9.5, weight: .semibold))
+                    .font(.system(.caption2, weight: .semibold))
             }
 
             Text(text)
@@ -537,8 +652,65 @@ struct RexSecondaryButtonStyle: ButtonStyle {
 struct RexRowButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(configuration.isPressed ? RexColor.selection : Color.clear)
+            .contentShape(Rectangle())
             .animation(RexMotion.quick, value: configuration.isPressed)
+    }
+}
+
+extension View {
+    /// 列表行整行点击。
+    ///
+    /// 不走 `Button`：系统会给按钮额外画一层内缩圆角高亮，盖在我们的底色上。
+    /// 这里自己接管按下状态，只铺一层直角纯色底。
+    func rexRowAction(isEnabled: Bool = true, _ action: @escaping () -> Void) -> some View {
+        modifier(RexRowActionModifier(isEnabled: isEnabled, action: action))
+    }
+}
+
+private struct RexRowActionModifier: ViewModifier {
+    let isEnabled: Bool
+    let action: () -> Void
+
+    @State private var isPressed = false
+    /// 触点偏移：滑动离开行 / 滚动列表时不算点击。
+    @State private var moved = false
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                // 显式画矩形：Color.clear 也可能被某些容器按圆角路径处理
+                if isPressed {
+                    Rectangle().fill(RexColor.selection)
+                }
+            }
+            .contentShape(Rectangle())
+            // 用零距离拖拽接管触摸：不触发任何系统按压高亮，也不会冒出圆角色块。
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        guard isEnabled else { return }
+                        if abs(value.translation.width) > 12 || abs(value.translation.height) > 12 {
+                            moved = true
+                            isPressed = false
+                            return
+                        }
+                        if !moved {
+                            isPressed = true
+                        }
+                    }
+                    .onEnded { _ in
+                        defer {
+                            isPressed = false
+                            moved = false
+                        }
+                        guard isEnabled, !moved else { return }
+                        action()
+                    }
+            )
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { if isEnabled { action() } }
     }
 }
 

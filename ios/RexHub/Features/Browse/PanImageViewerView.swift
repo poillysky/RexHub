@@ -75,7 +75,7 @@ struct PanImageViewerView: View {
                     dismiss()
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.system(.footnote, weight: .bold))
                         .foregroundStyle(.white)
                         .frame(width: 38, height: 38)
                         .background(.ultraThinMaterial, in: Circle())
@@ -196,7 +196,7 @@ private struct ZoomablePanImage: View {
                 } else if failed {
                     VStack(spacing: RexSpacing.md) {
                         Image(systemName: "photo.badge.exclamationmark")
-                            .font(.system(size: 34, weight: .light))
+                            .font(.system(.largeTitle, weight: .light))
                             .foregroundStyle(.white.opacity(0.35))
 
                         Text("图片加载失败")
@@ -211,7 +211,7 @@ private struct ZoomablePanImage: View {
                                 .font(.system(.subheadline, weight: .semibold))
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, RexSpacing.lg)
-                                .frame(height: 38)
+                                .frame(minHeight: 38)
                                 .background(.white.opacity(0.12), in: Capsule(style: .continuous))
                                 .overlay(Capsule(style: .continuous).strokeBorder(.white.opacity(0.16), lineWidth: 0.75))
                                 .frame(minHeight: RexLayout.minTouch)
@@ -405,8 +405,8 @@ private final class PanImageCache: @unchecked Sendable {
             forName: UIApplication.didReceiveMemoryWarningNotification,
             object: nil,
             queue: .main
-        ) { [cache] _ in
-            cache.removeAllObjects()
+        ) { [weak self] _ in
+            self?.cache.removeAllObjects()
         }
     }
 
@@ -466,7 +466,7 @@ private struct PanThumbnailView: View {
                     .scaledToFill()
             } else {
                 Image(systemName: "photo")
-                    .font(.system(size: 13))
+                    .font(.system(.footnote))
                     .foregroundStyle(.white.opacity(0.3))
             }
         }
@@ -527,8 +527,8 @@ private final class PanThumbnailCache: @unchecked Sendable {
             forName: UIApplication.didReceiveMemoryWarningNotification,
             object: nil,
             queue: .main
-        ) { [cache] _ in
-            cache.removeAllObjects()
+        ) { [weak self] _ in
+            self?.cache.removeAllObjects()
         }
     }
 

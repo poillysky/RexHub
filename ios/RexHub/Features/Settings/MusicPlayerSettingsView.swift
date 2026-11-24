@@ -15,9 +15,6 @@ struct MusicPlayerSettingsView: View {
                 )
             }
 
-            RexNote(text: settings.playlistMode.summary)
-                .lineSpacing(2)
-
             SettingsSection(title: "外观") {
                 SettingsSwitchRow(title: "模糊封面背景", isOn: $settings.blurCover)
             }
@@ -48,9 +45,6 @@ struct MusicPlayerSettingsView: View {
                     selection: $settings.playbackRate
                 )
             }
-
-            RexNote(text: "音乐播放器按当前目录顺序播放音频文件，快退、快进与倍速只影响音乐播放器。")
-                .lineSpacing(2)
         }
     }
 }

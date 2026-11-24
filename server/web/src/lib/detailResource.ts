@@ -47,6 +47,8 @@ export function linksForResource(item: {
   return linksForResourceHash(item.hash, item.ed2k_links, item.ed2k_link, {
     filename: item.name,
     title: item.title,
+    // 详情接口已按库内实际情况返回最终链接集合，前端不再二次收敛
+    authoritative: true,
   });
 }
 

@@ -3,7 +3,7 @@ import Photos
 import SwiftUI
 import UIKit
 
-/// 统一播放控制层：横竖两套布局共用同一份控件，AVPlayer 与 KSPlayer 都走这里。
+/// 统一播放控制层：横竖两套布局共用同一份控件，统一接管播放内核。
 /// 顶部是标题与工具行，底部依次为「参数 + 圆形工具」「时间 + 进度 + 时间」「锁定 + 传输控制 + 列表」。
 struct RexPlayerChrome: View {
     let title: String
@@ -86,14 +86,8 @@ struct RexPlayerChrome: View {
 
     /// 二级设置页：每个页面只负责一件事，避免在弹窗里继续叠菜单。
     private enum PlayerPage: Hashable {
-        case audioSettings
         case subtitleStyle
         case subtitleSize
-        case playbackEngine
-        case kernel
-        case decodeMode
-        case resolution
-        case playOrder
         case introOutro
         case playbackControl
         case sleepTimer
@@ -102,14 +96,8 @@ struct RexPlayerChrome: View {
 
         var title: String {
             switch self {
-            case .audioSettings: "音频设置"
             case .subtitleStyle: "字幕样式"
             case .subtitleSize: "字幕字号"
-            case .playbackEngine: "解码与画质"
-            case .kernel: "播放内核"
-            case .decodeMode: "解码方式"
-            case .resolution: "起播清晰度"
-            case .playOrder: "播放顺序"
             case .introOutro: "片头片尾"
             case .playbackControl: "播放控制"
             case .sleepTimer: "定时关闭"
@@ -297,7 +285,7 @@ struct RexPlayerChrome: View {
 
                 if selected {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(.caption, weight: .semibold))
                         .foregroundStyle(RexColor.brandBlue)
                 }
             }
@@ -334,7 +322,7 @@ struct RexPlayerChrome: View {
                 }
 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(.caption2, weight: .semibold))
                     .foregroundStyle(RexColor.tertiaryText)
             }
             .padding(.horizontal, 18)
@@ -399,7 +387,7 @@ struct RexPlayerChrome: View {
 
     // MARK: - 音频设置
 
-    /// 一级只放音轨选择，音频偏好在同一张卡片里推进到「音频设置」。
+    /// 一级只放音轨选择与变速保调。
     private var audioPopover: some View {
         RexPopoverCard(
             maxHeight: popoverMaxHeight,
@@ -424,9 +412,7 @@ struct RexPlayerChrome: View {
                 popoverDivider()
 
                 popoverSection {
-                    popoverNavRow("音频设置") {
-                        pushPage(.audioSettings)
-                    }
+                    popoverToggleRow("变速保持音调", isOn: $settings.keepPitch)
                 }
             }
         }
@@ -524,7 +510,7 @@ struct RexPlayerChrome: View {
         VStack(spacing: landscape ? 0 : 4) {
             ZStack(alignment: .leading) {
                 Text(title)
-                    .font(.system(size: landscape ? 12 : 13, weight: .medium))
+                    .font(.system(landscape ? .caption : .footnote, weight: .medium))
                     .foregroundStyle(.white.opacity(0.92))
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -598,10 +584,10 @@ struct RexPlayerChrome: View {
     private var networkSpeedLabel: some View {
         HStack(spacing: 3) {
             Image(systemName: "arrow.down")
-                .font(.system(size: 8, weight: .bold))
+                .font(.system(.caption2, weight: .bold))
 
             Text(networkSpeedText)
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(.caption2, weight: .medium))
                 .monospacedDigit()
         }
         .foregroundStyle(.white.opacity(0.62))
@@ -673,7 +659,7 @@ struct RexPlayerChrome: View {
                 Text(state.duration > 0 ? timeText(state.duration) : "--:--")
                     .frame(width: 60, alignment: .trailing)
             }
-            .font(.system(size: 11, weight: .medium))
+            .font(.system(.caption2, weight: .medium))
             .monospacedDigit()
             .foregroundStyle(.white.opacity(0.9))
             .opacity(isLocked ? 0 : 1)
@@ -733,7 +719,7 @@ struct RexPlayerChrome: View {
         let items = statsItems(landscape: landscape)
         if !items.isEmpty {
             Text(items.joined(separator: " · "))
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(.caption2, weight: .medium))
                 .monospacedDigit()
                 .foregroundStyle(.white.opacity(0.55))
                 .lineLimit(1)
@@ -790,7 +776,7 @@ struct RexPlayerChrome: View {
     private func playPauseButton(landscape: Bool) -> some View {
         Button(action: togglePlay) {
             Image(systemName: state.isPlaying ? "pause.fill" : "play.fill")
-                .font(.system(size: 24, weight: .semibold))
+                .font(.system(.title2, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
@@ -864,13 +850,7 @@ struct RexPlayerChrome: View {
         ) {
             popoverPages {
                 popoverSection("播放") {
-                    popoverNavRow("解码与画质", detail: settings.kernel.title) {
-                        pushPage(.playbackEngine)
-                    }
-                    popoverDivider()
-                    popoverNavRow("播放顺序", detail: orderSummary) {
-                        pushPage(.playOrder)
-                    }
+                    popoverToggleRow("自动连播下一集", isOn: $settings.autoPlayNext)
                     popoverDivider()
                     popoverNavRow("片头片尾", detail: introOutroSummary) {
                         pushPage(.introOutro)
@@ -890,14 +870,6 @@ struct RexPlayerChrome: View {
                 }
             }
         }
-    }
-
-    private var orderSummary: String {
-        var parts: [String] = []
-        if settings.loopPlayback { parts.append("循环") }
-        if settings.autoPlayNext { parts.append("连播") }
-        if settings.autoCloseOnFinish { parts.append("播完关闭") }
-        return parts.isEmpty ? "未启用" : parts.joined(separator: " · ")
     }
 
     private var introOutroSummary: String {
@@ -941,11 +913,11 @@ struct RexPlayerChrome: View {
         Button(action: popPage) {
             HStack(spacing: 6) {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(.caption, weight: .semibold))
                     .foregroundStyle(RexColor.brandBlue)
 
                 Text(page.title)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(.subheadline, weight: .semibold))
                     .foregroundStyle(RexColor.primaryText)
                     .lineLimit(1)
 
@@ -971,14 +943,14 @@ struct RexPlayerChrome: View {
     ) -> some View {
         HStack(spacing: 8) {
             Text(title)
-                .font(.system(size: 14, weight: .medium))
+                .font(.system(.subheadline, weight: .medium))
                 .foregroundStyle(RexColor.primaryText)
                 .lineLimit(1)
 
             Spacer(minLength: 8)
 
             Text(valueText)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(.caption2, weight: .medium))
                 .monospacedDigit()
                 .foregroundStyle(RexColor.secondaryText)
                 .lineLimit(1)
@@ -1007,14 +979,14 @@ struct RexPlayerChrome: View {
     ) -> some View {
         HStack(spacing: 8) {
             Text(title)
-                .font(.system(size: 14, weight: .medium))
+                .font(.system(.subheadline, weight: .medium))
                 .foregroundStyle(RexColor.primaryText)
                 .lineLimit(1)
 
             Spacer(minLength: 8)
 
             Text(valueText)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(.caption2, weight: .medium))
                 .monospacedDigit()
                 .foregroundStyle(RexColor.secondaryText)
                 .lineLimit(1)
@@ -1063,7 +1035,7 @@ struct RexPlayerChrome: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: icon)
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(.caption2, weight: .semibold))
                 .foregroundStyle(
                     enabled ? RexColor.primaryText : RexColor.secondaryText.opacity(0.4)
                 )
@@ -1081,11 +1053,6 @@ struct RexPlayerChrome: View {
     @ViewBuilder
     private func pageContent(_ page: PlayerPage) -> some View {
         switch page {
-        case .audioSettings:
-            popoverToggleRow("变速保持音调", isOn: $settings.keepPitch)
-            popoverDivider()
-            popoverToggleRow("静音起播", isOn: $settings.startMuted)
-
         case .subtitleStyle:
             popoverNavRow("字幕字号", detail: settings.subtitleSize.title) {
                 pushPage(.subtitleSize)
@@ -1109,56 +1076,6 @@ struct RexPlayerChrome: View {
                     popPage()
                 }
             }
-
-        case .playbackEngine:
-            popoverNavRow("播放内核", detail: settings.kernel.title) {
-                pushPage(.kernel)
-            }
-            popoverDivider()
-            popoverNavRow("解码方式", detail: settings.decodeMode.title) {
-                pushPage(.decodeMode)
-            }
-            popoverDivider()
-            popoverNavRow("起播清晰度", detail: settings.preferredResolution.title) {
-                pushPage(.resolution)
-            }
-
-        case .kernel:
-            ForEach(PlayerKernel.allCases) { kernel in
-                if kernel != PlayerKernel.allCases.first { popoverDivider() }
-                popoverActionRow(kernel.title, selected: settings.kernel == kernel) {
-                    settings.kernel = kernel
-                    popPage()
-                }
-            }
-
-        case .decodeMode:
-            ForEach(PlayerDecodeMode.allCases) { mode in
-                if mode != PlayerDecodeMode.allCases.first { popoverDivider() }
-                popoverActionRow(mode.title, selected: settings.decodeMode == mode) {
-                    settings.decodeMode = mode
-                    popPage()
-                }
-            }
-
-        case .resolution:
-            ForEach(PlayerResolution.allCases) { resolution in
-                if resolution != PlayerResolution.allCases.first { popoverDivider() }
-                popoverActionRow(
-                    resolution.title,
-                    selected: settings.preferredResolution == resolution
-                ) {
-                    settings.preferredResolution = resolution
-                    popPage()
-                }
-            }
-
-        case .playOrder:
-            popoverToggleRow("自动连播下一集", isOn: $settings.autoPlayNext)
-            popoverDivider()
-            popoverToggleRow("循环播放", isOn: $settings.loopPlayback)
-            popoverDivider()
-            popoverToggleRow("播放结束自动关闭", isOn: $settings.autoCloseOnFinish)
 
         case .introOutro:
             popoverToggleRow("跳过片头", isOn: $settings.skipIntro)
@@ -1223,10 +1140,6 @@ struct RexPlayerChrome: View {
             popoverToggleRow("自动横屏", isOn: $settings.autoLandscape)
             popoverDivider()
             popoverToggleRow("后台播放音频", isOn: $settings.backgroundAudio)
-            popoverDivider()
-            popoverToggleRow("记忆音量", isOn: $settings.rememberVolume)
-            popoverDivider()
-            popoverToggleRow("记忆亮度", isOn: $settings.rememberBrightness)
         }
     }
 
@@ -1288,13 +1201,13 @@ struct RexPlayerChrome: View {
 
         return HStack(spacing: 10) {
             Text("\(index + 1)")
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(.caption2, weight: .medium))
                 .monospacedDigit()
                 .foregroundStyle(RexColor.secondaryText)
                 .frame(width: 22, alignment: .trailing)
 
             Text(item.name)
-                .font(.system(size: 14, weight: isCurrent ? .semibold : .medium))
+                .font(.system(.subheadline, weight: isCurrent ? .semibold : .medium))
                 .foregroundStyle(isCurrent ? RexColor.brandBlue : RexColor.primaryText)
                 .lineLimit(1)
 
@@ -1302,7 +1215,7 @@ struct RexPlayerChrome: View {
 
             if isCurrent {
                 Image(systemName: "speaker.wave.2.fill")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(.caption, weight: .semibold))
                     .foregroundStyle(RexColor.brandBlue)
             }
         }
@@ -1347,7 +1260,7 @@ struct RexPlayerChrome: View {
             action()
         } label: {
             Image(systemName: icon)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(.caption, weight: .semibold))
                 .foregroundStyle(.white.opacity(active ? 1 : 0.9))
                 .frame(width: 29, height: 29)
                 .overlay {
@@ -1368,7 +1281,7 @@ struct RexPlayerChrome: View {
             showHUD(icon: "text.bubble", text: "弹幕暂未开放")
         } label: {
             Text("D")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(.footnote, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.9))
                 .frame(width: 29, height: 29)
                 .overlay {
@@ -1881,10 +1794,10 @@ struct RexPlayerChrome: View {
     private func hudView(_ hud: HUD) -> some View {
         VStack(spacing: RexSpacing.sm) {
             Image(systemName: hud.icon)
-                .font(.system(size: 22, weight: .semibold))
+                .font(.system(.title2, weight: .semibold))
 
             Text(hud.text)
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(.footnote, weight: .medium))
                 .monospacedDigit()
 
             if let progress = hud.progress {
@@ -1969,12 +1882,8 @@ struct RexPlayerChrome: View {
     // MARK: - 生命周期
 
     private func prepare() {
-        if settings.rememberBrightness {
-            UIScreen.main.brightness = CGFloat(settings.lastBrightness)
-        }
-        if settings.rememberVolume {
-            RexSystemVolume.set(Float(settings.lastVolume))
-        }
+        UIScreen.main.brightness = CGFloat(settings.lastBrightness)
+        RexSystemVolume.set(Float(settings.lastVolume))
         engine.setRate(settings.playbackRate)
         engine.setSubtitleDelay(settings.subtitleDelay)
         engine.setMuted(engine.state.isMuted)
@@ -1993,12 +1902,8 @@ struct RexPlayerChrome: View {
         networkSpeedTask?.cancel()
         networkSpeedTask = nil
 
-        if settings.rememberBrightness {
-            settings.lastBrightness = Double(UIScreen.main.brightness)
-        }
-        if settings.rememberVolume {
-            settings.lastVolume = Double(RexSystemVolume.current)
-        }
+        settings.lastBrightness = Double(UIScreen.main.brightness)
+        settings.lastVolume = Double(RexSystemVolume.current)
     }
 
     // MARK: - 工具

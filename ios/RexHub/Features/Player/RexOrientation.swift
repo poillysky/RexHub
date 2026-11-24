@@ -1,6 +1,7 @@
 import UIKit
 
 /// 播放页与全屏按钮共用的方向切换：几何更新后同步通知根控制器刷新支持方向。
+@MainActor
 enum RexOrientation {
     /// 请求系统把界面转到指定方向。
     /// 模态转场未结束时系统会静默忽略请求，这里延迟校验方向并重试几次，
@@ -16,7 +17,8 @@ enum RexOrientation {
         scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask))
 
         guard attempt < 4 else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 450_000_000)
             guard !matches(mask, scene.interfaceOrientation) else { return }
             request(mask, attempt: attempt + 1)
         }
@@ -49,6 +51,7 @@ enum RexOrientation {
         case .portraitUpsideDown: return mask.contains(.portraitUpsideDown)
         case .landscapeLeft: return mask.contains(.landscapeLeft)
         case .landscapeRight: return mask.contains(.landscapeRight)
+        case .unknown: return false
         @unknown default: return false
         }
     }

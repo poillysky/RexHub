@@ -38,6 +38,16 @@ struct ServiceTestResult: Decodable, Sendable {
     let totalResults: Int?
 }
 
+/// MorePlay 可搜索站源（id 为 T4 站源 ID，name 为站点中文名）。
+struct MorePlaySite: Decodable, Identifiable, Hashable, Sendable {
+    let id: String
+    let name: String
+}
+
+struct MorePlaySitesResponse: Decodable, Sendable {
+    let sites: [MorePlaySite]
+}
+
 // MARK: - Postgres 服务（Bitmagnet / 色花资源库）
 
 struct DbServiceSettings: Decodable, Sendable {
@@ -208,6 +218,12 @@ struct NetworkSettings: Decodable, Sendable {
     let githubApiUrl: String?
     let githubTokenSet: Bool?
     let githubMirror: String?
+    let githubMirrorPresets: [GithubMirrorPreset]?
+}
+
+struct GithubMirrorPreset: Decodable, Hashable, Sendable {
+    let url: String
+    let label: String
 }
 
 struct NetworkSaveBody: Encodable {
@@ -215,6 +231,9 @@ struct NetworkSaveBody: Encodable {
     var proxyEnabled: Bool?
     var flareSolverrUrl: String?
     var flareSolverrEnabled: Bool?
+    var githubApiUrl: String?
+    var githubToken: String?
+    var githubMirror: String?
 }
 
 // MARK: - TMDB

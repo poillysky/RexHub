@@ -5,6 +5,11 @@ import SwiftUI
 /// 与 PWA 的 `/makers` 对齐：顶部「热播 / 类别 / 分类」切换，
 /// 类别下按榜单 / 最新 / TOP250 分架，点海报进影片详情。
 struct MakerHomeView: View {
+    /// 外部每次递增表示重复点了「片商」标签，回到页面顶部。
+    var reselectToken: Int = 0
+    /// 与「影视」合并后由「海报墙」容器注入，用于顶栏下拉切换。
+    var section: Binding<PosterWallSection>? = nil
+
     @Environment(\.apiClient) private var apiClient
 
     @AppStorage("rexhub.maker.category") private var categoryRaw = MakerCategory.censored.rawValue
@@ -18,17 +23,25 @@ struct MakerHomeView: View {
         MakerCategory(rawValue: categoryRaw) ?? .censored
     }
 
+    private var titleMenuOptions: [RexHubMenuOption] {
+        PosterWallSection.menuOptions(for: section)
+    }
+
     var body: some View {
         NavigationStack(path: $path) {
             VStack(spacing: 0) {
-                RexHubTitle(title: "片商") {
-                    HStack(spacing: RexSpacing.sm) {
+                RexHubTitle(
+                    title: section?.wrappedValue.title ?? "片商",
+                    menuOptions: titleMenuOptions,
+                    leading: AnyView(
                         RexCircleIconButton(symbol: "person.2", label: "演员") {
                             path.append(.actors(category))
                         }
-
-                        RexCircleIconButton(symbol: "clock.arrow.circlepath", label: "最近浏览") {
-                            hubMode = .recent
+                    )
+                ) {
+                    HStack(spacing: RexSpacing.sm) {
+                        RexCircleIconButton(symbol: "tag", label: "分类") {
+                            path.append(.tags(category))
                         }
 
                         RexCircleIconButton(symbol: "magnifyingglass", label: "搜索片商") {
@@ -45,8 +58,6 @@ struct MakerHomeView: View {
                             switch tab {
                             case .playback:
                                 hubMode = .playback
-                            case .tags:
-                                hubMode = .tags
                             case .recent:
                                 hubMode = .recent
                             case .category(let next):
@@ -59,16 +70,30 @@ struct MakerHomeView: View {
                 )
 
                 GeometryReader { proxy in
-                    ScrollView {
-                        content(width: min(proxy.size.width, RexLayout.contentMaxWidth))
-                            .id(hubKey)
-                            .padding(.top, RexSpacing.sm)
-                            .padding(.bottom, RexSpacing.huge)
-                            .frame(maxWidth: RexLayout.contentMaxWidth)
-                            .frame(maxWidth: .infinity)
+                    ScrollViewReader { scrollProxy in
+                        ScrollView {
+                            Color.clear
+                                .frame(height: 0)
+                                .id("makerHomeTop")
+
+                            content(width: min(proxy.size.width, RexLayout.contentMaxWidth))
+                                .id(hubKey)
+                                .padding(.top, RexSpacing.sm)
+                                .padding(.bottom, RexSpacing.huge)
+                                .frame(maxWidth: RexLayout.contentMaxWidth)
+                                .frame(maxWidth: .infinity)
+                        }
+                        .scrollBounceBehavior(.basedOnSize)
+                        .refreshable { await refresh() }
+                        .onChange(of: reselectToken) { _, _ in
+                            if !path.isEmpty {
+                                path.removeAll()
+                            }
+                            withAnimation(RexMotion.standard) {
+                                scrollProxy.scrollTo("makerHomeTop", anchor: .top)
+                            }
+                        }
                     }
-                    .scrollBounceBehavior(.basedOnSize)
-                    .refreshable { await refresh() }
                 }
             }
             .background(RexPageBackground())
@@ -77,33 +102,50 @@ struct MakerHomeView: View {
                 switch route {
                 case .search:
                     MakerSearchView()
-                        .toolbar(.hidden, for: .navigationBar)
+                        .rexPushedScreen()
+                case .searchKey(let keyword):
+                    MakerSearchView(initialKeyword: keyword)
+                        .rexPushedScreen()
+                case .resourceSearch(let keyword):
+                    MakerSearchView(initialKeyword: keyword, initialMode: .resource)
+                        .rexPushedScreen()
                 case .list(let query):
                     MakerListView(query: query)
-                        .toolbar(.hidden, for: .navigationBar)
+                        .rexPushedScreen()
                 case .movie(let movie):
                     MakerMovieDetailView(movie: movie)
-                        .toolbar(.hidden, for: .navigationBar)
+                        .rexPushedScreen()
                 case .movieID(let id):
                     MakerMovieDetailView(movieID: id)
-                        .toolbar(.hidden, for: .navigationBar)
+                        .rexPushedScreen()
+                case .movieReviews(let id, let title):
+                    MakerMovieReviewsView(movieID: id, title: title)
+                        .rexPushedScreen()
                 case .actors(let category):
                     MakerActorsView(category: category)
-                        .toolbar(.hidden, for: .navigationBar)
+                        .rexPushedScreen()
+                case .tags(let category):
+                    MakerTagsView(category: category)
+                        .rexPushedScreen()
+                case .actorDetail(let id, let name):
+                    MakerActorDetailView(actorID: id, actorName: name)
+                        .rexPushedScreen()
+                case .entity(let kind, let id, let name):
+                    MakerEntityDetailView(kind: kind, entityID: id, entityName: name)
+                        .rexPushedScreen()
                 }
             }
         }
     }
 
     private var hubTabs: [MakerHubTab] {
-        [.playback] + MakerCategory.allCases.map { MakerHubTab.category($0) } + [.tags]
+        [.playback] + MakerCategory.allCases.map { MakerHubTab.category($0) }
     }
 
     /// 切换 Hub 内容 / 类别时重建内容，避免沿用上一个列表的滚动位置。
     private var hubKey: String {
         switch hubMode {
         case .playback: "playback"
-        case .tags: "tags-\(category.rawValue)"
         case .recent: "recent"
         case .category: "category-\(category.rawValue)"
         }
@@ -116,10 +158,6 @@ struct MakerHomeView: View {
         switch hubMode {
         case .playback:
             playbackContent(width: width)
-        case .tags:
-            MakerTagsBody(category: category) { group, tag in
-                path.append(.list(.tag(category, group: group.id, tagId: tag.id, name: tag.name)))
-            }
         case .recent:
             MakerRecentViewedBody()
         case .category:
@@ -199,6 +237,7 @@ struct MakerHomeView: View {
 
         VStack(alignment: .leading, spacing: 10) {
             MakerShelfHeader(title: title, onOpenAll: { path.append(route) })
+                .padding(.horizontal, RexSpacing.xl)
 
             if let state, !state.items.isEmpty {
                 ScrollView(.horizontal) {
@@ -214,6 +253,9 @@ struct MakerHomeView: View {
                             .accessibilityHint("查看影片详情")
                         }
                     }
+                    // 左留页面边距，右侧不留白，货架可以贴边划出。
+                    .padding(.leading, RexSpacing.xl)
+                    .padding(.trailing, 0)
                 }
                 .scrollIndicators(.hidden)
             } else if let error = state?.error, !error.isEmpty {
@@ -227,7 +269,7 @@ struct MakerHomeView: View {
                 }
                 .padding(.horizontal, RexSpacing.xl)
             } else {
-                MakerCardSkeletons(posterWidth: posterWidth)
+                MakerCardSkeletons(posterWidth: posterWidth, aspect: 16 / 10)
                     .padding(.horizontal, RexSpacing.xl)
             }
         }
@@ -236,8 +278,9 @@ struct MakerHomeView: View {
         }
     }
 
+    /// 横卡按「一屏约两张」定宽，对齐 PWA 的 188px 轨宽。
     private func posterWidth(for width: CGFloat) -> CGFloat {
-        min(140, max(100, (width - RexSpacing.xl * 2 - 20) / 3))
+        min(188, max(140, (width - RexSpacing.xl * 2 - 10) / 2))
     }
 
     // MARK: - 数据
@@ -287,14 +330,12 @@ struct MakerHomeView: View {
 private enum MakerHubMode {
     case playback
     case category
-    case tags
     case recent
 
     func tab(category: MakerCategory) -> MakerHubTab {
         switch self {
         case .playback: .playback
         case .category: .category(category)
-        case .tags: .tags
         // 最近浏览是顶栏图标进入的临时视图，不占顶部分类 tab。
         case .recent: .recent
         }
@@ -304,14 +345,12 @@ private enum MakerHubMode {
 private enum MakerHubTab: Hashable {
     case playback
     case category(MakerCategory)
-    case tags
     case recent
 
     var title: String {
         switch self {
         case .playback: "热播"
         case .category(let category): category.title
-        case .tags: "分类"
         case .recent: "最近浏览"
         }
     }

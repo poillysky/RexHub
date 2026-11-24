@@ -12,7 +12,12 @@ import { AppPush } from '@/components/ui/AppPush';
 import { AppMsg } from '@/components/ui/AppMsg';
 import { getP115, type P115Config, type P115SaveSource } from '@/lib/api';
 import { extractPasteLinks, extractPastePassword, COMMON_EXTRACT_PASSWORDS } from '@/lib/p115Paste';
-import { runP115Save } from '@/lib/p115SaveClient';
+import {
+  runP115Save,
+  SHARE_CHUNK_SIZE,
+  OFFLINE_CHUNK_SIZE,
+  type P115SaveProgress,
+} from '@/lib/p115SaveClient';
 import { linkKindOf } from '@/lib/detailResource';
 import { useTabNavigation } from '@/shell';
 
@@ -48,6 +53,7 @@ export function P115PastePanel({ onBack }: { onBack: () => void }) {
   const [paste, setPaste] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState<P115SaveProgress | null>(null);
   const [folder, setFolder] = useState<FolderHint | null>(null);
   const [configFailed, setConfigFailed] = useState(false);
   const [msg, setMsg] = useState('');
@@ -80,6 +86,11 @@ export function P115PastePanel({ onBack }: { onBack: () => void }) {
   const offlineCount = links.length - shareCount;
   const willTag = offlineCount > 0 && Boolean(effectivePassword);
 
+  // 分批数：分享 20/批、离线 50/批，与 runP115Save 内部切分一致
+  const batchTotal =
+    Math.ceil(shareCount / SHARE_CHUNK_SIZE) +
+    Math.ceil(offlineCount / OFFLINE_CHUNK_SIZE);
+
   const hasCookie = Boolean(folder?.configured);
   const folderOk = hasCookie;
   const folderLabel = hasCookie
@@ -96,11 +107,13 @@ export function P115PastePanel({ onBack }: { onBack: () => void }) {
       return;
     }
     setLoading(true);
+    setProgress(null);
     try {
       const result = await runP115Save({
         urls: links,
         password: effectivePassword || undefined,
         source: 'search',
+        onProgress: setProgress,
       });
       if (!result.ok) {
         setMsg(result.message);
@@ -118,6 +131,7 @@ export function P115PastePanel({ onBack }: { onBack: () => void }) {
       setMsg(err instanceof Error ? err.message : '转存失败');
     } finally {
       setLoading(false);
+      setProgress(null);
     }
   }, [effectivePassword, links, onBack, tabCtx]);
 
@@ -229,9 +243,22 @@ export function P115PastePanel({ onBack }: { onBack: () => void }) {
             {willTag ? (
               <span className="p115-paste__chip p115-paste__chip--extract">密码标注</span>
             ) : null}
+            {batchTotal > 1 ? (
+              <span className="p115-paste__chip p115-paste__chip--extract">
+                分 {batchTotal} 批
+              </span>
+            ) : null}
           </div>
         ) : paste.trim() ? (
           <p className="p115-paste__meta p115-paste__meta--warn">未识别到可用链接</p>
+        ) : null}
+
+        {batchTotal > 1 ? (
+          <p className="p115-paste__meta">
+            {loading && progress
+              ? `正在提交第 ${Math.min(progress.done + 1, batchTotal)}/${batchTotal} 批（${progress.phase === 'share' ? '115 分享' : '离线'}）`
+              : `链接较多，将自动分 ${batchTotal} 批提交：分享每批 ${SHARE_CHUNK_SIZE} 条，离线每批 ${OFFLINE_CHUNK_SIZE} 条`}
+          </p>
         ) : null}
 
         <div className="p115-paste-page__cta">
@@ -248,7 +275,9 @@ export function P115PastePanel({ onBack }: { onBack: () => void }) {
             )}
             <span>
               {loading
-                ? '转存中…'
+                ? batchTotal > 1 && progress
+                  ? `转存中 ${Math.min(progress.done + 1, batchTotal)}/${batchTotal}`
+                  : '转存中…'
                 : willTag
                   ? `转存到${destTitle}并标注密码`
                   : `转存到${destTitle}`}

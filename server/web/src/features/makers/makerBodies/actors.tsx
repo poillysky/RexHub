@@ -66,11 +66,16 @@ export function MakerActorsRecommendBody({
 export function MakerActorsHubBody({
   category,
   recommend,
+  initialPage = 1,
+  onPageChange,
   onSelectTab,
   onOpenActor,
 }: {
   category: MakerCategoryId;
   recommend: boolean;
+  /** 从演员详情返回时恢复页码 */
+  initialPage?: number;
+  onPageChange?: (page: number) => void;
   onSelectTab: (next: { category: MakerCategoryId; recommend: boolean }) => void;
   onOpenActor: OpenActorHandler;
 }) {
@@ -114,7 +119,13 @@ export function MakerActorsHubBody({
       {recommend ? (
         <MakerActorsRecommendBody onOpenActor={onOpenActor} />
       ) : (
-        <MakerActorsBody key={category} category={category} onOpenActor={onOpenActor} />
+        <MakerActorsBody
+          key={category}
+          category={category}
+          initialPage={initialPage}
+          onPageChange={onPageChange}
+          onOpenActor={onOpenActor}
+        />
       )}
     </div>
   );
@@ -122,12 +133,21 @@ export function MakerActorsHubBody({
 
 export function MakerActorsBody({
   category,
+  initialPage = 1,
+  onPageChange,
   onOpenActor,
 }: {
   category: MakerCategoryId;
+  /** 从演员详情返回时恢复页码 */
+  initialPage?: number;
+  onPageChange?: (page: number) => void;
   onOpenActor: OpenActorHandler;
 }) {
-  const [page, setPage] = useState(1);
+  const [page, setPageState] = useState(() => Math.max(1, initialPage));
+  const setPage = (next: number) => {
+    setPageState(next);
+    onPageChange?.(next);
+  };
   const { data, isLoading, isFetching, error } = useMakerActors(category, page);
   const items = data?.items || [];
   const hasMore = !!data?.hasMore;

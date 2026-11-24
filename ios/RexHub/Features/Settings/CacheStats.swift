@@ -12,12 +12,6 @@ struct CacheUsage: Equatable, Sendable {
     var total: Int64 { network + extra + temp }
 
     static let zero = CacheUsage()
-
-    /// 各分类占比（分母为缓存总量）；总量为 0 时返回 0。
-    func ratio(_ value: Int64) -> Double {
-        guard total > 0 else { return 0 }
-        return Double(value) / Double(total)
-    }
 }
 
 @MainActor
@@ -55,6 +49,35 @@ enum CacheStats {
         }.value
     }
 
+    /// 只清一个分类，其余缓存保留。
+    static func clear(_ category: CacheCategory) async {
+        switch category {
+        case .network:
+            URLCache.shared.removeAllCachedResponses()
+
+        case .extra:
+            // 网络缓存的落盘位置也在 Caches 下（以 bundle id 命名），跳过它。
+            guard let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+            else { return }
+            let keep = Bundle.main.bundleIdentifier
+            await Task.detached(priority: .userInitiated) {
+                let manager = FileManager.default
+                let entries = (try? manager.contentsOfDirectory(
+                    at: caches,
+                    includingPropertiesForKeys: nil
+                )) ?? []
+                for entry in entries where entry.lastPathComponent != keep {
+                    try? manager.removeItem(at: entry)
+                }
+            }.value
+
+        case .temp:
+            await Task.detached(priority: .userInitiated) {
+                removeContents(of: FileManager.default.temporaryDirectory)
+            }.value
+        }
+    }
+
     static func text(_ bytes: Int64) -> String {
         guard bytes > 0 else { return "0 B" }
         return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
@@ -67,7 +90,6 @@ enum CacheStats {
     }
 
     // MARK: 私有
-
     nonisolated private static func directorySize(_ url: URL) -> Int64 {
         let keys: [URLResourceKey] = [.isRegularFileKey, .totalFileAllocatedSizeKey, .fileAllocatedSizeKey]
         guard let enumerator = FileManager.default.enumerator(
@@ -151,122 +173,6 @@ enum CacheCategory: String, CaseIterable, Identifiable {
         case .extra: usage.extra
         case .temp: usage.temp
         }
-    }
-}
-
-// MARK: - 存储条 / 入口卡片
-
-/// 分段占比条：各分类按缓存总量着色，末段为剩余空间。
-struct CacheStorageBar: View {
-    let usage: CacheUsage
-    var height: CGFloat = 18
-
-    var body: some View {
-        GeometryReader { proxy in
-            let total = max(usage.total, 1)
-            let width = proxy.size.width
-
-            HStack(spacing: 0) {
-                ForEach(CacheCategory.allCases) { category in
-                    let value = category.bytes(in: usage)
-                    if value > 0 {
-                        Rectangle()
-                            .fill(category.tint)
-                            .frame(width: max(2, width * CGFloat(value) / CGFloat(total)))
-                    }
-                }
-
-                Rectangle()
-                    .fill(RexColor.field)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: height / 3, style: .continuous))
-        }
-        .frame(height: height)
-        .accessibilityHidden(true)
-    }
-}
-
-/// 图例：彩色圆点 + 分类名。
-struct CacheLegend: View {
-    let usage: CacheUsage
-    var showsPercent: Bool = false
-
-    var body: some View {
-        LazyVGrid(
-            columns: [GridItem(.adaptive(minimum: 96), spacing: RexSpacing.sm, alignment: .leading)],
-            alignment: .leading,
-            spacing: RexSpacing.sm
-        ) {
-            ForEach(CacheCategory.allCases) { category in
-                HStack(spacing: 5) {
-                    Circle()
-                        .fill(category.tint)
-                        .frame(width: 8, height: 8)
-
-                    Text(category.title)
-                        .font(RexFont.caption2)
-                        .foregroundStyle(RexColor.secondaryText)
-                        .lineLimit(1)
-
-                    if showsPercent {
-                        Text(CacheStats.percent(usage.ratio(category.bytes(in: usage))))
-                            .font(RexFont.caption2)
-                            .foregroundStyle(RexColor.tertiaryText)
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// 「更多」页顶部的缓存入口卡片：标题 + 已用容量 + 分段条 + 图例。
-struct CacheStorageCard: View {
-    let usage: CacheUsage
-    var isLoading: Bool
-    var showsChevron: Bool = true
-
-    private var usedText: String {
-        CacheStats.text(usage.total)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: RexSpacing.md) {
-            HStack(alignment: .firstTextBaseline, spacing: RexSpacing.md) {
-                Text("缓存")
-                    .font(.system(.headline, weight: .semibold))
-                    .foregroundStyle(RexColor.primaryText)
-
-                Spacer(minLength: 0)
-
-                Text(isLoading ? "统计中…" : "已用 \(usedText)")
-                    .font(RexFont.caption)
-                    .foregroundStyle(RexColor.secondaryText)
-                    .monospacedDigit()
-                    .contentTransition(.numericText())
-
-                if showsChevron {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(RexColor.tertiaryText)
-                }
-            }
-
-            if isLoading {
-                RexSkeleton(width: .infinity, height: 18, cornerRadius: 6)
-            } else {
-                CacheStorageBar(usage: usage)
-            }
-
-            if !isLoading {
-                CacheLegend(usage: usage)
-            }
-        }
-        .padding(RexSpacing.lg)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .rexCard(cornerRadius: RexRadius.panel)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("缓存已用 \(usedText)")
     }
 }
 

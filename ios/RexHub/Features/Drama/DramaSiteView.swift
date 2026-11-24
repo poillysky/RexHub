@@ -86,24 +86,27 @@ struct DramaSiteView: View {
             .refreshable { await load(reset: true) }
         }
         .background(RexPageBackground())
-        .toolbar(.hidden, for: .navigationBar)
+        .rexPushedScreen()
         .navigationDestination(for: DramaRoute.self) { route in
             switch route {
             case .site(let value):
                 DramaSiteView(site: value)
-                    .toolbar(.hidden, for: .navigationBar)
+                    .rexPushedScreen()
             case .detail(let card):
                 DramaDetailView(card: card)
-                    .toolbar(.hidden, for: .navigationBar)
+                    .rexPushedScreen()
             case .ranks(let siteID):
                 DramaRankView(site: siteID)
-                    .toolbar(.hidden, for: .navigationBar)
+                    .rexPushedScreen()
             case .searchResults(let keyword, let siteID):
                 DramaSearchResultsView(keyword: keyword, site: siteID)
-                    .toolbar(.hidden, for: .navigationBar)
+                    .rexPushedScreen()
             }
         }
-        .task { await load(reset: true) }
+        .task {
+            // 从详情页返回时保留已加载内容与滚动位置，不重新翻页。
+            if cards.isEmpty { await load(reset: true) }
+        }
     }
 
     private func load(reset: Bool) async {
@@ -121,13 +124,14 @@ struct DramaSiteView: View {
 
         do {
             let response = try await apiClient.dramaCatalog(site: site.id, page: page)
-            var seen = Set(cards.map(\.id))
-            let fresh = response.items.filter { seen.insert($0.id).inserted }
 
             if reset {
-                cards = fresh
+                // 刷新时以本次结果为准：不能拿旧列表去重，否则与旧卡片重复的新条目会被全部过滤掉。
+                var seen = Set<String>()
+                cards = response.items.filter { seen.insert($0.id).inserted }
             } else {
-                cards.append(contentsOf: fresh)
+                var seen = Set(cards.map(\.id))
+                cards.append(contentsOf: response.items.filter { seen.insert($0.id).inserted })
             }
             hasMore = response.hasMore
             if hasMore { page += 1 }

@@ -95,6 +95,7 @@ private struct DriveFolderView: View {
         .background(RexPageBackground())
         .toolbar(.hidden, for: .navigationBar)
         .toolbar(isSelecting ? .hidden : .visible, for: .tabBar)
+        .rexSwipeBack()
         .navigationDestination(isPresented: $showCloudDownload) {
             PanCloudDownloadView(isAdmin: isAdmin)
         }
@@ -347,7 +348,7 @@ private struct DriveFolderView: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 17, weight: .medium))
+                .font(.system(.body, weight: .medium))
                 .foregroundStyle(RexColor.primaryText)
                 .frame(width: 44, height: 44)
                 .modifier(SelectionGlassCircle())
@@ -854,7 +855,7 @@ private struct DriveFolderView: View {
             actionItem = item
         } label: {
             Image(systemName: "ellipsis")
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(.subheadline, weight: .semibold))
                 .foregroundStyle(RexColor.secondaryText)
                 // 竖排三点省出横向空间给文件名。
                 .rotationEffect(.degrees(90))
@@ -1042,7 +1043,7 @@ private struct DriveFolderView: View {
     /// 多选态的勾选圆点，列表与网格共用。
     private func selectionMark(isSelected: Bool) -> some View {
         Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-            .font(.system(size: 21))
+            .font(.system(.title3))
             .foregroundStyle(isSelected ? RexColor.brandBlue : RexColor.secondaryText.opacity(0.45))
             .background(Circle().fill(RexColor.surface).padding(2))
             .transition(.scale.combined(with: .opacity))

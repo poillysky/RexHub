@@ -77,9 +77,6 @@ struct GestureSettingsView: View {
                     selection: $settings.rightVerticalDrag
                 )
             }
-
-            RexNote(text: "手势统一由播放页控制层处理，AVPlayer 与 KSPlayer 内核都生效。双击左右区域默认与中间一致，改成快退/快进即可获得分区跳转；拖动查找、亮度与音量按手势起点所在位置判断。")
-                .lineSpacing(2)
         }
     }
 }

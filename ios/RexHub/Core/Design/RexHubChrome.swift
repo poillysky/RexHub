@@ -3,19 +3,24 @@ import SwiftUI
 // MARK: - Hub 页头（对齐 PWA 的 app-hub 结构）
 
 /// 居中大标题 + 右侧圆形操作按钮：与 PWA 的 Hub 顶部一致，不用系统导航栏。
+///
+/// 传入 `menuOptions` 后标题变为可点击下拉菜单，用于在同一入口内切换同级页面。
 struct RexHubTitle<Trailing: View>: View {
     let title: String
+    var menuOptions: [RexHubMenuOption] = []
+    /// 左侧控件：二级页放返回按钮，一级页留空。
+    var leading: AnyView? = nil
     @ViewBuilder var trailing: Trailing
 
     var body: some View {
         ZStack {
-            Text(title)
-                .font(.system(size: 26, weight: .bold, design: .rounded))
-                .foregroundStyle(RexColor.primaryText)
-                .lineLimit(1)
+            titleContent
                 .frame(maxWidth: .infinity)
 
-            HStack {
+            HStack(spacing: RexSpacing.xs) {
+                if let leading {
+                    leading
+                }
                 Spacer(minLength: 0)
                 trailing
             }
@@ -24,9 +29,52 @@ struct RexHubTitle<Trailing: View>: View {
         .padding(.top, RexSpacing.sm)
         .padding(.bottom, RexSpacing.xs)
     }
+
+    @ViewBuilder
+    private var titleContent: some View {
+        if menuOptions.isEmpty {
+            titleText
+                .frame(maxWidth: .infinity)
+        } else {
+            Menu {
+                ForEach(menuOptions) { option in
+                    Button {
+                        option.action()
+                    } label: {
+                        if option.isSelected {
+                            Label(option.title, systemImage: "checkmark")
+                        } else {
+                            Text(option.title)
+                        }
+                    }
+                }
+            } label: {
+                titleText
+                    .contentShape(Rectangle())
+            }
+            .menuIndicator(.hidden)
+            .accessibilityLabel("切换页面，当前\(title)")
+        }
+    }
+
+    private var titleText: some View {
+        Text(title)
+            .font(.system(.title, design: .rounded, weight: .bold))
+            .foregroundStyle(RexColor.primaryText)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+    }
 }
 
-/// 半透明圆形图标按钮，对应 PWA 的 `media-hub__search-btn`。
+/// 页头下拉菜单的一项。
+struct RexHubMenuOption: Identifiable {
+    let id: String
+    let title: String
+    var isSelected: Bool
+    var action: () -> Void
+}
+
+/// 页头纯图标按钮：不带底色与外轮廓，只保留可点区域。
 struct RexCircleIconButton: View {
     let symbol: String
     let label: String
@@ -38,71 +86,140 @@ struct RexCircleIconButton: View {
             action()
         } label: {
             Image(systemName: symbol)
-                .font(.system(size: 16, weight: .semibold))
+                .font(.system(.callout, weight: .semibold))
                 .foregroundStyle(RexColor.secondaryText)
-                .frame(width: 40, height: 40)
-                .background(
-                    RexColor.surface.opacity(0.78),
-                    in: Circle()
-                )
-                .overlay {
-                    Circle()
-                        .strokeBorder(RexColor.cardBorder, lineWidth: 0.75)
-                }
-                .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
-                .contentShape(Circle())
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(PressableButtonStyle())
         .accessibilityLabel(label)
     }
 }
 
+/// 页头返回按钮：与 `RexNavBar` 的 `.back` 同一套尺寸与配色。
+struct RexHubBackButton: View {
+    var action: () -> Void
+
+    var body: some View {
+        Button {
+            RexHaptics.tap()
+            action()
+        } label: {
+            Image(systemName: "chevron.left")
+                .font(.system(.body, weight: .semibold))
+                .foregroundStyle(RexColor.brandBlue)
+                .frame(width: 36, height: 36)
+                .contentShape(Circle())
+        }
+        .buttonStyle(PressableButtonStyle())
+        .frame(width: 44, height: 44)
+        .accessibilityLabel("返回")
+    }
+}
+
 /// 胶囊分段选择：对应 PWA 的 `media-source-switch`（浅色槽 + 白色选中块）。
+/// 每项宽度跟随文字自适应；总宽放不下时横向滚动，避免文字被压缩重叠。
 struct RexPillTabs<Item: Hashable>: View {
     let items: [Item]
     @Binding var selection: Item
     let title: (Item) -> String
 
+    @ScaledMetric(relativeTo: .footnote) private var itemHeight: CGFloat = 32
+
     var body: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 2) {
-                ForEach(items, id: \.self) { item in
-                    let selected = selection == item
-                    Button {
-                        guard !selected else { return }
-                        RexHaptics.selection()
-                        withAnimation(RexMotion.spring) {
-                            selection = item
-                        }
-                    } label: {
-                        Text(title(item))
-                            .font(.system(size: 13, weight: selected ? .semibold : .medium))
-                            .foregroundStyle(selected ? RexColor.primaryText : RexColor.secondaryText)
-                            .lineLimit(1)
-                            .padding(.horizontal, 10)
-                            .frame(minHeight: 32)
-                            .background {
-                                if selected {
-                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .fill(RexColor.surface)
-                                        .shadow(color: .black.opacity(0.06), radius: 4, y: 2)
-                                }
-                            }
-                            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        GeometryReader { proxy in
+            ScrollView(.horizontal) {
+                PillRowLayout(availableWidth: max(0, proxy.size.width - 6)) {
+                    ForEach(items, id: \.self) { item in
+                        pill(item)
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(selected ? .isSelected : [])
                 }
+                .padding(3)
+                .background(
+                    RexColor.field,
+                    in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+                )
             }
-            .padding(3)
-            .background(
-                RexColor.field,
-                in: RoundedRectangle(cornerRadius: 11, style: .continuous)
-            )
-            .padding(.horizontal, RexSpacing.xl)
+            .scrollIndicators(.hidden)
+            .scrollBounceBehavior(.basedOnSize)
         }
-        .scrollIndicators(.hidden)
+        .frame(height: itemHeight + 6)
+        .padding(.horizontal, RexSpacing.xl)
         .padding(.bottom, RexSpacing.sm)
+    }
+
+    private func pill(_ item: Item) -> some View {
+        let selected = selection == item
+        return Button {
+            guard !selected else { return }
+            RexHaptics.selection()
+            withAnimation(RexMotion.spring) {
+                selection = item
+            }
+        } label: {
+            Text(title(item))
+                .font(.system(.footnote, weight: selected ? .semibold : .medium))
+                .foregroundStyle(selected ? RexColor.primaryText : RexColor.secondaryText)
+                .lineLimit(1)
+                .padding(.horizontal, 10)
+                .frame(maxWidth: .infinity, minHeight: itemHeight)
+                .background {
+                    if selected {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(RexColor.surface)
+                            .shadow(color: .black.opacity(0.06), radius: 4, y: 2)
+                    }
+                }
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// 胶囊行布局：内容放得下时均分铺满，放不下时保持文字自然宽度交给外层滚动。
+private struct PillRowLayout: Layout {
+    var availableWidth: CGFloat
+    var spacing: CGFloat = 2
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
+        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+        let contentWidth = sizes.reduce(0) { $0 + $1.width }
+            + spacing * CGFloat(max(0, sizes.count - 1))
+        let height = sizes.map(\.height).max() ?? 0
+        return CGSize(width: max(contentWidth, availableWidth), height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) {
+        guard !subviews.isEmpty else { return }
+        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+        let contentWidth = sizes.reduce(0) { $0 + $1.width }
+            + spacing * CGFloat(max(0, sizes.count - 1))
+
+        var x = bounds.minX
+        if contentWidth <= availableWidth + 0.5 {
+            // 放得下：等分铺满整行。
+            let each = (bounds.width - spacing * CGFloat(subviews.count - 1)) / CGFloat(subviews.count)
+            for subview in subviews {
+                subview.place(
+                    at: CGPoint(x: x, y: bounds.minY),
+                    anchor: .topLeading,
+                    proposal: ProposedViewSize(width: each, height: bounds.height)
+                )
+                x += each + spacing
+            }
+        } else {
+            // 放不下：保持文字宽度，由外层横向滚动。
+            for (index, subview) in subviews.enumerated() {
+                let width = sizes[index].width
+                subview.place(
+                    at: CGPoint(x: x, y: bounds.minY),
+                    anchor: .topLeading,
+                    proposal: ProposedViewSize(width: width, height: bounds.height)
+                )
+                x += width + spacing
+            }
+        }
     }
 }
 
@@ -120,73 +237,74 @@ struct RexSettingsNavLink<Destination: View>: View {
     var subtitle: String?
     @ViewBuilder var destination: Destination
 
+    @State private var isPresented = false
+
     var body: some View {
-        NavigationLink {
-            destination
-        } label: {
-            HStack(spacing: RexSpacing.md) {
-                if let imageName {
-                    Image(imageName)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 40, height: 40)
-                } else {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [tint, tint.opacity(0.68)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
+        HStack(spacing: RexSpacing.md) {
+            if let imageName {
+                Image(imageName)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 40, height: 40)
+            } else {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [tint, tint.opacity(0.68)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
                         )
-                        .frame(width: 40, height: 40)
-                        .overlay {
-                            Image(systemName: icon)
-                                .font(.system(size: 17, weight: .medium))
-                                .foregroundStyle(.white)
-                        }
-                        .shadow(color: tint.opacity(0.24), radius: 6, y: 3)
-                }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 5) {
-                        Text(title)
-                            .font(RexFont.row)
-                            .foregroundStyle(RexColor.primaryText)
-                            .lineLimit(1)
-
-                        ForEach(allTags, id: \.self) { item in
-                            Text(item)
-                                .font(.system(size: 9.5, weight: .semibold, design: .rounded))
-                                .foregroundStyle(imageName == nil ? tint : RexColor.secondaryText)
-                                .padding(.horizontal, 5)
-                                .frame(height: 17)
-                                .background(
-                                    (imageName == nil ? tint : RexColor.secondaryText).opacity(0.12),
-                                    in: Capsule(style: .continuous)
-                                )
-                        }
+                    )
+                    .frame(width: 40, height: 40)
+                    .overlay {
+                        Image(systemName: icon)
+                            .font(.system(.body, weight: .medium))
+                            .foregroundStyle(.white)
                     }
-
-                    if let subtitle, !subtitle.isEmpty {
-                        Text(subtitle)
-                            .font(RexFont.caption)
-                            .foregroundStyle(RexColor.secondaryText)
-                            .lineLimit(1)
-                    }
-                }
-
-                Spacer(minLength: RexSpacing.sm)
-
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(RexColor.tertiaryText)
+                    .shadow(color: tint.opacity(0.24), radius: 6, y: 3)
             }
-            .padding(.horizontal, RexSpacing.lg)
-            .frame(minHeight: RexLayout.rowHeight)
-            .contentShape(Rectangle())
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(RexFont.row)
+                    .foregroundStyle(RexColor.primaryText)
+                    .lineLimit(1)
+
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(RexFont.caption)
+                        .foregroundStyle(RexColor.secondaryText)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: RexSpacing.sm)
+
+            HStack(spacing: 5) {
+                ForEach(allTags, id: \.self) { item in
+                    Text(item)
+                        .font(.system(.caption2, design: .rounded, weight: .semibold))
+                        .foregroundStyle(imageName == nil ? tint : RexColor.secondaryText)
+                        .padding(.horizontal, 5)
+                        .frame(minHeight: 17)
+                        .background(
+                            (imageName == nil ? tint : RexColor.secondaryText).opacity(0.12),
+                            in: Capsule(style: .continuous)
+                        )
+                }
+            }
+
+            Image(systemName: "chevron.right")
+                .font(.system(.footnote, weight: .semibold))
+                .foregroundStyle(RexColor.tertiaryText)
+                .padding(.leading, allTags.isEmpty ? 0 : RexSpacing.xs)
         }
-        .buttonStyle(RexRowButtonStyle())
+        .padding(.horizontal, RexSpacing.lg)
+        .frame(minHeight: RexLayout.rowHeight)
+        .rexRowAction { isPresented = true }
+        .navigationDestination(isPresented: $isPresented) {
+            destination
+        }
     }
 
     private var allTags: [String] {
@@ -207,46 +325,43 @@ struct RexSettingsNavButton: View {
     var action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: RexSpacing.md) {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [tint, tint.opacity(0.68)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
+        HStack(spacing: RexSpacing.md) {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [tint, tint.opacity(0.68)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
                     )
-                    .frame(width: 40, height: 40)
-                    .overlay {
-                        Image(systemName: icon)
-                            .font(.system(size: 17, weight: .medium))
-                            .foregroundStyle(.white)
-                    }
-
-                Text(title)
-                    .font(RexFont.row)
-                    .foregroundStyle(isDestructive ? RexColor.error : RexColor.primaryText)
-                    .lineLimit(1)
-
-                Spacer(minLength: RexSpacing.sm)
-
-                if let value, !value.isEmpty {
-                    Text(value)
-                        .font(RexFont.caption)
-                        .foregroundStyle(RexColor.tertiaryText)
-                        .lineLimit(1)
-                } else {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(RexColor.tertiaryText)
+                )
+                .frame(width: 40, height: 40)
+                .overlay {
+                    Image(systemName: icon)
+                        .font(.system(.body, weight: .medium))
+                        .foregroundStyle(.white)
                 }
+
+            Text(title)
+                .font(RexFont.row)
+                .foregroundStyle(isDestructive ? RexColor.error : RexColor.primaryText)
+                .lineLimit(1)
+
+            Spacer(minLength: RexSpacing.sm)
+
+            if let value, !value.isEmpty {
+                Text(value)
+                    .font(RexFont.caption)
+                    .foregroundStyle(RexColor.tertiaryText)
+                    .lineLimit(1)
+            } else {
+                Image(systemName: "chevron.right")
+                    .font(.system(.footnote, weight: .semibold))
+                    .foregroundStyle(RexColor.tertiaryText)
             }
-            .padding(.horizontal, RexSpacing.lg)
-            .frame(minHeight: RexLayout.rowHeight)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(RexRowButtonStyle())
+        .padding(.horizontal, RexSpacing.lg)
+        .frame(minHeight: RexLayout.rowHeight)
+        .rexRowAction(action)
     }
 }
 
@@ -277,7 +392,7 @@ struct RexSiteCard: View {
                     .frame(width: 48, height: 48)
                     .overlay {
                         Image(systemName: symbol)
-                            .font(.system(size: 20, weight: .medium))
+                            .font(.system(.title3, weight: .medium))
                             .foregroundStyle(.white)
                     }
                     .shadow(color: tint.opacity(0.28), radius: 8, y: 4)
@@ -291,10 +406,10 @@ struct RexSiteCard: View {
 
                         if let badge, !badge.isEmpty {
                             Text(badge)
-                                .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+                                .font(.system(.caption2, design: .rounded, weight: .semibold))
                                 .foregroundStyle(tint)
                                 .padding(.horizontal, 5)
-                                .frame(height: 17)
+                                .frame(minHeight: 17)
                                 .background(tint.opacity(0.12), in: Capsule(style: .continuous))
                         }
                     }
@@ -308,7 +423,7 @@ struct RexSiteCard: View {
                 Spacer(minLength: 0)
 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(.footnote, weight: .semibold))
                     .foregroundStyle(RexColor.tertiaryText)
             }
             .padding(.horizontal, RexSpacing.lg)
