@@ -64,7 +64,7 @@ services:
 
   # ── 刮削 Worker：扫描/刮削/向量化重活，只跑 API ──
   scrape-worker:
-    image: poillysky/sehua-next-web:1.2.28
+    image: poillysky/sehua-next-web:1.0.0
     container_name: sehua-next-web-scrape
     restart: always
     mem_limit: 4g
@@ -100,7 +100,7 @@ services:
 
   # ── UI：web(3020) + api(8020)，轻量上限 ──
   app:
-    image: poillysky/sehua-next-web:1.2.28
+    image: poillysky/sehua-next-web:1.0.0
     container_name: sehua-next-web
     restart: always
     mem_limit: 2g
