@@ -17,7 +17,7 @@ name: rexhub
 
 services:
   app:
-    image: poillysky/sehua-next-web:1.0.0
+    image: poillysky/rexhub:1.0.0
     container_name: rexhub
     restart: always
     ports:

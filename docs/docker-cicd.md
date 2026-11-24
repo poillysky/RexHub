@@ -4,7 +4,7 @@
 
 ## 镜像
 
-- 名称：`poillysky/sehua-next-web`
+- 名称：`poillysky/rexhub`
 - 当前版本：`1.0.0`
 - 架构：`linux/amd64` + `linux/arm64` 多架构
 - 构建上下文：`server/`（`server/Dockerfile`，单镜像含 web 3020 + api 8020，supervisord 托管）
@@ -38,7 +38,7 @@
 目录结构（与 compose 注释一致）：
 
 ```
-/vol1/1000/Docker/sehua-next-web/
+/vol1/1000/Docker/rexhub/
 ├── docker-compose.yml
 ├── data/        → /app/data
 ├── postgres/    → Postgres 数据（库 nextweb）
@@ -46,8 +46,8 @@
 ```
 
 ```bash
-mkdir -p /vol1/1000/Docker/sehua-next-web/{data,postgres,config}
-cd /vol1/1000/Docker/sehua-next-web
+mkdir -p /vol1/1000/Docker/rexhub/{data,postgres,config}
+cd /vol1/1000/Docker/rexhub
 # 放好 docker-compose.yml 后
 docker compose pull
 docker compose up -d
@@ -60,7 +60,7 @@ docker compose up -d
 新库没有管理员，API 启动日志打印一次管理员邀请码：
 
 ```bash
-docker logs sehua-next-web | grep 管理员邀请码
+docker logs rexhub | grep 管理员邀请码
 ```
 
 登录页「注册账号」填入该码即注册为管理员。

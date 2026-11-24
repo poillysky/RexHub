@@ -1,22 +1,22 @@
 # ============================================================
 # RexHub NAS 部署编排（部署模板）
-# 目录: /vol1/1000/Docker/sehua-next-web/
+# 目录: /vol1/1000/Docker/rexhub/
 #   本文件 + data/ + postgres/ + config/（config 里放 app.json / app.local.json）
 #
 # 启动:
 #   docker compose pull && docker compose up -d
 # 访问: http://NAS_IP:3020
 # Postgres 对外: NAS_IP:5439（库名 nextweb）
-# 日志看管理员邀请码: docker logs sehua-next-web | grep 管理员邀请码
+# 日志看管理员邀请码: docker logs rexhub | grep 管理员邀请码
 # ============================================================
 
-name: sehua-next-web
+name: rexhub
 
 services:
   # ── Postgres(pgvector)：资源库/磁力库的元数据底座 ──
   postgres:
     image: pgvector/pgvector:0.8.6-pg16
-    container_name: sehua-next-web-postgres
+    container_name: rexhub-postgres
     restart: always
     command:
       - postgres
@@ -64,8 +64,8 @@ services:
 
   # ── 刮削 Worker：扫描/刮削/向量化重活，只跑 API ──
   scrape-worker:
-    image: poillysky/sehua-next-web:1.0.0
-    container_name: sehua-next-web-scrape
+    image: poillysky/rexhub:1.0.0
+    container_name: rexhub-scrape
     restart: always
     mem_limit: 4g
     memswap_limit: 4g
@@ -100,8 +100,8 @@ services:
 
   # ── UI：web(3020) + api(8020)，轻量上限 ──
   app:
-    image: poillysky/sehua-next-web:1.0.0
-    container_name: sehua-next-web
+    image: poillysky/rexhub:1.0.0
+    container_name: rexhub
     restart: always
     mem_limit: 2g
     memswap_limit: 2g
